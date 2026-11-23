@@ -18,12 +18,12 @@ data class AppPrefsSnapshot(
     val walletBalanceSom: Int = 0,
     val referralClaimed: Boolean = false,
     val displayCurrencyCode: String = "KGS",
-    val businessCompanyInn: String = "01408202110234",
-    val favoriteDrivers: Set<String> = setOf("Бекзат А."),
+    val businessCompanyInn: String = "",
+    val favoriteDrivers: Set<String> = emptySet(),
     val blockedDrivers: Set<String> = emptySet(),
     val ownerBankConfig: OwnerBankConfig = OwnerBankConfig(),
     val ownerPendingBalanceSom: Int = 0,
-    val ownerTotalSettledSom: Int = 6840
+    val ownerTotalSettledSom: Int = 0
 )
 
 class AppPreferencesStore(private val context: Context) {
@@ -54,8 +54,8 @@ class AppPreferencesStore(private val context: Context) {
             walletBalanceSom = prefs[keyWalletBalance] ?: 0,
             referralClaimed = prefs[keyReferralClaimed] ?: false,
             displayCurrencyCode = prefs[keyCurrencyCode] ?: "KGS",
-            businessCompanyInn = prefs[keyBusinessInn] ?: "01408202110234",
-            favoriteDrivers = prefs[keyFavoriteDrivers] ?: setOf("Бекзат А."),
+            businessCompanyInn = prefs[keyBusinessInn] ?: "",
+            favoriteDrivers = prefs[keyFavoriteDrivers] ?: emptySet(),
             blockedDrivers = prefs[keyBlockedDrivers] ?: emptySet(),
             ownerBankConfig = OwnerBankConfig(
                 bankName = prefs[keyOwnerBankName] ?: "MBank",
@@ -69,7 +69,7 @@ class AppPreferencesStore(private val context: Context) {
                 autoPayoutThresholdSom = (prefs[keyOwnerThreshold] ?: 500).coerceIn(100, 50000)
             ),
             ownerPendingBalanceSom = prefs[keyOwnerPendingSom] ?: 0,
-            ownerTotalSettledSom = prefs[keyOwnerSettledSom] ?: 6840
+            ownerTotalSettledSom = prefs[keyOwnerSettledSom] ?: 0
         )
     }
 
@@ -116,7 +116,7 @@ class AppPreferencesStore(private val context: Context) {
 
     suspend fun toggleFavoriteDriver(driverName: String) {
         context.kgTaxiPrefsDataStore.edit { prefs ->
-            val currentFav = (prefs[keyFavoriteDrivers] ?: setOf("Бекзат А.")).toMutableSet()
+            val currentFav = (prefs[keyFavoriteDrivers] ?: emptySet()).toMutableSet()
             val currentBlocked = (prefs[keyBlockedDrivers] ?: emptySet()).toMutableSet()
             if (driverName in currentFav) {
                 currentFav.remove(driverName)
@@ -131,7 +131,7 @@ class AppPreferencesStore(private val context: Context) {
 
     suspend fun toggleBlockedDriver(driverName: String) {
         context.kgTaxiPrefsDataStore.edit { prefs ->
-            val currentFav = (prefs[keyFavoriteDrivers] ?: setOf("Бекзат А.")).toMutableSet()
+            val currentFav = (prefs[keyFavoriteDrivers] ?: emptySet()).toMutableSet()
             val currentBlocked = (prefs[keyBlockedDrivers] ?: emptySet()).toMutableSet()
             if (driverName in currentBlocked) {
                 currentBlocked.remove(driverName)

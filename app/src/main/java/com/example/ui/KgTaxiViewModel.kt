@@ -120,17 +120,13 @@ data class KgTaxiUiState(
     val walletTransactions: List<WalletTransaction> = emptyList(),
     // Driver Mode, Docs & Analytics
     val driverOnline: Boolean = false,
-    val driverTodayEarningsSom: Int = 3420,
-    val driverShiftHours: Double = 6.5,
+    val driverTodayEarningsSom: Int = 0,
+    val driverShiftHours: Double = 0.0,
     val driverWeeklyEarnings: List<Pair<String, Int>> = listOf(
-        "Пн" to 2850, "Вт" to 3190, "Ср" to 3640, "Чт" to 2980, "Пт" to 4420, "Сб" to 4890, "Вс" to 3420
+        "Пн" to 0, "Вт" to 0, "Ср" to 0, "Чт" to 0, "Пт" to 0, "Сб" to 0, "Вс" to 0
     ),
-    val driverDocuments: List<DriverDocumentItem> = listOf(
-        DriverDocumentItem("doc1", "Полис ОСАГО КР", "KG-OSAGO-88412", "12.01.2027", 50),
-        DriverDocumentItem("doc2", "Техосмотр ТС", "TO-01KG-5521", "05.12.2026", 12),
-        DriverDocumentItem("doc3", "Водительское удостоверение (B/C)", "KG-DL-449012", "18.08.2031", 1720)
-    ),
-    val driverQuestTripsDone: Int = 8,
+    val driverDocuments: List<DriverDocumentItem> = emptyList(),
+    val driverQuestTripsDone: Int = 0,
     val driverQuestTarget: Int = 12,
     val driverIncomingOrders: List<DriverIncomingOrder> = emptyList(),
     val driverAcceptedOrder: DriverIncomingOrder? = null,
@@ -156,7 +152,7 @@ data class KgTaxiUiState(
     val aiLoading: Boolean = false,
     // Tourist Currency, Business INN, Weather & Mountain Passes
     val displayCurrency: DisplayCurrency = DisplayCurrency.KGS,
-    val businessCompanyInn: String = "01408202110234",
+    val businessCompanyInn: String = "",
     val cityWeather: CityWeatherInfo = KgWeatherAndPassesClient.offlineFallbackWeather("Бишкек"),
     val mountainPasses: List<KgMountainPass> = KgWeatherAndPassesClient.buildMountainPasses(
         KgWeatherAndPassesClient.offlineFallbackWeather("Бишкек")
@@ -168,7 +164,7 @@ data class KgTaxiUiState(
     val voiceOrderParsing: Boolean = false,
     val lastVoiceOrderSummary: String? = null,
     // Favorite / Blocked Drivers & Lost & Found Tickets
-    val favoriteDrivers: Set<String> = setOf("Бекзат А."),
+    val favoriteDrivers: Set<String> = emptySet(),
     val blockedDrivers: Set<String> = emptySet(),
     val lostItemTickets: List<LostItemTicket> = emptyList(),
     // Driver Pro: Destination Filter, Tips & Instant Payouts
@@ -176,20 +172,14 @@ data class KgTaxiUiState(
     val driverHomeTargetDistrict: String = "Джал",
     val driverOrderStage: DriverOrderStage = DriverOrderStage.EN_ROUTE_TO_PICKUP,
     val driverOrderWaitingSeconds: Int = 0,
-    val driverActivityScore: Int = 96,
-    val driverPriorityPoints: Int = 14,
+    val driverActivityScore: Int = 100,
+    val driverPriorityPoints: Int = 0,
     val driverAutoAccept: Boolean = false,
     val driverEnabledTariffs: Set<String> = setOf("economy", "comfort", "green_ev", "courier"),
     val driverPendingPassengerRating: DriverIncomingOrder? = null,
     val driverPhotoControlVerified: Boolean = true,
-    val driverTips: List<DriverTipEntry> = listOf(
-        DriverTipEntry("tip1", "Айсулуу К.", 100, "Идеальная чистота салона", "Сегодня, 14:20"),
-        DriverTipEntry("tip2", "Марат Ж.", 50, "Аккуратное вождение", "Сегодня, 11:05"),
-        DriverTipEntry("tip3", "Elena S.", 200, "Great English & smooth airport ride!", "Вчера, 19:40")
-    ),
-    val driverPayouts: List<DriverPayoutRecord> = listOf(
-        DriverPayoutRecord("pay1", "MBank", "+996 555 880 996", 2500, "Вчера, 21:15")
-    ),
+    val driverTips: List<DriverTipEntry> = emptyList(),
+    val driverPayouts: List<DriverPayoutRecord> = emptyList(),
     // 12-Feature Ecosystem Upgrade State
     val themeMode: AppThemeMode = AppThemeMode.LIGHT,
     val mapLayerStyle: MapLayerStyle = MapLayerStyle.STANDARD,
@@ -198,7 +188,7 @@ data class KgTaxiUiState(
     val driverQueuedNextOrder: DriverIncomingOrder? = null,
     val driverShiftPass: DriverShiftPass = DriverShiftPass.NONE,
     val driverCoffeeBreakActive: Boolean = false,
-    val driverDrivingMinutesToday: Int = 390,
+    val driverDrivingMinutesToday: Int = 0,
     val driverActiveOrderMessages: List<DriverChatMessage> = emptyList(),
     val selectedIntercityTripId: String? = "ic1_dep2",
     val tourGuideTopic: String? = null,
@@ -207,35 +197,8 @@ data class KgTaxiUiState(
     // Owner Bank Details & Automated Commission Split
     val ownerBankConfig: OwnerBankConfig = OwnerBankConfig(),
     val ownerPendingBalanceSom: Int = 0,
-    val ownerTotalSettledSom: Int = 6840,
-    val ownerCommissionLedger: List<OwnerCommissionEntry> = listOf(
-        OwnerCommissionEntry(
-            id = "oc_seed_1",
-            orderId = "KG-8412",
-            sourceLabel = "Бизнес • Аэропорт Манас",
-            city = "Бишкек",
-            grossAmountSom = 1250,
-            commissionPercent = 14,
-            ownerCommissionSom = 175,
-            driverNetSom = 1075,
-            settledAutomatically = true,
-            destinationMasked = "MBank •••• 9960",
-            timeLabel = "Сегодня, 15:10"
-        ),
-        OwnerCommissionEntry(
-            id = "oc_seed_2",
-            orderId = "KG-8398",
-            sourceLabel = "Комфорт (Поездка)",
-            city = "Бишкек",
-            grossAmountSom = 420,
-            commissionPercent = 14,
-            ownerCommissionSom = 59,
-            driverNetSom = 361,
-            settledAutomatically = true,
-            destinationMasked = "MBank •••• 9960",
-            timeLabel = "Сегодня, 13:45"
-        )
-    ),
+    val ownerTotalSettledSom: Int = 0,
+    val ownerCommissionLedger: List<OwnerCommissionEntry> = emptyList(),
     val ownerSettlements: List<OwnerBankSettlementRecord> = listOf(
         OwnerBankSettlementRecord(
             id = "os_seed_1",
@@ -389,6 +352,7 @@ class KgTaxiViewModel(
     private var driverOpenRidesJob: Job? = null
     private var driverLocationJob: Job? = null
     private var driverRideWatchJob: Job? = null
+    private var dispatcherFeedJob: Job? = null
     private var verifiedDriverCar: String = ""
     private var verifiedDriverPlate: String = ""
     private var verifiedDriverPayPhone: String = ""
@@ -674,6 +638,8 @@ class KgTaxiViewModel(
     }
 
     fun onUserSignedOut() {
+        stopDispatcherFeed()
+        stopDriverOrderFeed()
         stopCloudObservers()
         _uiState.update {
             it.copy(
@@ -713,6 +679,9 @@ class KgTaxiViewModel(
         val s = _uiState.value
         if (role in s.allowedRoles) {
             _uiState.update { it.copy(role = role) }
+            if (FeatureFlags.REAL_RIDES) {
+                if (role == AppRole.DISPATCHER) startDispatcherFeed() else stopDispatcherFeed()
+            }
             return
         }
         val message = when {
@@ -1705,6 +1674,34 @@ class KgTaxiViewModel(
         }
     }
 
+    // --- REAL RIDES (Firestore) — dispatcher board ---
+
+    private fun startDispatcherFeed() {
+        dispatcherFeedJob?.cancel()
+        dispatcherFeedJob = viewModelScope.launch {
+            rides.observeActiveRides().collect { active ->
+                val myPoint = _uiState.value.pickupPoint
+                val board = active.map { r ->
+                    r.toDriverOrder(myPoint).copy(
+                        assignedDriverName = r.driverName,
+                        tariffName = when (r.status) {
+                            RideStatus.SEARCHING -> "Ищет водителя"
+                            RideStatus.ASSIGNED -> "Водитель едет"
+                            RideStatus.ARRIVED -> "Водитель на месте"
+                            else -> "В поездке"
+                        }
+                    )
+                }
+                _uiState.update { it.copy(dispatcherActiveOrders = board) }
+            }
+        }
+    }
+
+    private fun stopDispatcherFeed() {
+        dispatcherFeedJob?.cancel()
+        dispatcherFeedJob = null
+    }
+
     // --- REAL RIDES (Firestore) — driver side ---
 
     private fun startDriverOrderFeed(city: KgCity) {
@@ -2406,28 +2403,21 @@ class KgTaxiViewModel(
         }
     }
 
+    // Broadcasts to all drivers/passengers need a server (FCM via Cloud Functions).
+    // Until then these buttons say so instead of pretending something was sent.
     fun triggerPromoNotification() {
-        SoundAndNotificationManager.postNotification(
-            appContext,
-            "Скидка -15% в ${_uiState.value.selectedCity.name}!",
-            "Используйте промокод ECO15 на электромобили Green EV и поездки к избранным локациям.",
-            isHighPriority = false
-        )
-        _uiState.update { it.copy(statusBanner = "Уведомление о скидке ECO15 отправлено") }
+        _uiState.update { it.copy(statusBanner = "Рассылка акций появится после подключения сервера уведомлений.") }
     }
 
     fun triggerTrafficAlertNotification() {
-        val city = _uiState.value.selectedCity
-        SoundAndNotificationManager.postNotification(
-            appContext,
-            "Трафик в реальном времени • ${city.name}",
-            "Затруднение движения в центре (${city.streets.first()}). Рекомендуем объезд, спрос x${city.surgeMultiplier}.",
-            isHighPriority = false
-        )
-        _uiState.update { it.copy(statusBanner = "Оповещение о пробках в г. ${city.name} отправлено водителям") }
+        _uiState.update { it.copy(statusBanner = "Оповещения водителям появятся после подключения сервера уведомлений.") }
     }
 
     fun dispatchOrderToDriver(orderId: String) {
+        if (FeatureFlags.REAL_RIDES) {
+            _uiState.update { it.copy(statusBanner = "Заказ видят все водители на линии в этом городе. Ручное назначение появится позже.") }
+            return
+        }
         val pool = listOf("Нурлан Т. (Camry 70)", "Бакыт К. (BYD Han EV)", "Айпери К. (Kia K5)", "Эрмек С. (Sonata)")
         val chosen = pool[kotlin.math.abs(orderId.hashCode()) % pool.size]
         SoundAndNotificationManager.playCue(SoundCue.DRIVER_ASSIGNED, _uiState.value.soundEnabled)
@@ -2442,6 +2432,11 @@ class KgTaxiViewModel(
     }
 
     private fun generateNearbyDrivers(city: KgCity) {
+        if (FeatureFlags.REAL_RIDES) {
+            // No made-up cars on the map. Real driver positions need a drivers-online collection (next step).
+            _uiState.update { it.copy(nearbyDrivers = emptyList()) }
+            return
+        }
         val offsets = listOf(
             Pair(0.005, 0.007) to false,
             Pair(-0.006, 0.004) to true,

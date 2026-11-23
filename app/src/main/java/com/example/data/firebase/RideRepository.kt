@@ -172,6 +172,22 @@ class RideRepository(
             }
     }
 
+    /** All active rides (searching or on the way), newest first — the dispatcher's board. */
+    fun observeActiveRides(): Flow<List<SharedRide>> {
+        if (currentUid == null) return emptyFlow()
+        return rides
+            .whereIn("status", RideStatus.ACTIVE.toList())
+            .orderBy("createdAt", Query.Direction.DESCENDING)
+            .limit(100)
+            .snapshots()
+            .map { qs -> qs.documents.mapNotNull { SharedRide.from(it) } }
+            .catch { e ->
+                if (e is CancellationException) throw e
+                handleFirestoreError(e, OperationType.LIST, "rides?status in ACTIVE")
+                emit(emptyList())
+            }
+    }
+
     suspend fun cancelAsPassenger(rideId: String): Result<Unit> =
         runWrite(OperationType.UPDATE, "rides/$rideId") {
             rides.document(rideId).update(

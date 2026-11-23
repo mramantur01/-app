@@ -46,9 +46,9 @@ fun DispatcherDashboardScreen(
 ) {
     var activeTab by remember { mutableIntStateOf(0) } // 0 = Владелец & Банк, 1 = Мониторинг
     var selectedCityFilter by remember { mutableStateOf("Все города") }
-    val activeOrdersCount = (if (state.activeRide != null) 1 else 0) + state.dispatcherActiveOrders.size + 14
-    val onlineDriversCount = (if (state.driverOnline) 1 else 0) + 128
-    val totalRevenueSom = state.trips.sumOf { it.totalPriceSom } + state.driverTodayEarningsSom + 48600
+    val activeOrdersCount = state.dispatcherActiveOrders.size
+    val onlineDriversCount = state.dispatcherActiveOrders.mapNotNull { it.assignedDriverName }.distinct().size
+    val totalRevenueSom = state.dispatcherActiveOrders.sumOf { it.grossFareSom }
 
     Column(
         modifier = modifier
@@ -132,7 +132,7 @@ fun DispatcherDashboardScreen(
                 modifier = Modifier.weight(1f)
             )
             KpiCard(
-                title = strings.onlineDrivers,
+                title = "Водителей на заказах",
                 value = "$onlineDriversCount",
                 accent = UberGreen,
                 modifier = Modifier.weight(1f)
@@ -140,7 +140,7 @@ fun DispatcherDashboardScreen(
         }
         Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
             KpiCard(
-                title = strings.liveRevenue,
+                title = "Сумма активных заказов",
                 value = "$totalRevenueSom ${strings.currencySom}",
                 accent = MaterialTheme.colorScheme.primary,
                 modifier = Modifier.weight(1f)
