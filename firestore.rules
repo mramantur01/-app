@@ -274,5 +274,140 @@ service cloud.firestore {
         allow delete: if isOwner(userId) && isValidId(logId);
       }
     }
+
+    // =====================================================================
+    // ROLES, SOS AND SHARED RIDES
+    // =====================================================================
+
+    // roles/{uid} = { role: 'driver' | 'dispatcher' | 'admin' }
+    // Nobody can give themselves a role from the app. Roles are set by the owner in the
+    // Firebase console (or later by a Cloud Function after checking driver documents).
+    function roleOf(uid) {
+      return exists(/databases/$(database)/documents/roles/$(uid))
+        ? get(/databases/$(database)/documents/roles/$(uid)).data.role
+        : 'passenger';
+    }
+
+    function hasRole(r) {
+      return isSignedIn() && roleOf(request.auth.uid) == r;
+    }
+
+    function isDriver() {
+      return hasRole('driver');
+    }
+
+    function isDispatcher() {
+      return hasRole('dispatcher') || hasRole('admin');
+    }
+
+    function onlyChanged(keys) {
+      return incoming().diff(existing()).affectedKeys().hasOnly(keys);
+    }
+
+    match /roles/{uid} {
+      allow get: if isOwner(uid) || isDispatcher();
+      allow list: if hasRole('admin');
+      allow write: if false;
+    }
+
+    // SOS alerts: the sender creates, dispatchers read and resolve.
+    match /sos_alerts/{alertId} {
+      allow create: if isSignedIn() &&
+                       isValidId(alertId) &&
+                       incoming().userId == request.auth.uid &&
+                       incoming().keys().hasAll(['userId', 'lat', 'lng', 'address', 'city', 'resolved', 'createdAt']) &&
+                       incoming().keys().hasOnly(['userId', 'lat', 'lng', 'address', 'city', 'tripId',
+                                                  'driverName', 'carInfo', 'resolved', 'createdAt']) &&
+                       incoming().lat is number && incoming().lat >= -90 && incoming().lat <= 90 &&
+                       incoming().lng is number && incoming().lng >= -180 && incoming().lng <= 180 &&
+                       incoming().address is string && incoming().address.size() <= 200 &&
+                       incoming().city is string && incoming().city.size() <= 50 &&
+                       incoming().resolved == false &&
+                       isValidTimestamp(incoming().createdAt);
+      allow get: if isDispatcher() || (isSignedIn() && existing().userId == request.auth.uid);
+      allow list: if isDispatcher();
+      allow update: if isDispatcher() &&
+                       onlyChanged(['resolved', 'resolvedBy', 'resolvedAt']) &&
+                       incoming().resolved == true &&
+                       incoming().resolvedBy == request.auth.uid;
+      allow delete: if false;
+    }
+
+    // Shared ride orders: a passenger creates one, drivers see open orders and accept them.
+    // Status flow: SEARCHING -> ASSIGNED -> ARRIVED -> IN_PROGRESS -> COMPLETED, or CANCELLED.
+    function isValidRideCreate(data) {
+      return data.passengerId == request.auth.uid &&
+             data.status == 'SEARCHING' &&
+             data.driverId == null &&
+             data.serviceType in ['TAXI', 'INTERCITY'] &&
+             data.city is string && data.city.size() >= 1 && data.city.size() <= 50 &&
+             data.pickupAddress is string && data.pickupAddress.size() >= 1 && data.pickupAddress.size() <= 200 &&
+             data.dropoffAddress is string && data.dropoffAddress.size() >= 1 && data.dropoffAddress.size() <= 200 &&
+             data.pickupLat is number && data.pickupLat >= -90 && data.pickupLat <= 90 &&
+             data.pickupLng is number && data.pickupLng >= -180 && data.pickupLng <= 180 &&
+             data.dropoffLat is number && data.dropoffLat >= -90 && data.dropoffLat <= 90 &&
+             data.dropoffLng is number && data.dropoffLng >= -180 && data.dropoffLng <= 180 &&
+             data.priceSom is int && data.priceSom > 0 && data.priceSom <= 100000 &&
+             data.paymentMethod == 'CASH' &&
+             isValidTimestamp(data.createdAt) &&
+             isValidTimestamp(data.updatedAt);
+    }
+
+    match /rides/{rideId} {
+      allow create: if isSignedIn() &&
+                       isValidId(rideId) &&
+                       incoming().keys().hasAll(['passengerId', 'status', 'driverId', 'serviceType', 'city',
+                                                 'pickupAddress', 'dropoffAddress', 'pickupLat', 'pickupLng',
+                                                 'dropoffLat', 'dropoffLng', 'priceSom', 'paymentMethod',
+                                                 'createdAt', 'updatedAt']) &&
+                       incoming().keys().hasOnly(['passengerId', 'passengerName', 'status', 'driverId', 'serviceType',
+                                                  'city', 'pickupAddress', 'dropoffAddress', 'pickupLat', 'pickupLng',
+                                                  'dropoffLat', 'dropoffLng', 'priceSom', 'paymentMethod', 'comment',
+                                                  'createdAt', 'updatedAt']) &&
+                       isValidRideCreate(incoming());
+
+      allow get: if isSignedIn() && (
+                    existing().passengerId == request.auth.uid ||
+                    existing().driverId == request.auth.uid ||
+                    (isDriver() && existing().status == 'SEARCHING') ||
+                    isDispatcher());
+
+      // Drivers may list only open orders (their query must filter status == 'SEARCHING').
+      allow list: if isDispatcher() ||
+                    (isDriver() && resource.data.status == 'SEARCHING') ||
+                    (isSignedIn() && (resource.data.passengerId == request.auth.uid ||
+                                      resource.data.driverId == request.auth.uid));
+
+      allow update: if isSignedIn() && isValidTimestamp(incoming().updatedAt) && (
+        // The passenger cancels before the trip starts.
+        (existing().passengerId == request.auth.uid &&
+         existing().status in ['SEARCHING', 'ASSIGNED', 'ARRIVED'] &&
+         incoming().status == 'CANCELLED' &&
+         onlyChanged(['status', 'updatedAt'])) ||
+        // A driver takes an open order.
+        (isDriver() &&
+         existing().status == 'SEARCHING' &&
+         existing().driverId == null &&
+         incoming().status == 'ASSIGNED' &&
+         incoming().driverId == request.auth.uid &&
+         onlyChanged(['status', 'driverId', 'driverName', 'driverCar', 'driverPlate', 'updatedAt'])) ||
+        // The assigned driver moves the trip forward or cancels it.
+        (isDriver() &&
+         existing().driverId == request.auth.uid &&
+         ((existing().status == 'ASSIGNED' && incoming().status in ['ARRIVED', 'CANCELLED']) ||
+          (existing().status == 'ARRIVED' && incoming().status in ['IN_PROGRESS', 'CANCELLED']) ||
+          (existing().status == 'IN_PROGRESS' && incoming().status == 'COMPLETED')) &&
+         onlyChanged(['status', 'updatedAt', 'driverLat', 'driverLng'])) ||
+        // The assigned driver shares live position during the trip.
+        (isDriver() &&
+         existing().driverId == request.auth.uid &&
+         existing().status in ['ASSIGNED', 'ARRIVED', 'IN_PROGRESS'] &&
+         incoming().status == existing().status &&
+         incoming().driverLat is number && incoming().driverLng is number &&
+         onlyChanged(['driverLat', 'driverLng', 'updatedAt']))
+      );
+
+      allow delete: if false;
+    }
   }
 }

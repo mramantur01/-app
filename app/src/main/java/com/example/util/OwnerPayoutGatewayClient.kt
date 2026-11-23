@@ -1,14 +1,7 @@
 package com.example.util
 
-import com.example.BuildConfig
 import com.example.data.model.OwnerBankConfig
-import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.withContext
-import org.json.JSONObject
-import java.net.HttpURLConnection
-import java.net.InetAddress
 import java.net.URI
-import java.net.URL
 import kotlin.math.roundToInt
 
 data class SplitCalculationResult(
@@ -26,8 +19,7 @@ data class GatewaySettlementResult(
 
 /**
  * Handles automated order commission splitting, bank detail validation,
- * and optional HTTPS split-payout webhook dispatch to a real acquiring/bank server
- * configured via AI Studio Secrets (PAYMENT_GATEWAY_WEBHOOK_URL + PAYMENT_GATEWAY_API_KEY).
+ * and owner payout requests. Sending money is a server job (see hasLiveGatewayConfigured).
  */
 object OwnerPayoutGatewayClient {
 
@@ -87,11 +79,12 @@ object OwnerPayoutGatewayClient {
         return clean.isNotBlank() && !clean.startsWith("YOUR_", ignoreCase = true)
     }
 
-    fun hasLiveGatewayConfigured(): Boolean {
-        val url = BuildConfig.PAYMENT_GATEWAY_WEBHOOK_URL.trim()
-        val apiKey = BuildConfig.PAYMENT_GATEWAY_API_KEY.trim()
-        return isRealSecretValue(apiKey) && isRealSecretValue(url) && isSafePublicHttpsUrl(url)
-    }
+    /**
+     * Always false in the app. The payment gateway key must never be inside the APK:
+     * anyone can unpack an APK and read it. Real payouts will be sent by a server
+     * (Firebase Cloud Functions) that keeps the key in its own secret storage.
+     */
+    fun hasLiveGatewayConfigured(): Boolean = false
 
     /**
      * Strict URL validation: HTTPS only, non-blank host, blocks localhost, loopback,
@@ -117,88 +110,20 @@ object OwnerPayoutGatewayClient {
     }
 
     /**
-     * Dispatches an automated owner settlement payload to the configured HTTPS acquiring gateway
-     * (if configured in Secrets), or returns a clean internal ledger settlement reference.
+     * Records an owner payout request. No money is sent from the phone: the request only
+     * goes into the owner's ledger, and the payout has to be made by the server or by hand.
      */
+    @Suppress("UNUSED_PARAMETER")
     suspend fun executeOwnerSettlement(
         config: OwnerBankConfig,
         amountSom: Int,
         referenceCode: String,
         orderId: String?,
         offlineMode: Boolean
-    ): GatewaySettlementResult = withContext(Dispatchers.IO) {
-        val webhookUrl = BuildConfig.PAYMENT_GATEWAY_WEBHOOK_URL.trim()
-        val apiKey = BuildConfig.PAYMENT_GATEWAY_API_KEY.trim()
-
-        if (offlineMode || !isRealSecretValue(apiKey) || !isRealSecretValue(webhookUrl) || !isSafePublicHttpsUrl(webhookUrl)) {
-            return@withContext GatewaySettlementResult(
-                deliveredViaLiveGateway = false,
-                referenceCode = referenceCode,
-                statusMessage = "Зачислено в авто-реестр на ${config.bankName} ${maskAccount(config.accountOrCard)}"
-            )
-        }
-
-        try {
-            val uri = URI(webhookUrl)
-            val resolved = InetAddress.getByName(uri.host)
-            if (resolved.isLoopbackAddress || resolved.isSiteLocalAddress || resolved.isLinkLocalAddress || resolved.isAnyLocalAddress) {
-                return@withContext GatewaySettlementResult(
-                    deliveredViaLiveGateway = false,
-                    referenceCode = referenceCode,
-                    statusMessage = "Шлюз отклонён политикой безопасности; проведено во внутреннем реестре"
-                )
-            }
-
-            val conn = (URL(webhookUrl).openConnection() as HttpURLConnection).apply {
-                requestMethod = "POST"
-                connectTimeout = 8000
-                readTimeout = 8000
-                doOutput = true
-                setRequestProperty("Content-Type", "application/json; charset=UTF-8")
-                setRequestProperty("Authorization", "Bearer $apiKey")
-                setRequestProperty("X-Idempotency-Key", referenceCode)
-            }
-
-            val payload = JSONObject().apply {
-                put("event", "owner_commission_auto_payout")
-                put("referenceCode", referenceCode)
-                put("orderId", orderId ?: "BATCH")
-                put("currency", "KGS")
-                put("amountSom", amountSom)
-                put("bankName", config.bankName)
-                put("accountOrCard", config.accountOrCard.trim())
-                put("beneficiaryName", config.beneficiaryName.trim())
-                put("inn", config.inn.trim())
-                put("bik", config.bik.trim())
-                put("commissionPercent", config.commissionPercent)
-            }
-
-            conn.outputStream.use { os ->
-                os.write(payload.toString().toByteArray(Charsets.UTF_8))
-            }
-
-            val code = conn.responseCode
-            conn.disconnect()
-
-            if (code in 200..299) {
-                GatewaySettlementResult(
-                    deliveredViaLiveGateway = true,
-                    referenceCode = referenceCode,
-                    statusMessage = "Отправлено через банковский шлюз (HTTP $code) на ${config.bankName} ${maskAccount(config.accountOrCard)}"
-                )
-            } else {
-                GatewaySettlementResult(
-                    deliveredViaLiveGateway = false,
-                    referenceCode = referenceCode,
-                    statusMessage = "Шлюз вернул HTTP $code — выплата зафиксирована в реестре владельца"
-                )
-            }
-        } catch (_: Exception) {
-            GatewaySettlementResult(
-                deliveredViaLiveGateway = false,
-                referenceCode = referenceCode,
-                statusMessage = "Нет ответа от шлюза — зафиксировано в реестре на ${config.bankName} ${maskAccount(config.accountOrCard)}"
-            )
-        }
-    }
+    ): GatewaySettlementResult = GatewaySettlementResult(
+        deliveredViaLiveGateway = false,
+        referenceCode = referenceCode,
+        statusMessage = "Заявка на выплату $amountSom сом на ${config.bankName} ${maskAccount(config.accountOrCard)} записана. " +
+            "Деньги автоматически НЕ отправлены — перевод делается вручную, пока не подключён сервер."
+    )
 }

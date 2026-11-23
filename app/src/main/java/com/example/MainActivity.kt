@@ -175,7 +175,11 @@ fun KgTaxiAppRoot() {
         permissionsLauncher.launch(perms.toTypedArray())
     }
 
-    val launchVoice: () -> Unit = {
+    val launchVoice: () -> Unit = launchVoice@{
+        if (!FeatureFlags.VOICE_COMMANDS) {
+            viewModel.showComingSoon("Голосовые команды")
+            return@launchVoice
+        }
         try {
             val intent = LocationAndVoiceHelper.buildVoiceRecognizerIntent(
                 langCode = state.language.code,
@@ -223,7 +227,10 @@ fun KgTaxiAppRoot() {
                             viewModel = viewModel,
                             onRequestGps = requestLocationWithPermission,
                             onRequestVoice = launchVoice,
-                            onOpenAiChat = { showAiChat = true },
+                            onOpenAiChat = {
+                                if (FeatureFlags.AI_ASSISTANT) showAiChat = true
+                                else viewModel.showComingSoon("ИИ-помощник")
+                            },
                             onOpenDriverChat = { showDriverChat = true }
                         )
                         AppRole.DRIVER -> DriverCabinScreen(
@@ -242,7 +249,7 @@ fun KgTaxiAppRoot() {
                             onSendPromoAlert = viewModel::triggerPromoNotification,
                             onSendTrafficAlert = viewModel::triggerTrafficAlertNotification,
                             onAssignDriver = viewModel::dispatchOrderToDriver,
-                            onSimulateSos = { viewModel.triggerEmergencySos(fromActiveRide = false) },
+                            onSimulateSos = {},
                             onResolveSos = viewModel::resolveSosAlert,
                             onSaveOwnerBankConfig = viewModel::saveOwnerBankConfig,
                             onTriggerOwnerPayout = viewModel::triggerOwnerManualPayout,

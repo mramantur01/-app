@@ -5,6 +5,7 @@ import android.util.Log
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewModelScope
+import com.example.FeatureFlags
 import com.example.data.firebase.AiRouteAssistant
 import com.example.data.firebase.AiStreamEvent
 import com.example.data.firebase.FirestoreSyncRepository
@@ -18,6 +19,7 @@ import com.example.data.local.LocalSavedPlaceEntity
 import com.example.data.local.LocalTripEntity
 import com.example.data.model.*
 import com.example.i18n.AppLanguage
+import com.example.util.EmergencyHelper
 import com.example.util.KgWeatherAndPassesClient
 import com.example.util.KyrgyzstanRoutingClient
 import com.example.util.LocationAndVoiceHelper
@@ -30,6 +32,7 @@ import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.*
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withTimeoutOrNull
 import java.util.Locale
 import java.util.UUID
 import kotlin.math.max
@@ -38,6 +41,8 @@ import kotlin.random.Random
 
 data class KgTaxiUiState(
     val role: AppRole = AppRole.PASSENGER,
+    /** Roles this account may open. Comes from roles/{uid} in Firestore; everyone is a passenger. */
+    val allowedRoles: Set<AppRole> = setOf(AppRole.PASSENGER),
     val profile: LocalProfileEntity = LocalProfileEntity(),
     val language: AppLanguage = AppLanguage.RU,
     val darkTheme: Boolean = false,
@@ -107,13 +112,9 @@ data class KgTaxiUiState(
     val postTripReceipt: LocalTripEntity? = null,
     // Wallet, Referral & Onboarding
     val showOnboarding: Boolean = false,
-    val walletBalanceSom: Int = 1450,
+    val walletBalanceSom: Int = 0,
     val referralClaimed: Boolean = false,
-    val walletTransactions: List<WalletTransaction> = listOf(
-        WalletTransaction("wt1", "Пополнение кошелька", "MBank ELQR", 1500, "Вчера"),
-        WalletTransaction("wt2", "Кэшбэк KG One 5%", "Бонус", 165, "2 дня назад"),
-        WalletTransaction("wt3", "Поездка Green EV • Бишкек", "Кошелёк", -215, "2 дня назад")
-    ),
+    val walletTransactions: List<WalletTransaction> = emptyList(),
     // Driver Mode, Docs & Analytics
     val driverOnline: Boolean = false,
     val driverTodayEarningsSom: Int = 3420,
@@ -501,6 +502,7 @@ class KgTaxiViewModel(
         _uiState.update {
             it.copy(isSignedIn = true, signedInUid = uid, cloudSyncError = null, statusBanner = "Облачная синхронизация Google активна")
         }
+        refreshAllowedRoles()
 
         viewModelScope.launch {
             val current = _uiState.value.profile
@@ -658,13 +660,47 @@ class KgTaxiViewModel(
     fun onUserSignedOut() {
         stopCloudObservers()
         _uiState.update {
-            it.copy(isSignedIn = false, signedInUid = null, statusBanner = "Вы вышли из аккаунта Google. Локальные данные сохранены.")
+            it.copy(
+                isSignedIn = false,
+                signedInUid = null,
+                role = AppRole.PASSENGER,
+                allowedRoles = setOf(AppRole.PASSENGER),
+                statusBanner = "Вы вышли из аккаунта Google. Локальные данные сохранены."
+            )
+        }
+    }
+
+    private fun refreshAllowedRoles() {
+        viewModelScope.launch {
+            val allowed = when (firestoreSync.fetchRole()) {
+                "driver" -> setOf(AppRole.PASSENGER, AppRole.DRIVER)
+                "dispatcher", "admin" -> setOf(AppRole.PASSENGER, AppRole.DRIVER, AppRole.DISPATCHER)
+                else -> setOf(AppRole.PASSENGER)
+            }
+            _uiState.update {
+                it.copy(
+                    allowedRoles = allowed,
+                    role = if (it.role in allowed) it.role else AppRole.PASSENGER
+                )
+            }
         }
     }
 
     // --- HEADER & GLOBAL SETTINGS ---
 
-    fun setRole(role: AppRole) = _uiState.update { it.copy(role = role) }
+    fun setRole(role: AppRole) {
+        val s = _uiState.value
+        if (role in s.allowedRoles) {
+            _uiState.update { it.copy(role = role) }
+            return
+        }
+        val message = when {
+            !s.isSignedIn -> "Войдите в аккаунт, чтобы открыть этот режим."
+            role == AppRole.DRIVER -> "Режим водителя открывается после проверки документов. Напишите в поддержку KG Taxi."
+            else -> "Панель диспетчера доступна только сотрудникам KG Taxi."
+        }
+        _uiState.update { it.copy(statusBanner = message) }
+    }
 
     fun cycleLanguage() {
         val next = when (_uiState.value.language) {
@@ -945,7 +981,18 @@ class KgTaxiViewModel(
         refreshLiveRoadRoute()
     }
 
-    fun setServiceType(type: ServiceType) = _uiState.update { it.copy(serviceType = type, biddingActive = false) }
+    fun setServiceType(type: ServiceType) {
+        if (!FeatureFlags.isServiceEnabled(type)) {
+            showComingSoon("Эта услуга")
+            return
+        }
+        _uiState.update { it.copy(serviceType = type, biddingActive = false) }
+    }
+
+    /** Banner for features that are switched off in [FeatureFlags]. */
+    fun showComingSoon(featureName: String) {
+        _uiState.update { it.copy(statusBanner = "$featureName скоро появится в KG Taxi.") }
+    }
 
     fun selectTariff(tariffId: String) {
         _uiState.update { it.copy(selectedTariffId = tariffId) }
@@ -1149,7 +1196,7 @@ class KgTaxiViewModel(
             distanceKm = s.routeDistanceKm,
             durationMin = s.routeDurationMin,
             totalPriceSom = price,
-            paymentMethod = PaymentMethod.fromCode(s.profile.paymentMethod),
+            paymentMethod = if (FeatureFlags.ONLINE_PAYMENTS) PaymentMethod.fromCode(s.profile.paymentMethod) else PaymentMethod.CASH,
             status = TripStatus.SEARCHING,
             driverName = driverName,
             driverCar = driverCar,
@@ -1652,6 +1699,10 @@ class KgTaxiViewModel(
     }
 
     fun purchaseDriverShiftPass(pass: DriverShiftPass) {
+        if (!FeatureFlags.DRIVER_SHIFT_PASSES) {
+            showComingSoon("Абонементы для водителей")
+            return
+        }
         val prevPass = _uiState.value.driverShiftPass
         if (pass == prevPass) return
         val pct = _uiState.value.ownerBankConfig.commissionPercent
@@ -1745,6 +1796,10 @@ class KgTaxiViewModel(
     }
 
     fun requestAiTourGuide(topic: String) {
+        if (!FeatureFlags.AI_ASSISTANT) {
+            showComingSoon("ИИ-гид")
+            return
+        }
         _uiState.update { it.copy(tourGuideTopic = topic, tourGuideLoading = true) }
         viewModelScope.launch {
             val story = aiAssistant.generateTourGuideStory(
@@ -2177,6 +2232,10 @@ class KgTaxiViewModel(
     }
 
     fun topUpWallet(amountSom: Int, method: String) {
+        if (!FeatureFlags.WALLET) {
+            _uiState.update { it.copy(statusBanner = "Кошелёк скоро появится. Сейчас оплата — наличными водителю.") }
+            return
+        }
         val next = _uiState.value.walletBalanceSom + amountSom
         val tx = WalletTransaction("wt_${System.currentTimeMillis()}", "Пополнение кошелька", method, amountSom, "Только что")
         _uiState.update {
@@ -2190,6 +2249,10 @@ class KgTaxiViewModel(
     }
 
     fun markElqrPaymentDone(amountSom: Int, title: String) {
+        if (!FeatureFlags.ONLINE_PAYMENTS) {
+            _uiState.update { it.copy(statusBanner = "Оплата по QR пока недоступна. Оплата — наличными.") }
+            return
+        }
         val tx = WalletTransaction("qr_${System.currentTimeMillis()}", title, "ELQR • MBank", -amountSom, "Только что")
         _uiState.update {
             it.copy(
@@ -2201,6 +2264,10 @@ class KgTaxiViewModel(
 
     fun claimReferralBonus() {
         if (_uiState.value.referralClaimed) return
+        if (!FeatureFlags.WALLET) {
+            _uiState.update { it.copy(statusBanner = "Реферальная программа скоро появится.") }
+            return
+        }
         val nextWallet = _uiState.value.walletBalanceSom + 250
         val tx = WalletTransaction("ref_${System.currentTimeMillis()}", "Бонус «Пригласи друга»", "Реферал", 250, "Только что")
         _uiState.update {
@@ -2232,26 +2299,69 @@ class KgTaxiViewModel(
     fun triggerEmergencySos(fromActiveRide: Boolean = true) {
         val s = _uiState.value
         val ride = s.activeRide
-        val alert = EmergencySosAlert(
-            id = "sos_${System.currentTimeMillis()}",
-            passengerName = if (fromActiveRide) s.profile.displayName else "Айзада Т.",
-            driverName = ride?.driverName ?: "Нурлан Т.",
-            carInfo = ride?.driverCar ?: "Toyota Camry 70 • 01KG 777 KGT",
-            city = ride?.city ?: s.selectedCity.name,
-            locationAddress = ride?.pickupAddress ?: s.pickupAddress,
-            timeLabel = "Только что"
-        )
+        val activeRide = if (fromActiveRide) ride else null
+        val alertId = "sos_${System.currentTimeMillis()}"
         SoundAndNotificationManager.playCue(SoundCue.RIDE_CHECK_ALERT, s.soundEnabled)
-        SoundAndNotificationManager.postNotification(
-            appContext,
-            "SOS 102 • ${alert.city}",
-            "Сигнал передан диспетчеру KG Taxi: ${alert.carInfo} (${alert.locationAddress})"
-        )
-        _uiState.update {
-            it.copy(
-                sosAlerts = listOf(alert) + it.sosAlerts,
-                statusBanner = "SOS-сигнал зафиксирован в Диспетчерской (${alert.city})"
+        _uiState.update { it.copy(statusBanner = "SOS: открываю набор ${EmergencyHelper.EMERGENCY_NUMBER}…") }
+
+        viewModelScope.launch {
+            // 1. Where are we? Wait at most 3 s for GPS, otherwise use the last known point.
+            val gps = withTimeoutOrNull(3_000) {
+                runCatching { LocationAndVoiceHelper.fetchCurrentLocation(appContext, s.selectedCity) }.getOrNull()
+            }
+            val point = gps?.point ?: activeRide?.pickupPoint ?: s.pickupPoint
+            val address = gps?.address ?: activeRide?.pickupAddress ?: s.pickupAddress
+            val city = activeRide?.city ?: s.selectedCity.name
+
+            // 2. SMS with location to trusted contacts (family members in the profile).
+            val contactPhones = _uiState.value.familyMembers.map { it.phone }
+            val smsOpened = EmergencyHelper.openSmsToContacts(
+                appContext,
+                contactPhones,
+                EmergencyHelper.buildSosMessage(
+                    passengerName = s.profile.displayName,
+                    point = point,
+                    address = address,
+                    carInfo = activeRide?.driverCar,
+                    driverName = activeRide?.driverName
+                )
             )
+
+            // 3. Dialer with 112 on top, so the call is the first thing the user sees.
+            val dialerOpened = EmergencyHelper.openDialer(appContext)
+
+            // 4. Shared alert for dispatchers (works only when signed in and online).
+            val cloud = firestoreSync.createSosAlert(
+                alertId = alertId,
+                lat = point.lat,
+                lng = point.lng,
+                address = address,
+                city = city,
+                tripId = activeRide?.tripId,
+                driverName = activeRide?.driverName,
+                carInfo = activeRide?.driverCar
+            )
+
+            val alert = EmergencySosAlert(
+                id = alertId,
+                passengerName = s.profile.displayName,
+                driverName = activeRide?.driverName ?: "—",
+                carInfo = activeRide?.driverCar ?: "—",
+                city = city,
+                locationAddress = address,
+                timeLabel = "Только что"
+            )
+            val parts = buildList {
+                add(if (dialerOpened) "набор ${EmergencyHelper.EMERGENCY_NUMBER} открыт" else "позвоните ${EmergencyHelper.EMERGENCY_NUMBER} вручную")
+                add(if (smsOpened) "SMS контактам готово" else "нет доверенных контактов в профиле")
+                add(if (cloud.isSuccess) "диспетчер уведомлён" else "диспетчер НЕ уведомлён (нет входа или интернета)")
+            }
+            _uiState.update {
+                it.copy(
+                    sosAlerts = listOf(alert) + it.sosAlerts,
+                    statusBanner = "SOS: " + parts.joinToString(" • ")
+                )
+            }
         }
     }
 

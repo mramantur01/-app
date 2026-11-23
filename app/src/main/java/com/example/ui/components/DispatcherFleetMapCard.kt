@@ -53,16 +53,10 @@ fun DispatcherFleetMapAndSosPanel(
                 ) {
                     Column {
                         Text("Карта автопарка (${city.name})", fontWeight = FontWeight.Bold)
-                        Text("${drivers.size + 18} бортов онлайн • Green EV выделены зелёным", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        Text("${drivers.size} бортов онлайн • Green EV выделены зелёным", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                     }
-                    TextButton(
-                        onClick = onSimulateSos,
-                        modifier = Modifier.testTag("dispatcher_test_sos_button")
-                    ) {
-                        Icon(Icons.Default.Warning, contentDescription = null, tint = UberRed, modifier = Modifier.size(16.dp))
-                        Spacer(Modifier.width(4.dp))
-                        Text("Тест SOS", color = UberRed)
-                    }
+                    // The "Тест SOS" button was removed: SOS now dials 112 for real,
+                    // so it must never be triggered from the dispatcher screen.
                 }
 
                 Box(

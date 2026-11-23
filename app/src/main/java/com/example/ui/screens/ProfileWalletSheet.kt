@@ -20,6 +20,7 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import com.example.FeatureFlags
 import com.example.data.local.LocalTripEntity
 import com.example.data.model.PaymentMethod
 import com.example.i18n.KgStrings
@@ -199,7 +200,7 @@ fun ProfileWalletOverlay(
                 }
 
                 // Wallet Balance, Top-Up Ledger, ELQR & Referral Program ("Пригласи друга")
-                WalletAndReferralSection(
+                if (FeatureFlags.WALLET) WalletAndReferralSection(
                     walletBalanceSom = state.walletBalanceSom,
                     transactions = state.walletTransactions,
                     referralCode = state.referralCode,
@@ -225,8 +226,8 @@ fun ProfileWalletOverlay(
                     modifier = Modifier.horizontalScroll(rememberScrollState()),
                     horizontalArrangement = Arrangement.spacedBy(8.dp)
                 ) {
-                    PaymentMethod.entries.forEach { pm ->
-                        val selected = state.profile.paymentMethod == pm.code
+                    PaymentMethod.entries.filter { FeatureFlags.ONLINE_PAYMENTS || it == PaymentMethod.CASH }.forEach { pm ->
+                        val selected = if (FeatureFlags.ONLINE_PAYMENTS) state.profile.paymentMethod == pm.code else pm == PaymentMethod.CASH
                         FilterChip(
                             selected = selected,
                             onClick = { viewModel.updateProfile { it.copy(paymentMethod = pm.code) } },

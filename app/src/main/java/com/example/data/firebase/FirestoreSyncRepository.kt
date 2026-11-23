@@ -263,6 +263,64 @@ class FirestoreSyncRepository(
         }
     }
 
+    /**
+     * Reads the user's role from `roles/{uid}` ("driver", "dispatcher", "admin").
+     * Returns "passenger" when there is no role document, the user is signed out, or the read fails.
+     * Roles can only be written from the Firebase console (see firestore.rules).
+     */
+    suspend fun fetchRole(): String {
+        val uid = auth.currentUser?.uid ?: return "passenger"
+        return try {
+            val snap = db.collection("roles").document(uid).get().await()
+            (snap.getString("role") ?: "passenger").lowercase()
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            handleFirestoreError(e, OperationType.GET, "roles/$uid")
+            "passenger"
+        }
+    }
+
+    /**
+     * Writes an SOS alert to the shared `sos_alerts` collection so that dispatchers see it.
+     * Only the sender can create it; only dispatchers/admins can read and resolve it (see firestore.rules).
+     */
+    suspend fun createSosAlert(
+        alertId: String,
+        lat: Double,
+        lng: Double,
+        address: String,
+        city: String,
+        tripId: String?,
+        driverName: String?,
+        carInfo: String?
+    ): Result<Unit> {
+        val uid = auth.currentUser?.uid ?: return Result.failure(IllegalStateException("not signed in"))
+        val safeId = sanitizeId(alertId)
+        val path = "sos_alerts/$safeId"
+        return try {
+            val payload = mapOf<String, Any?>(
+                "userId" to uid,
+                "lat" to lat.coerceIn(-90.0, 90.0),
+                "lng" to lng.coerceIn(-180.0, 180.0),
+                "address" to address.take(200),
+                "city" to city.take(50),
+                "tripId" to tripId?.take(80),
+                "driverName" to driverName?.take(80),
+                "carInfo" to carInfo?.take(80),
+                "resolved" to false,
+                "createdAt" to FieldValue.serverTimestamp()
+            ).filterValues { it != null }
+            db.collection("sos_alerts").document(safeId).set(payload).await()
+            Result.success(Unit)
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            handleFirestoreError(e, OperationType.CREATE, path)
+            Result.failure(e)
+        }
+    }
+
     suspend fun syncTripPostUpdate(tripId: String, rating: Int, tipSom: Int, lostItemNote: String): Result<Unit> {
         val uid = auth.currentUser?.uid ?: return Result.success(Unit)
         val safeId = sanitizeId(tripId)

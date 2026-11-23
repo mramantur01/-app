@@ -77,6 +77,9 @@ secrets {
   propertiesFileName = ".env"
   defaultPropertiesFileName = ".env.example"
   ignoreList.add("FIREBASE_APPCHECK_DEBUG_TOKEN")
+  // Never compile payment secrets into the APK, even if someone adds them to .env.
+  ignoreList.add("PAYMENT_GATEWAY_WEBHOOK_URL")
+  ignoreList.add("PAYMENT_GATEWAY_API_KEY")
 }
 
 googleServices { missingGoogleServicesStrategy = MissingGoogleServicesStrategy.WARN }

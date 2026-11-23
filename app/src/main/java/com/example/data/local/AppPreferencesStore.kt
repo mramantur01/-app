@@ -15,7 +15,7 @@ private val Context.kgTaxiPrefsDataStore by preferencesDataStore(name = "kg_taxi
 
 data class AppPrefsSnapshot(
     val onboardingSeen: Boolean = false,
-    val walletBalanceSom: Int = 1450,
+    val walletBalanceSom: Int = 0,
     val referralClaimed: Boolean = false,
     val displayCurrencyCode: String = "KGS",
     val businessCompanyInn: String = "01408202110234",
@@ -51,7 +51,7 @@ class AppPreferencesStore(private val context: Context) {
     val prefsFlow: Flow<AppPrefsSnapshot> = context.kgTaxiPrefsDataStore.data.map { prefs ->
         AppPrefsSnapshot(
             onboardingSeen = prefs[keyOnboardingSeen] ?: false,
-            walletBalanceSom = prefs[keyWalletBalance] ?: 1450,
+            walletBalanceSom = prefs[keyWalletBalance] ?: 0,
             referralClaimed = prefs[keyReferralClaimed] ?: false,
             displayCurrencyCode = prefs[keyCurrencyCode] ?: "KGS",
             businessCompanyInn = prefs[keyBusinessInn] ?: "01408202110234",

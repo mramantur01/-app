@@ -24,6 +24,7 @@ import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import com.example.FeatureFlags
 import com.example.R
 import com.example.data.model.*
 import com.example.i18n.AppLanguage
@@ -450,7 +451,7 @@ private fun PassengerControlSheet(
             Triple(ServiceType.CARGO, strings.serviceCargo, Icons.Default.LocalShipping),
             Triple(ServiceType.INTERCITY, strings.serviceIntercity, Icons.Default.AirlineSeatReclineNormal),
             Triple(ServiceType.FOOD, strings.serviceFood, Icons.Default.Restaurant)
-        )
+        ).filter { (type, _, _) -> FeatureFlags.isServiceEnabled(type) }
         Row(
             modifier = Modifier.horizontalScroll(rememberScrollState()),
             horizontalArrangement = Arrangement.spacedBy(8.dp)
