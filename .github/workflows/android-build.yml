@@ -35,8 +35,9 @@ jobs:
 
       # Firebase (Google sign-in, phone sign-in) only trusts an app signed with a key whose
       # SHA fingerprints are registered in the Firebase console. So the key must be the SAME
-      # in every build: it is kept in the DEBUG_KEYSTORE_BASE64 secret.
-      # If the secret is missing, a new key is made and offered as the "debug-keystore" artifact.
+      # in every build. The shared test key is committed as /debug.keystore (debug only —
+      # a separate secret release key is needed for Google Play). The DEBUG_KEYSTORE_BASE64
+      # secret, if set, overrides it.
       - name: Debug signing key
         env:
           DEBUG_KEYSTORE_BASE64: ${{ secrets.DEBUG_KEYSTORE_BASE64 }}
@@ -44,6 +45,8 @@ jobs:
           if [ -n "$DEBUG_KEYSTORE_BASE64" ]; then
             echo "$DEBUG_KEYSTORE_BASE64" | base64 -d > debug.keystore
             echo "Using the stable debug key from secrets"
+          elif [ -f debug.keystore ]; then
+            echo "Using the committed test key /debug.keystore"
           else
             keytool -genkeypair -v -keystore debug.keystore -storepass android \
               -alias androiddebugkey -keypass android -keyalg RSA -keysize 2048 \

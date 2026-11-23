@@ -16,5 +16,7 @@
 local.properties
 .env
 debug.keystore
+# The shared test (debug) key at the repo root is committed on purpose: its SHA is registered in Firebase.
+!/debug.keystore
 *-debug.log
 
