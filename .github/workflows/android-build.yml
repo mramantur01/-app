@@ -58,11 +58,29 @@ jobs:
             echo "MAPS_API_KEY=$MAPS_API_KEY" > .env
           fi
 
-      - name: Unit tests
-        run: gradle testDebugUnitTest --stacktrace
-
       - name: Build debug APK
-        run: gradle assembleDebug --stacktrace
+        run: |
+          set -o pipefail
+          gradle assembleDebug --stacktrace 2>&1 | tee build.log
+
+      - name: Unit tests
+        run: |
+          set -o pipefail
+          gradle testDebugUnitTest 2>&1 | tee test.log
+
+      # Turn the key error lines into annotations, visible on the run page without opening logs.
+      - name: Report errors
+        if: failure()
+        run: |
+          for f in build.log test.log; do
+            [ -f "$f" ] || continue
+            grep -E '^e: |What went wrong|> .*(failed|Could not|not found|Unresolved)|FAILED$|Exception' "$f" \
+              | grep -v '^\s*at ' | head -n 25 | while IFS= read -r line; do
+                echo "::error title=$f::${line:0:900}"
+              done
+            awk '/What went wrong/{p=1} p{print; n++} n>12{exit}' "$f" | tr '\n' ' ' | cut -c1-1500 \
+              | sed 's/^/::error title=what-went-wrong::/'
+          done
 
       - uses: actions/upload-artifact@v4
         if: always()
