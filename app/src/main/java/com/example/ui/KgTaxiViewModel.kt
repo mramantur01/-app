@@ -388,6 +388,9 @@ class KgTaxiViewModel(
     private var driverRideId: String? = null
     private var driverOpenRidesJob: Job? = null
     private var driverLocationJob: Job? = null
+    private var driverRideWatchJob: Job? = null
+    private var verifiedDriverCar: String = ""
+    private var verifiedDriverPlate: String = ""
     private var driverWaitingTimerJob: Job? = null
     private var routeFetchJob: Job? = null
     private var addressSearchJob: Job? = null
@@ -683,9 +686,13 @@ class KgTaxiViewModel(
 
     private fun refreshAllowedRoles() {
         viewModelScope.launch {
-            val allowed = when (firestoreSync.fetchRole()) {
+            val info = firestoreSync.fetchRoleInfo()
+            verifiedDriverCar = info.car
+            verifiedDriverPlate = info.plate
+            // Matches firestore.rules: only "driver" may take orders; dispatchers see the panel.
+            val allowed = when (info.role) {
                 "driver" -> setOf(AppRole.PASSENGER, AppRole.DRIVER)
-                "dispatcher", "admin" -> setOf(AppRole.PASSENGER, AppRole.DRIVER, AppRole.DISPATCHER)
+                "dispatcher", "admin" -> setOf(AppRole.PASSENGER, AppRole.DISPATCHER)
                 else -> setOf(AppRole.PASSENGER)
             }
             _uiState.update {
@@ -1682,21 +1689,157 @@ class KgTaxiViewModel(
             val next = !it.driverOnline
             it.copy(
                 driverOnline = next,
-                statusBanner = if (next) "Вы на линии! Заказы с Upfront Earnings активны." else "Вы ушли с линии."
+                statusBanner = if (next) "Вы на линии. Ждём заказы в городе ${it.selectedCity.name}." else "Вы ушли с линии."
             )
+        }
+        if (FeatureFlags.REAL_RIDES) {
+            generateDriverIncomingOrders(_uiState.value.selectedCity)
+            return
         }
         if (_uiState.value.driverOnline) {
             generateDriverIncomingOrders(_uiState.value.selectedCity)
-            SoundAndNotificationManager.postNotification(
-                appContext,
-                "Трафик в реальном времени — ${_uiState.value.selectedCity.name}",
-                "Повышенный спрос x${_uiState.value.selectedCity.surgeMultiplier} в центре. Средняя скорость 26 км/ч.",
-                isHighPriority = false
-            )
         }
     }
 
+    // --- REAL RIDES (Firestore) — driver side ---
+
+    private fun startDriverOrderFeed(city: KgCity) {
+        driverOpenRidesJob?.cancel()
+        var knownIds = emptySet<String>()
+        driverOpenRidesJob = viewModelScope.launch {
+            rides.observeOpenRides(city.name).collect { open ->
+                val myPoint = _uiState.value.pickupPoint
+                val orders = open.map { it.toDriverOrder(myPoint) }
+                val fresh = open.map { it.id }.toSet() - knownIds
+                knownIds = open.map { it.id }.toSet()
+                _uiState.update { it.copy(driverIncomingOrders = orders) }
+                if (fresh.isNotEmpty() && _uiState.value.driverAcceptedOrder == null) {
+                    SoundAndNotificationManager.playCue(SoundCue.DRIVER_ASSIGNED, _uiState.value.soundEnabled)
+                    SoundAndNotificationManager.postNotification(
+                        appContext,
+                        "Новый заказ • ${orders.firstOrNull()?.grossFareSom ?: 0} сом",
+                        orders.firstOrNull()?.let { "${it.pickupAddress} → ${it.dropoffAddress}" } ?: ""
+                    )
+                }
+            }
+        }
+    }
+
+    private fun stopDriverOrderFeed() {
+        driverOpenRidesJob?.cancel()
+        driverOpenRidesJob = null
+    }
+
+    private fun SharedRide.toDriverOrder(driverPoint: GeoPoint): DriverIncomingOrder {
+        val pickup = GeoPoint(pickupLat, pickupLng)
+        val dropoff = GeoPoint(dropoffLat, dropoffLng)
+        val tripKm = KgGeoCatalog.haversineKm(pickup, dropoff)
+        val toPickupKm = KgGeoCatalog.haversineKm(driverPoint, pickup)
+        val split = OwnerPayoutGatewayClient.calculateOrderSplit(
+            grossSom = priceSom,
+            commissionPercent = _uiState.value.ownerBankConfig.commissionPercent
+        )
+        val pin = comment?.substringAfter("PIN ", "")?.take(4).orEmpty()
+        return DriverIncomingOrder(
+            id = id,
+            passengerName = passengerName,
+            passengerRating = 5.0,
+            serviceType = if (serviceType == "INTERCITY") ServiceType.INTERCITY else ServiceType.TAXI,
+            tariffName = if (serviceType == "INTERCITY") "Межгород" else "Такси",
+            pickupAddress = pickupAddress,
+            dropoffAddress = dropoffAddress,
+            distanceKm = (tripKm * 10).roundToInt() / 10.0,
+            durationMin = max(3, (tripKm / 0.45).roundToInt()),
+            grossFareSom = priceSom,
+            upfrontNetEarningsSom = split.driverNetSom,
+            city = city,
+            pickupPoint = pickup,
+            dropoffPoint = dropoff,
+            pickupEtaMin = max(1, (toPickupKm / 0.4).roundToInt()),
+            pickupDistanceKm = (toPickupKm * 10).roundToInt() / 10.0,
+            paymentMethodLabel = "Наличные",
+            passengerPin = pin.ifBlank { "—" },
+            meetAndGreetSign = comment?.substringBefore(" • PIN")?.takeIf { it.isNotBlank() && !it.startsWith("PIN") }
+        )
+    }
+
+    /** Sends the driver's GPS position to the ride every 10 seconds while the trip is active. */
+    private fun startDriverLocationSharing(rideId: String) {
+        driverLocationJob?.cancel()
+        driverLocationJob = viewModelScope.launch {
+            while (driverRideId == rideId) {
+                val gps = withTimeoutOrNull(8_000) {
+                    runCatching { LocationAndVoiceHelper.fetchCurrentLocation(appContext, _uiState.value.selectedCity) }.getOrNull()
+                }
+                if (gps != null) rides.updateDriverLocation(rideId, gps.point.lat, gps.point.lng)
+                delay(10_000)
+            }
+        }
+    }
+
+    /** Tells the driver when the passenger cancels the accepted order. */
+    private fun watchDriverRide(rideId: String) {
+        driverRideWatchJob?.cancel()
+        driverRideWatchJob = viewModelScope.launch {
+            rides.observeRide(rideId).collect { shared ->
+                if (shared?.status == RideStatus.CANCELLED && driverRideId == rideId) {
+                    finishDriverRealRide()
+                    applyDriverCancel()
+                    SoundAndNotificationManager.postNotification(appContext, "Пассажир отменил заказ", shared.pickupAddress)
+                    _uiState.update { it.copy(statusBanner = "Пассажир отменил заказ. Вы снова на линии.") }
+                }
+            }
+        }
+    }
+
+    private fun finishDriverRealRide() {
+        driverRideWatchJob?.cancel()
+        driverRideWatchJob = null
+        driverRideId = null
+        driverLocationJob?.cancel()
+        driverLocationJob = null
+    }
+
+    /** Pushes the driver's stage change to Firestore. Returns false if it failed (stage must not move). */
+    private suspend fun pushDriverStatus(newStatus: String): Boolean {
+        val id = driverRideId ?: return true
+        val res = rides.setStatusAsDriver(id, newStatus)
+        if (res.isFailure) {
+            _uiState.update { it.copy(statusBanner = "Нет связи с сервером. Попробуйте ещё раз.") }
+        }
+        return res.isSuccess
+    }
+
     fun acceptDriverOrder(order: DriverIncomingOrder) {
+        if (!FeatureFlags.REAL_RIDES) {
+            applyAcceptedDriverOrder(order)
+            return
+        }
+        if (driverRideId != null) return
+        viewModelScope.launch {
+            val res = rides.acceptAsDriver(
+                rideId = order.id,
+                driverName = _uiState.value.profile.displayName,
+                driverCar = verifiedDriverCar,
+                driverPlate = verifiedDriverPlate
+            )
+            res.onSuccess {
+                driverRideId = order.id
+                applyAcceptedDriverOrder(order)
+                startDriverLocationSharing(order.id)
+                watchDriverRide(order.id)
+            }.onFailure { e ->
+                _uiState.update {
+                    it.copy(
+                        driverIncomingOrders = it.driverIncomingOrders.filterNot { o -> o.id == order.id },
+                        statusBanner = e.message ?: "Не удалось принять заказ"
+                    )
+                }
+            }
+        }
+    }
+
+    private fun applyAcceptedDriverOrder(order: DriverIncomingOrder) {
         driverWaitingTimerJob?.cancel()
         SoundAndNotificationManager.playCue(SoundCue.DRIVER_ASSIGNED, _uiState.value.soundEnabled)
         val effectiveOrder = if (_uiState.value.driverShiftPass != DriverShiftPass.NONE) {
@@ -1737,6 +1880,19 @@ class KgTaxiViewModel(
     }
 
     fun advanceDriverOrderStage() {
+        _uiState.value.driverAcceptedOrder ?: return
+        val stage = _uiState.value.driverOrderStage
+        if (driverRideId == null || stage == DriverOrderStage.IN_TRIP) {
+            applyDriverStageAdvance()
+            return
+        }
+        val next = if (stage == DriverOrderStage.EN_ROUTE_TO_PICKUP) RideStatus.ARRIVED else RideStatus.IN_PROGRESS
+        viewModelScope.launch {
+            if (pushDriverStatus(next)) applyDriverStageAdvance()
+        }
+    }
+
+    private fun applyDriverStageAdvance() {
         val currentOrder = _uiState.value.driverAcceptedOrder ?: return
         when (_uiState.value.driverOrderStage) {
             DriverOrderStage.EN_ROUTE_TO_PICKUP -> {
@@ -1782,8 +1938,10 @@ class KgTaxiViewModel(
                 _uiState.update {
                     it.copy(
                         driverOrderStage = DriverOrderStage.IN_TRIP,
-                        driverBackToBackOffer = if (it.driverQueuedNextOrder == null) chainedNext else null,
-                        statusBanner = "Поездка началась! Доступен заказ по цепочке рядом с высадкой"
+                        // Chained orders are made up, so they are offered only in demo mode.
+                        driverBackToBackOffer = if (!FeatureFlags.REAL_RIDES && it.driverQueuedNextOrder == null) chainedNext else null,
+                        statusBanner = if (FeatureFlags.REAL_RIDES) "Поездка началась. Хорошей дороги!"
+                        else "Поездка началась! Доступен заказ по цепочке рядом с высадкой"
                     )
                 }
             }
@@ -1806,6 +1964,19 @@ class KgTaxiViewModel(
     }
 
     fun cancelDriverAcceptedOrder() {
+        if (driverRideId != null) {
+            viewModelScope.launch {
+                if (pushDriverStatus(RideStatus.CANCELLED)) {
+                    finishDriverRealRide()
+                    applyDriverCancel()
+                }
+            }
+            return
+        }
+        applyDriverCancel()
+    }
+
+    private fun applyDriverCancel() {
         driverWaitingTimerJob?.cancel()
         _uiState.update {
             it.copy(
@@ -1821,6 +1992,19 @@ class KgTaxiViewModel(
     }
 
     fun completeDriverOrder() {
+        if (driverRideId != null) {
+            viewModelScope.launch {
+                if (pushDriverStatus(RideStatus.COMPLETED)) {
+                    finishDriverRealRide()
+                    applyDriverComplete()
+                }
+            }
+            return
+        }
+        applyDriverComplete()
+    }
+
+    private fun applyDriverComplete() {
         val order = _uiState.value.driverAcceptedOrder ?: return
         val queuedNext = _uiState.value.driverQueuedNextOrder
         driverWaitingTimerJob?.cancel()
@@ -2272,6 +2456,16 @@ class KgTaxiViewModel(
     }
 
     private fun generateDriverIncomingOrders(city: KgCity) {
+        if (FeatureFlags.REAL_RIDES) {
+            // Real orders come from Firestore; no made-up orders.
+            if (_uiState.value.driverOnline && _uiState.value.allowedRoles.contains(AppRole.DRIVER)) {
+                startDriverOrderFeed(city)
+            } else {
+                stopDriverOrderFeed()
+                _uiState.update { it.copy(driverIncomingOrders = emptyList(), dispatcherActiveOrders = emptyList()) }
+            }
+            return
+        }
         val lm = city.landmarks
         val p1 = lm.getOrNull(0)?.name ?: "${city.streets.first()}, 12"
         val p2 = lm.getOrNull(1)?.name ?: "${city.streets.last()}, 44"

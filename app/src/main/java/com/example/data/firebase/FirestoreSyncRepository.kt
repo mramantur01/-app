@@ -268,18 +268,30 @@ class FirestoreSyncRepository(
      * Returns "passenger" when there is no role document, the user is signed out, or the read fails.
      * Roles can only be written from the Firebase console (see firestore.rules).
      */
-    suspend fun fetchRole(): String {
-        val uid = auth.currentUser?.uid ?: return "passenger"
+    suspend fun fetchRole(): String = fetchRoleInfo().role
+
+    /**
+     * Role plus the verified car, written by the owner when approving a driver:
+     * roles/{uid} = { role: "driver", car: "Toyota Camry 70, белый", plate: "01KG 123 ABC" }.
+     */
+    suspend fun fetchRoleInfo(): RoleInfo {
+        val uid = auth.currentUser?.uid ?: return RoleInfo()
         return try {
             val snap = db.collection("roles").document(uid).get().await()
-            (snap.getString("role") ?: "passenger").lowercase()
+            RoleInfo(
+                role = (snap.getString("role") ?: "passenger").lowercase(),
+                car = snap.getString("car").orEmpty(),
+                plate = snap.getString("plate").orEmpty()
+            )
         } catch (e: CancellationException) {
             throw e
         } catch (e: Exception) {
             handleFirestoreError(e, OperationType.GET, "roles/$uid")
-            "passenger"
+            RoleInfo()
         }
     }
+
+    data class RoleInfo(val role: String = "passenger", val car: String = "", val plate: String = "")
 
     /**
      * Writes an SOS alert to the shared `sos_alerts` collection so that dispatchers see it.
