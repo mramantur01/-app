@@ -1,0 +1,55 @@
+{
+  "project_info": {
+    "project_number": "97349031867",
+    "project_id": "gen-lang-client-0409944414",
+    "storage_bucket": "gen-lang-client-0409944414.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:97349031867:android:c73661cc1ff4c72657969e",
+        "android_client_info": {
+          "package_name": "com.kgtaxi.app"
+        }
+      },
+      "oauth_client": [
+        {
+          "client_id": "97349031867-3fdepti1k0j2va0shgp4uh8c0qbktphg.apps.googleusercontent.com",
+          "client_type": 1,
+          "android_info": {
+            "package_name": "com.kgtaxi.app",
+            "certificate_hash": "19171ffe1770eef05a615d9f2a33469a937c7bb2"
+          }
+        },
+        {
+          "client_id": "97349031867-rq43di8j0spe3mjq6vpu2aidevu967dj.apps.googleusercontent.com",
+          "client_type": 1,
+          "android_info": {
+            "package_name": "com.kgtaxi.app",
+            "certificate_hash": "985ba8acae995c2bed55b5a1874b66883e0caabc"
+          }
+        },
+        {
+          "client_id": "97349031867-eob7hsb8j32h5hn4oj00kdbh5lf4f3r9.apps.googleusercontent.com",
+          "client_type": 3
+        }
+      ],
+      "api_key": [
+        {
+          "current_key": "AIzaSyB6QIJaWdk4Mwn6OXlUNC3grufxeiXSEow"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": [
+            {
+              "client_id": "97349031867-eob7hsb8j32h5hn4oj00kdbh5lf4f3r9.apps.googleusercontent.com",
+              "client_type": 3
+            }
+          ]
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}

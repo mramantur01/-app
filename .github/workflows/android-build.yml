@@ -2,8 +2,8 @@
 # The APK appears under the run's "Artifacts" section on GitHub (Actions tab).
 #
 # Optional repository secrets (Settings → Secrets and variables → Actions):
-#   GOOGLE_SERVICES_JSON  – contents of app/google-services.json from the Firebase console.
-#                           Without it the app builds, but sign-in and cloud sync won't work.
+#   GOOGLE_SERVICES_JSON  – optional; overrides app/google-services.json (already in the repo).
+#   DEBUG_KEYSTORE_BASE64 – base64 of the debug signing key; keeps SHA fingerprints stable for Firebase.
 #   MAPS_API_KEY          – Google Maps key. Without it the built-in vector map is used.
 name: Android build
 
@@ -70,6 +70,8 @@ jobs:
           if [ -n "$GOOGLE_SERVICES_JSON" ]; then
             printf '%s' "$GOOGLE_SERVICES_JSON" > app/google-services.json
             echo "google-services.json written"
+          elif [ -f app/google-services.json ]; then
+            echo "Using app/google-services.json from the repository"
           else
             echo "::warning::GOOGLE_SERVICES_JSON secret not set — using a placeholder. Sign-in and cloud sync will NOT work in this APK."
             cat > app/google-services.json <<'JSON'
