@@ -274,7 +274,7 @@ data class KgTaxiUiState(
                 }
                 ServiceType.FOOD -> {
                     val foodSum = foodCart.sumOf { it.item.priceSom * it.quantity }
-                    val delivery = if (profile.kgOneActive || foodCart.isEmpty()) 0 else 110
+                    val delivery = if ((FeatureFlags.WALLET && profile.kgOneActive) || foodCart.isEmpty()) 0 else 110
                     base = foodSum
                     distCost = delivery
                 }
@@ -284,17 +284,17 @@ data class KgTaxiUiState(
                 waypoints.size * 45
             } else 0
             val meetAndGreetCost = if (meetAndGreetEnabled && serviceType == ServiceType.TAXI) {
-                if (profile.kgOneActive) 0 else 150
+                if ((FeatureFlags.WALLET && profile.kgOneActive)) 0 else 150
             } else 0
             val rawSubtotal = base + distCost + waypointsCost + meetAndGreetCost
             val surgeExtraRaw = if (serviceType == ServiceType.TAXI && selectedCity.surgeMultiplier > 1.0) {
                 ((rawSubtotal * (selectedCity.surgeMultiplier - 1.0))).roundToInt()
             } else 0
             // KG Plus protects against 50% of surge during rush hour
-            val surgeExtra = if (profile.kgOneActive) (surgeExtraRaw * 0.5).roundToInt() else surgeExtraRaw
+            val surgeExtra = if ((FeatureFlags.WALLET && profile.kgOneActive)) (surgeExtraRaw * 0.5).roundToInt() else surgeExtraRaw
             val withSurge = rawSubtotal + surgeExtra
             val speedDelta = if (serviceType == ServiceType.TAXI) {
-                val flatPriority = if (pickupSpeed == PickupSpeed.PRIORITY && profile.kgOneActive) 0 else pickupSpeed.flatDeltaSom
+                val flatPriority = if (pickupSpeed == PickupSpeed.PRIORITY && (FeatureFlags.WALLET && profile.kgOneActive)) 0 else pickupSpeed.flatDeltaSom
                 ((withSurge * (pickupSpeed.multiplier - 1.0)).roundToInt()) + flatPriority
             } else 0
             val afterSpeed = max(50, withSurge + speedDelta)
@@ -302,7 +302,7 @@ data class KgTaxiUiState(
                 (afterSpeed * 0.30).roundToInt()
             } else 0
             val afterCarpool = max(45, afterSpeed - carpoolDisc)
-            val kgOneDisc = if (profile.kgOneActive && serviceType != ServiceType.FOOD) {
+            val kgOneDisc = if (FeatureFlags.WALLET && profile.kgOneActive && serviceType != ServiceType.FOOD) {
                 (afterCarpool * 0.07).roundToInt()
             } else 0
             val promoDisc = if (appliedPromoPercent > 0) {
@@ -311,7 +311,7 @@ data class KgTaxiUiState(
             val afterDisc = max(40, afterCarpool - kgOneDisc - promoDisc)
             val bonusUsed = if (useBonusPoints) minOf(profile.bonusPoints, afterDisc / 2) else 0
             val total = max(40, afterDisc - bonusUsed)
-            val cashback = if (profile.kgOneActive) max(10, (total * 0.10).roundToInt()) else max(5, (total * 0.05).roundToInt())
+            val cashback = if ((FeatureFlags.WALLET && profile.kgOneActive)) max(10, (total * 0.10).roundToInt()) else max(5, (total * 0.05).roundToInt())
 
             return PriceBreakdown(
                 baseSom = base,
@@ -1043,6 +1043,12 @@ class KgTaxiViewModel(
     // --- BIDDING ("ПРЕДЛОЖИТЬ СВОЮ ЦЕНУ") ---
 
     fun startBidding(offerSom: Int) {
+        if (FeatureFlags.REAL_RIDES) {
+            // "Offer your price": the order goes to drivers with the passenger's price; no made-up bids.
+            val base = _uiState.value.priceBreakdown.finalTotalSom
+            requestRealRide(offerSom.coerceIn(max(60, (base * 0.6).roundToInt()), base * 2))
+            return
+        }
         val base = _uiState.value.priceBreakdown.finalTotalSom
         val safeOffer = offerSom.coerceIn(max(60, (base * 0.6).roundToInt()), base * 2)
         val offers = listOf(
@@ -1553,7 +1559,7 @@ class KgTaxiViewModel(
         viewModelScope.launch {
             dao.upsertTrip(entity)
             // Award 10% cashback with KG Plus (KG One) or 5% standard
-            val rate = if (_uiState.value.profile.kgOneActive) 0.10 else 0.05
+            val rate = if ((FeatureFlags.WALLET && _uiState.value.profile.kgOneActive)) 0.10 else 0.05
             val bonusGain = max(10, (r.totalPriceSom * rate).roundToInt())
             val nextProfile = _uiState.value.profile.copy(bonusPoints = _uiState.value.profile.bonusPoints + bonusGain)
             dao.upsertProfile(nextProfile)
@@ -2194,7 +2200,7 @@ class KgTaxiViewModel(
     fun trackFamilyMember(member: LocalFamilyMemberEntity) {
         _uiState.update {
             it.copy(
-                statusBanner = "Живой трекинг ${member.name}: Комфорт • в пути по ${it.selectedCity.name} (ETA ~6 мин, RideCheck OK)"
+                statusBanner = "Чтобы видеть поездку ${member.name}, попросите нажать «Поделиться» во время поездки."
             )
         }
     }

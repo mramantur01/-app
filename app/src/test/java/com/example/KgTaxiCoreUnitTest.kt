@@ -85,7 +85,12 @@ class KgTaxiCoreUnitTest {
             useBonusPoints = true,
             splitCount = 3
         ).priceBreakdown
-        assertTrue("KG One discount applied", discounted.kgOneDiscountSom > 0)
+        // KG One is a paid subscription: its discount applies only when the wallet is switched on.
+        if (FeatureFlags.WALLET) {
+            assertTrue("KG One discount applied", discounted.kgOneDiscountSom > 0)
+        } else {
+            assertEquals("No KG One discount without wallet", 0, discounted.kgOneDiscountSom)
+        }
         assertTrue("Promo discount applied", discounted.promoDiscountSom > 0)
         assertTrue("Bonus points deducted", discounted.bonusUsedSom > 0)
         assertTrue("Discounted total < standard", discounted.finalTotalSom < standardTotal)
@@ -226,7 +231,7 @@ class KgTaxiCoreUnitTest {
             meetAndGreetEnabled = true,
             profile = LocalProfileEntity(kgOneActive = true)
         ).priceBreakdown
-        assertEquals(0, freeWithKgOne.meetAndGreetSom)
+        assertEquals(if (FeatureFlags.WALLET) 0 else 150, freeWithKgOne.meetAndGreetSom)
     }
 
     @Test
@@ -263,9 +268,14 @@ class KgTaxiCoreUnitTest {
 
         assertTrue("Carpool should grant ~30% discount", withCarpool.carpoolDiscountSom > 0)
         assertTrue("Carpool final price should be cheaper", withCarpool.finalTotalSom < base.finalTotalSom)
-        assertEquals("KG Plus makes Priority pickup free", 0, withKgPlus.speedDeltaSom)
-        assertTrue("KG Plus halves surge cost", withKgPlus.surgeSom < base.surgeSom)
-        assertTrue("KG Plus gives 10% cashback", withKgPlus.kgPlusCashbackSom >= 10)
+        if (FeatureFlags.WALLET) {
+            assertEquals("KG Plus makes Priority pickup free", 0, withKgPlus.speedDeltaSom)
+            assertTrue("KG Plus halves surge cost", withKgPlus.surgeSom < base.surgeSom)
+            assertTrue("KG Plus gives 10% cashback", withKgPlus.kgPlusCashbackSom >= 10)
+        } else {
+            // Paid perks are off until the subscription can actually be bought.
+            assertEquals("No KG Plus perks without wallet", base.finalTotalSom, withKgPlus.finalTotalSom)
+        }
     }
 
     @Test

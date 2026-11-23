@@ -237,7 +237,8 @@ fun ProfileWalletOverlay(
                     }
                 }
 
-                // KG Plus Subscription Card (Uber One / Yandex Plus analog)
+                // KG Plus subscription: paid, so hidden until there is a real payment provider.
+                if (FeatureFlags.WALLET)
                 Surface(
                     shape = RoundedCornerShape(18.dp),
                     color = if (state.profile.kgOneActive) UberGreen.copy(alpha = 0.14f) else MaterialTheme.colorScheme.surfaceVariant,
@@ -255,7 +256,7 @@ fun ProfileWalletOverlay(
                                     fontWeight = FontWeight.Black,
                                     color = if (state.profile.kgOneActive) UberGreen else MaterialTheme.colorScheme.onSurface
                                 )
-                                Text("299 сом / мес • аналог Uber One и Яндекс Плюс", style = MaterialTheme.typography.labelSmall, fontFamily = JetBrainsMono)
+                                Text("299 сом / мес", style = MaterialTheme.typography.labelSmall, fontFamily = JetBrainsMono)
                             }
                             Switch(
                                 checked = state.profile.kgOneActive,
