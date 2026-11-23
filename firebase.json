@@ -2,7 +2,8 @@
   "firestore": [
     {
       "database": "ai-studio-android-kgtaxi-68b2dabe-46af-41b4-a972-626508d00f13",
-      "rules": "firestore.rules"
+      "rules": "firestore.rules",
+      "indexes": "firestore.indexes.json"
     }
   ],
   "emulators": {

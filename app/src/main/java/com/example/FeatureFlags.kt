@@ -10,6 +10,12 @@ import com.example.data.model.ServiceType
  * to true — the old code is still there.
  */
 object FeatureFlags {
+    /**
+     * Real orders through Firestore (`rides`): the passenger needs to be signed in, a driver with
+     * the "driver" role takes the order. Off: the old on-phone demo ride with made-up drivers.
+     */
+    const val REAL_RIDES = true
+
     /** Wallet balance, top-up and referral bonus. Off: there is no real payment provider yet. */
     const val WALLET = false
 

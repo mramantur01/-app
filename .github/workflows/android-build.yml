@@ -47,7 +47,36 @@ jobs:
             printf '%s' "$GOOGLE_SERVICES_JSON" > app/google-services.json
             echo "google-services.json written"
           else
-            echo "::warning::GOOGLE_SERVICES_JSON secret not set — Firebase features will not work in this APK."
+            echo "::warning::GOOGLE_SERVICES_JSON secret not set — using a placeholder. Sign-in and cloud sync will NOT work in this APK."
+            cat > app/google-services.json <<'JSON'
+          {
+            "project_info": {
+              "project_number": "000000000000",
+              "project_id": "kgtaxi-placeholder",
+              "storage_bucket": "kgtaxi-placeholder.appspot.com"
+            },
+            "client": [
+              {
+                "client_info": {
+                  "mobilesdk_app_id": "1:000000000000:android:0000000000000000",
+                  "android_client_info": { "package_name": "com.kgtaxi.app" }
+                },
+                "oauth_client": [
+                  { "client_id": "000000000000-placeholder.apps.googleusercontent.com", "client_type": 3 }
+                ],
+                "api_key": [ { "current_key": "placeholder-not-a-real-key" } ],
+                "services": {
+                  "appinvite_service": {
+                    "other_platform_oauth_client": [
+                      { "client_id": "000000000000-placeholder.apps.googleusercontent.com", "client_type": 3 }
+                    ]
+                  }
+                }
+              }
+            ],
+            "configuration_version": "1"
+          }
+          JSON
           fi
 
       - name: Write .env (if provided)

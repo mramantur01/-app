@@ -9,6 +9,9 @@ import com.example.FeatureFlags
 import com.example.data.firebase.AiRouteAssistant
 import com.example.data.firebase.AiStreamEvent
 import com.example.data.firebase.FirestoreSyncRepository
+import com.example.data.firebase.RideRepository
+import com.example.data.firebase.RideStatus
+import com.example.data.firebase.SharedRide
 import com.example.data.local.AppPreferencesStore
 import com.example.data.local.KgTaxiDao
 import com.example.data.local.KgTaxiDatabase
@@ -370,13 +373,21 @@ class KgTaxiViewModel(
     private val dao: KgTaxiDao,
     private val firestoreSync: FirestoreSyncRepository,
     private val aiAssistant: AiRouteAssistant,
-    private val prefsStore: AppPreferencesStore
+    private val prefsStore: AppPreferencesStore,
+    private val rides: RideRepository
 ) : ViewModel() {
 
     private val _uiState = MutableStateFlow(KgTaxiUiState())
     val uiState: StateFlow<KgTaxiUiState> = _uiState.asStateFlow()
 
     private var rideSimulationJob: Job? = null
+
+    // Real rides (Firestore). Null when the current ride is a local demo ride.
+    private var passengerRideId: String? = null
+    private var passengerRideJob: Job? = null
+    private var driverRideId: String? = null
+    private var driverOpenRidesJob: Job? = null
+    private var driverLocationJob: Job? = null
     private var driverWaitingTimerJob: Job? = null
     private var routeFetchJob: Job? = null
     private var addressSearchJob: Job? = null
@@ -1149,6 +1160,10 @@ class KgTaxiViewModel(
     // --- ORDER LIFECYCLE, IN-TRIP EDIT, RIDECHECK & POST-TRIP ---
 
     fun requestOrder(customPriceSom: Int? = null, forcedDriver: Pair<String, String>? = null) {
+        if (FeatureFlags.REAL_RIDES) {
+            requestRealRide(customPriceSom)
+            return
+        }
         val s = _uiState.value
         val price = customPriceSom ?: s.priceBreakdown.finalTotalSom
         val tripId = "trip_${System.currentTimeMillis()}"
@@ -1338,12 +1353,191 @@ class KgTaxiViewModel(
 
     fun cancelActiveRide() {
         rideSimulationJob?.cancel()
+        val realId = passengerRideId
+        if (realId != null) {
+            stopPassengerRideObserver()
+            viewModelScope.launch {
+                val res = rides.cancelAsPassenger(realId)
+                if (res.isFailure) {
+                    _uiState.update { it.copy(statusBanner = "Не удалось отменить заказ: проверьте интернет") }
+                }
+            }
+        }
         _uiState.update { it.copy(activeRide = null, statusBanner = "Заказ отменён") }
     }
 
     fun completeActiveRideNow() {
+        // A real ride is finished by the driver, not by the passenger.
+        if (passengerRideId != null) {
+            _uiState.update { it.copy(statusBanner = "Поездку завершает водитель после прибытия.") }
+            return
+        }
         rideSimulationJob?.cancel()
         completeActiveRide()
+    }
+
+    // --- REAL RIDES (Firestore) — passenger side ---
+
+    private fun requestRealRide(customPriceSom: Int?) {
+        val s = _uiState.value
+        if (!s.isSignedIn) {
+            _uiState.update { it.copy(statusBanner = "Войдите в аккаунт, чтобы заказать такси.") }
+            return
+        }
+        if (!FeatureFlags.isServiceEnabled(s.serviceType)) {
+            showComingSoon("Эта услуга")
+            return
+        }
+        if (s.activeRide != null) return
+
+        val price = customPriceSom ?: s.priceBreakdown.finalTotalSom
+        val isIntercity = s.serviceType == ServiceType.INTERCITY
+        val dropLabel = if (isIntercity) s.selectedIntercityRoute.toCity else s.dropoffAddress
+        val tariffLabel = if (isIntercity) {
+            "${s.selectedIntercityRoute.fromCity} → ${s.selectedIntercityRoute.toCity}"
+        } else s.selectedTariff.nameRu
+        val pin = (1000 + Random.nextInt(9000)).toString()
+        val comment = listOfNotNull(
+            s.selectedPickupSpot?.let { "Подъезд/место: $it" },
+            if (s.bookingForOther) "Для: ${s.recipientName} ${s.recipientPhone}".trim() else null,
+            "PIN $pin"
+        ).joinToString(" • ")
+
+        val pending = ActiveRideState(
+            tripId = "pending_${System.currentTimeMillis()}",
+            serviceType = s.serviceType,
+            tariffName = tariffLabel,
+            city = s.selectedCity.name,
+            pickupAddress = s.pickupAddress,
+            dropoffAddress = dropLabel,
+            pickupPoint = s.pickupPoint,
+            dropoffPoint = s.dropoffPoint,
+            distanceKm = s.routeDistanceKm,
+            durationMin = s.routeDurationMin,
+            totalPriceSom = price,
+            paymentMethod = PaymentMethod.CASH,
+            status = TripStatus.SEARCHING,
+            driverName = "Ищем водителя…",
+            driverCar = "",
+            driverRating = 0.0,
+            driverEtaMin = 0,
+            safetyPin = pin,
+            progress = 0f,
+            pickupSpotNote = s.selectedPickupSpot
+        )
+        _uiState.update { it.copy(activeRide = pending, driverChatMessages = emptyList(), statusBanner = "Отправляем заказ водителям…") }
+
+        viewModelScope.launch {
+            val created = rides.createRide(
+                passengerName = s.profile.displayName,
+                serviceType = s.serviceType.name,
+                city = s.selectedCity.name,
+                pickupAddress = s.pickupAddress,
+                dropoffAddress = dropLabel,
+                pickupLat = s.pickupPoint.lat,
+                pickupLng = s.pickupPoint.lng,
+                dropoffLat = s.dropoffPoint.lat,
+                dropoffLng = s.dropoffPoint.lng,
+                priceSom = price,
+                comment = comment
+            )
+            created.onSuccess { id ->
+                passengerRideId = id
+                _uiState.update { st ->
+                    st.copy(
+                        activeRide = st.activeRide?.copy(tripId = id),
+                        statusBanner = "Заказ отправлен. Ищем водителя рядом…"
+                    )
+                }
+                observePassengerRide(id)
+            }.onFailure { e ->
+                _uiState.update {
+                    it.copy(activeRide = null, statusBanner = "Не удалось создать заказ: ${e.message ?: "нет интернета"}")
+                }
+            }
+        }
+    }
+
+    private fun observePassengerRide(rideId: String) {
+        passengerRideJob?.cancel()
+        var lastStatus = RideStatus.SEARCHING
+        passengerRideJob = viewModelScope.launch {
+            rides.observeRide(rideId).collect { shared ->
+                if (shared == null) return@collect
+                val statusChanged = shared.status != lastStatus
+                lastStatus = shared.status
+                when (shared.status) {
+                    RideStatus.CANCELLED -> {
+                        stopPassengerRideObserver()
+                        _uiState.update { it.copy(activeRide = null, statusBanner = "Водитель отменил заказ. Попробуйте заказать снова.") }
+                    }
+                    RideStatus.COMPLETED -> {
+                        applySharedRideToPassenger(shared)
+                        stopPassengerRideObserver()
+                        completeActiveRide()
+                    }
+                    else -> {
+                        applySharedRideToPassenger(shared)
+                        if (statusChanged) notifyPassengerStatus(shared)
+                    }
+                }
+            }
+        }
+    }
+
+    private fun applySharedRideToPassenger(shared: SharedRide) {
+        val status = when (shared.status) {
+            RideStatus.ASSIGNED -> TripStatus.ASSIGNED
+            RideStatus.ARRIVED -> TripStatus.ARRIVED
+            RideStatus.IN_PROGRESS -> TripStatus.IN_PROGRESS
+            RideStatus.COMPLETED -> TripStatus.COMPLETED
+            else -> TripStatus.SEARCHING
+        }
+        val progress = when (status) {
+            TripStatus.ASSIGNED -> 0.12f
+            TripStatus.ARRIVED -> 0.25f
+            TripStatus.IN_PROGRESS -> 0.6f
+            TripStatus.COMPLETED -> 1f
+            else -> 0f
+        }
+        _uiState.update { st ->
+            val r = st.activeRide ?: return@update st
+            st.copy(
+                activeRide = r.copy(
+                    status = status,
+                    progress = progress,
+                    driverName = shared.driverName ?: r.driverName,
+                    driverCar = listOfNotNull(shared.driverCar, shared.driverPlate)
+                        .filter { it.isNotBlank() }.joinToString(" • ").ifBlank { r.driverCar }
+                )
+            )
+        }
+    }
+
+    private fun notifyPassengerStatus(shared: SharedRide) {
+        val sound = _uiState.value.soundEnabled
+        val pin = _uiState.value.activeRide?.safetyPin.orEmpty()
+        when (shared.status) {
+            RideStatus.ASSIGNED -> {
+                SoundAndNotificationManager.playCue(SoundCue.DRIVER_ASSIGNED, sound)
+                SoundAndNotificationManager.postNotification(
+                    appContext,
+                    "Водитель едет — ${shared.driverName ?: "водитель"}",
+                    listOfNotNull(shared.driverCar, shared.driverPlate).joinToString(" • ") + " • PIN: $pin"
+                )
+            }
+            RideStatus.ARRIVED -> {
+                SoundAndNotificationManager.playCue(SoundCue.DRIVER_ARRIVED, sound)
+                SoundAndNotificationManager.postNotification(appContext, "Машина подъехала!", "Назовите водителю PIN $pin")
+            }
+            RideStatus.IN_PROGRESS -> _uiState.update { it.copy(statusBanner = "Поездка началась. Хорошей дороги!") }
+        }
+    }
+
+    private fun stopPassengerRideObserver() {
+        passengerRideJob?.cancel()
+        passengerRideJob = null
+        passengerRideId = null
     }
 
     private fun completeActiveRide() {
@@ -2742,6 +2936,6 @@ class KgTaxiViewModelFactory(private val context: Context) : ViewModelProvider.F
         val firestoreRepo = FirestoreSyncRepository(appCtx)
         val aiAssistant = AiRouteAssistant()
         val prefsStore = AppPreferencesStore(appCtx)
-        return KgTaxiViewModel(appCtx, db.dao(), firestoreRepo, aiAssistant, prefsStore) as T
+        return KgTaxiViewModel(appCtx, db.dao(), firestoreRepo, aiAssistant, prefsStore, RideRepository(appCtx)) as T
     }
 }
