@@ -1,0 +1,278 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    // Global default-deny safety net
+    match /{document=**} {
+      allow read, write: if false;
+    }
+
+    // --- GLOBAL PRIMITIVES ---
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    function isOwner(userId) {
+      return isSignedIn() && request.auth.uid == userId;
+    }
+
+    function isValidId(id) {
+      return id is string && id.size() >= 1 && id.size() <= 128 && id.matches('^[a-zA-Z0-9_\\-]+$');
+    }
+
+    function incoming() {
+      return request.resource.data;
+    }
+
+    function existing() {
+      return resource.data;
+    }
+
+    function isValidTimestamp(ts) {
+      return ts is timestamp && ts <= request.time;
+    }
+
+    // --- VALIDATION BLUEPRINTS ---
+    function isValidUserProfile(data, userId) {
+      return data.userId is string && data.userId == userId &&
+             data.displayName is string && data.displayName.size() >= 1 && data.displayName.size() <= 80 &&
+             (!('phone' in data) || (data.phone is string && data.phone.size() <= 30)) &&
+             (!('email' in data) || (data.email is string && data.email.size() <= 120)) &&
+             (!('homeAddress' in data) || (data.homeAddress is string && data.homeAddress.size() <= 160)) &&
+             (!('workAddress' in data) || (data.workAddress is string && data.workAddress.size() <= 160)) &&
+             data.paymentMethod in ['CASH', 'MBANK', 'ODENGI', 'ELCART', 'CARD'] &&
+             data.kgOneActive is bool &&
+             data.businessProfileActive is bool &&
+             (!('companyName' in data) || (data.companyName is string && data.companyName.size() <= 100)) &&
+             (!('companyEmail' in data) || (data.companyEmail is string && data.companyEmail.size() <= 120)) &&
+             data.bonusPoints is int && data.bonusPoints >= 0 && data.bonusPoints <= 1000000 &&
+             data.preferredCity is string && data.preferredCity.size() >= 1 && data.preferredCity.size() <= 50 &&
+             data.language in ['RU', 'KG', 'EN'] &&
+             data.darkTheme is bool &&
+             data.soundEnabled is bool &&
+             isValidTimestamp(data.createdAt) &&
+             isValidTimestamp(data.updatedAt);
+    }
+
+    function isValidTripRecord(data, userId) {
+      return data.userId is string && data.userId == userId &&
+             data.serviceType in ['TAXI', 'HOURLY', 'COURIER', 'CARGO', 'INTERCITY', 'FOOD'] &&
+             data.tariffName is string && data.tariffName.size() >= 1 && data.tariffName.size() <= 60 &&
+             data.city is string && data.city.size() >= 1 && data.city.size() <= 50 &&
+             data.pickupAddress is string && data.pickupAddress.size() >= 1 && data.pickupAddress.size() <= 200 &&
+             data.dropoffAddress is string && data.dropoffAddress.size() >= 1 && data.dropoffAddress.size() <= 200 &&
+             data.distanceKm is number && data.distanceKm >= 0 && data.distanceKm <= 5000 &&
+             data.durationMin is int && data.durationMin >= 0 && data.durationMin <= 2000 &&
+             data.totalPriceSom is int && data.totalPriceSom >= 0 && data.totalPriceSom <= 1000000 &&
+             data.paymentMethod is string && data.paymentMethod.size() >= 1 && data.paymentMethod.size() <= 30 &&
+             data.status in ['SEARCHING', 'ASSIGNED', 'ARRIVED', 'IN_PROGRESS', 'COMPLETED', 'CANCELLED'] &&
+             (!('driverName' in data) || (data.driverName is string && data.driverName.size() <= 80)) &&
+             (!('driverCar' in data) || (data.driverCar is string && data.driverCar.size() <= 80)) &&
+             data.safetyPin is string && data.safetyPin.size() >= 4 && data.safetyPin.size() <= 6 &&
+             data.rating is int && data.rating >= 0 && data.rating <= 5 &&
+             data.tipSom is int && data.tipSom >= 0 && data.tipSom <= 100000 &&
+             data.businessTrip is bool &&
+             (!('lostItemNote' in data) || (data.lostItemNote is string && data.lostItemNote.size() <= 300)) &&
+             isValidTimestamp(data.createdAt) &&
+             isValidTimestamp(data.updatedAt);
+    }
+
+    function isValidSavedPlace(data, userId) {
+      return data.userId is string && data.userId == userId &&
+             data.label is string && data.label.size() >= 1 && data.label.size() <= 60 &&
+             data.address is string && data.address.size() >= 1 && data.address.size() <= 200 &&
+             data.city is string && data.city.size() >= 1 && data.city.size() <= 50 &&
+             data.lat is number && data.lat >= -90 && data.lat <= 90 &&
+             data.lng is number && data.lng >= -180 && data.lng <= 180 &&
+             data.category in ['HOME', 'WORK', 'FAVORITE', 'ROUTE'] &&
+             data.rating is number && data.rating >= 0 && data.rating <= 5 &&
+             isValidTimestamp(data.createdAt) &&
+             isValidTimestamp(data.updatedAt);
+    }
+
+    function isValidFamilyMember(data, userId) {
+      return data.userId is string && data.userId == userId &&
+             data.name is string && data.name.size() >= 1 && data.name.size() <= 80 &&
+             data.relation is string && data.relation.size() >= 1 && data.relation.size() <= 40 &&
+             (!('phone' in data) || (data.phone is string && data.phone.size() <= 30)) &&
+             data.monthlyLimitSom is int && data.monthlyLimitSom >= 0 && data.monthlyLimitSom <= 500000 &&
+             data.teenControlEnabled is bool &&
+             isValidTimestamp(data.createdAt) &&
+             isValidTimestamp(data.updatedAt);
+    }
+
+    function isValidVehicleMaintenance(data, userId) {
+      return data.userId is string && data.userId == userId &&
+             data.vehicleName is string && data.vehicleName.size() >= 1 && data.vehicleName.size() <= 80 &&
+             data.serviceTitle is string && data.serviceTitle.size() >= 1 && data.serviceTitle.size() <= 100 &&
+             data.dueMileageKm is int && data.dueMileageKm >= 0 && data.dueMileageKm <= 2000000 &&
+             data.currentMileageKm is int && data.currentMileageKm >= 0 && data.currentMileageKm <= 2000000 &&
+             data.fuelLitersPer100Km is number && data.fuelLitersPer100Km >= 0 && data.fuelLitersPer100Km <= 50 &&
+             data.completed is bool &&
+             isValidTimestamp(data.createdAt) &&
+             isValidTimestamp(data.updatedAt);
+    }
+
+    // --- COLLECTION RULES ---
+    match /users/{userId} {
+      allow get: if isOwner(userId) && isValidId(userId);
+      allow list: if false;
+
+      allow create: if isOwner(userId) &&
+                       isValidId(userId) &&
+                       incoming().keys().hasAll([
+                         'userId', 'displayName', 'paymentMethod', 'kgOneActive',
+                         'businessProfileActive', 'bonusPoints', 'preferredCity',
+                         'language', 'darkTheme', 'soundEnabled', 'createdAt', 'updatedAt'
+                       ]) &&
+                       incoming().keys().hasOnly([
+                         'userId', 'displayName', 'phone', 'email', 'homeAddress', 'workAddress',
+                         'paymentMethod', 'kgOneActive', 'businessProfileActive', 'companyName',
+                         'companyEmail', 'bonusPoints', 'preferredCity', 'language',
+                         'darkTheme', 'soundEnabled', 'createdAt', 'updatedAt'
+                       ]) &&
+                       isValidUserProfile(incoming(), userId);
+
+      allow update: if isOwner(userId) &&
+                       isValidId(userId) &&
+                       isValidUserProfile(incoming(), userId) &&
+                       incoming().userId == existing().userId &&
+                       incoming().createdAt == existing().createdAt &&
+                       incoming().diff(existing()).affectedKeys().hasOnly([
+                         'displayName', 'phone', 'email', 'homeAddress', 'workAddress',
+                         'paymentMethod', 'kgOneActive', 'businessProfileActive', 'companyName',
+                         'companyEmail', 'bonusPoints', 'preferredCity', 'language',
+                         'darkTheme', 'soundEnabled', 'updatedAt'
+                       ]);
+
+      allow delete: if isOwner(userId) && isValidId(userId);
+
+      match /trips/{tripId} {
+        allow get: if isOwner(userId) && isValidId(tripId);
+        allow list: if isOwner(userId);
+
+        allow create: if isOwner(userId) &&
+                         isValidId(tripId) &&
+                         incoming().keys().hasAll([
+                           'userId', 'serviceType', 'tariffName', 'city', 'pickupAddress',
+                           'dropoffAddress', 'distanceKm', 'durationMin', 'totalPriceSom',
+                           'paymentMethod', 'status', 'safetyPin', 'rating', 'tipSom',
+                           'businessTrip', 'createdAt', 'updatedAt'
+                         ]) &&
+                         incoming().keys().hasOnly([
+                           'userId', 'serviceType', 'tariffName', 'city', 'pickupAddress',
+                           'dropoffAddress', 'distanceKm', 'durationMin', 'totalPriceSom',
+                           'paymentMethod', 'status', 'driverName', 'driverCar', 'safetyPin',
+                           'rating', 'tipSom', 'businessTrip', 'lostItemNote', 'createdAt', 'updatedAt'
+                         ]) &&
+                         isValidTripRecord(incoming(), userId);
+
+        allow update: if isOwner(userId) &&
+                         isValidId(tripId) &&
+                         isValidTripRecord(incoming(), userId) &&
+                         incoming().userId == existing().userId &&
+                         incoming().createdAt == existing().createdAt &&
+                         (
+                           // Action 1: Active trip lifecycle or in-trip destination edit
+                           (!(existing().status in ['COMPLETED', 'CANCELLED']) &&
+                             incoming().diff(existing()).affectedKeys().hasOnly([
+                               'status', 'dropoffAddress', 'distanceKm', 'durationMin',
+                               'totalPriceSom', 'driverName', 'driverCar', 'updatedAt'
+                             ])) ||
+                           // Action 2: Post-trip rating, tip, or lost item report (terminal state locked)
+                           (existing().status in ['COMPLETED', 'CANCELLED'] &&
+                             incoming().status == existing().status &&
+                             incoming().diff(existing()).affectedKeys().hasOnly([
+                               'rating', 'tipSom', 'lostItemNote', 'updatedAt'
+                             ]))
+                         );
+
+        allow delete: if isOwner(userId) && isValidId(tripId);
+      }
+
+      match /saved_places/{placeId} {
+        allow get: if isOwner(userId) && isValidId(placeId);
+        allow list: if isOwner(userId);
+
+        allow create: if isOwner(userId) &&
+                         isValidId(placeId) &&
+                         incoming().keys().hasAll([
+                           'userId', 'label', 'address', 'city', 'lat', 'lng',
+                           'category', 'rating', 'createdAt', 'updatedAt'
+                         ]) &&
+                         incoming().keys().hasOnly([
+                           'userId', 'label', 'address', 'city', 'lat', 'lng',
+                           'category', 'rating', 'createdAt', 'updatedAt'
+                         ]) &&
+                         isValidSavedPlace(incoming(), userId);
+
+        allow update: if isOwner(userId) &&
+                         isValidId(placeId) &&
+                         isValidSavedPlace(incoming(), userId) &&
+                         incoming().userId == existing().userId &&
+                         incoming().createdAt == existing().createdAt &&
+                         incoming().diff(existing()).affectedKeys().hasOnly([
+                           'label', 'address', 'city', 'lat', 'lng', 'category', 'rating', 'updatedAt'
+                         ]);
+
+        allow delete: if isOwner(userId) && isValidId(placeId);
+      }
+
+      match /family_members/{memberId} {
+        allow get: if isOwner(userId) && isValidId(memberId);
+        allow list: if isOwner(userId);
+
+        allow create: if isOwner(userId) &&
+                         isValidId(memberId) &&
+                         incoming().keys().hasAll([
+                           'userId', 'name', 'relation', 'monthlyLimitSom',
+                           'teenControlEnabled', 'createdAt', 'updatedAt'
+                         ]) &&
+                         incoming().keys().hasOnly([
+                           'userId', 'name', 'relation', 'phone', 'monthlyLimitSom',
+                           'teenControlEnabled', 'createdAt', 'updatedAt'
+                         ]) &&
+                         isValidFamilyMember(incoming(), userId);
+
+        allow update: if isOwner(userId) &&
+                         isValidId(memberId) &&
+                         isValidFamilyMember(incoming(), userId) &&
+                         incoming().userId == existing().userId &&
+                         incoming().createdAt == existing().createdAt &&
+                         incoming().diff(existing()).affectedKeys().hasOnly([
+                           'name', 'relation', 'phone', 'monthlyLimitSom', 'teenControlEnabled', 'updatedAt'
+                         ]);
+
+        allow delete: if isOwner(userId) && isValidId(memberId);
+      }
+
+      match /maintenance_logs/{logId} {
+        allow get: if isOwner(userId) && isValidId(logId);
+        allow list: if isOwner(userId);
+
+        allow create: if isOwner(userId) &&
+                         isValidId(logId) &&
+                         incoming().keys().hasAll([
+                           'userId', 'vehicleName', 'serviceTitle', 'dueMileageKm',
+                           'currentMileageKm', 'fuelLitersPer100Km', 'completed', 'createdAt', 'updatedAt'
+                         ]) &&
+                         incoming().keys().hasOnly([
+                           'userId', 'vehicleName', 'serviceTitle', 'dueMileageKm',
+                           'currentMileageKm', 'fuelLitersPer100Km', 'completed', 'createdAt', 'updatedAt'
+                         ]) &&
+                         isValidVehicleMaintenance(incoming(), userId);
+
+        allow update: if isOwner(userId) &&
+                         isValidId(logId) &&
+                         isValidVehicleMaintenance(incoming(), userId) &&
+                         incoming().userId == existing().userId &&
+                         incoming().createdAt == existing().createdAt &&
+                         incoming().diff(existing()).affectedKeys().hasOnly([
+                           'vehicleName', 'serviceTitle', 'dueMileageKm',
+                           'currentMileageKm', 'fuelLitersPer100Km', 'completed', 'updatedAt'
+                         ]);
+
+        allow delete: if isOwner(userId) && isValidId(logId);
+      }
+    }
+  }
+}

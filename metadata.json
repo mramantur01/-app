@@ -1,0 +1,6 @@
+{
+  "name": "KG Taxi",
+  "description": "Uber-style taxi, delivery, intercity rides, and AI route planner for Kyrgyzstan.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}

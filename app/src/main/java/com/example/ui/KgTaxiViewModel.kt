@@ -1,0 +1,2637 @@
+package com.example.ui
+
+import android.content.Context
+import android.util.Log
+import androidx.lifecycle.ViewModel
+import androidx.lifecycle.ViewModelProvider
+import androidx.lifecycle.viewModelScope
+import com.example.data.firebase.AiRouteAssistant
+import com.example.data.firebase.AiStreamEvent
+import com.example.data.firebase.FirestoreSyncRepository
+import com.example.data.local.AppPreferencesStore
+import com.example.data.local.KgTaxiDao
+import com.example.data.local.KgTaxiDatabase
+import com.example.data.local.LocalFamilyMemberEntity
+import com.example.data.local.LocalMaintenanceEntity
+import com.example.data.local.LocalProfileEntity
+import com.example.data.local.LocalSavedPlaceEntity
+import com.example.data.local.LocalTripEntity
+import com.example.data.model.*
+import com.example.i18n.AppLanguage
+import com.example.util.KgWeatherAndPassesClient
+import com.example.util.KyrgyzstanRoutingClient
+import com.example.util.LocationAndVoiceHelper
+import com.example.util.OwnerPayoutGatewayClient
+import com.example.util.SoundAndNotificationManager
+import com.example.util.SoundCue
+import com.google.firebase.firestore.FirebaseFirestoreException
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.*
+import kotlinx.coroutines.launch
+import java.util.Locale
+import java.util.UUID
+import kotlin.math.max
+import kotlin.math.roundToInt
+import kotlin.random.Random
+
+data class KgTaxiUiState(
+    val role: AppRole = AppRole.PASSENGER,
+    val profile: LocalProfileEntity = LocalProfileEntity(),
+    val language: AppLanguage = AppLanguage.RU,
+    val darkTheme: Boolean = false,
+    val soundEnabled: Boolean = true,
+    val offlineMode: Boolean = false,
+    val isSignedIn: Boolean = false,
+    val signedInUid: String? = null,
+    val cloudSyncError: String? = null,
+    val statusBanner: String? = null,
+    // Map & Geo
+    val selectedCity: KgCity = KgGeoCatalog.cities.first(),
+    val pickupPoint: GeoPoint = GeoPoint(42.8764, 74.6037),
+    val dropoffPoint: GeoPoint = GeoPoint(42.8559, 74.5855),
+    val pickupAddress: String = "Площадь Ала-Тоо, Бишкек",
+    val dropoffAddress: String = "ТРЦ Asia Mall, пр. Ч. Айтматова 3",
+    val waypoints: List<KgPlace> = emptyList(),
+    val selectedPickupSpot: String? = null,
+    val showSurgeHeatmap: Boolean = false,
+    val showTrafficOverlay: Boolean = false,
+    val mapPickModeIsDropoff: Boolean = true,
+    val routePolyline: List<GeoPoint> = emptyList(),
+    val liveRouteDistanceKm: Double? = null,
+    val liveRouteDurationMin: Int? = null,
+    val routeFromOsrm: Boolean = false,
+    val nearbyDrivers: List<NearbyDriverMarker> = emptyList(),
+    // Search & Place Filters
+    val searchQuery: String = "",
+    val liveSearchResults: List<KgPlace> = emptyList(),
+    val filterMinRating: Double = 0.0,
+    val filterMaxPriceLevel: Int = 3,
+    // Service & Booking Config
+    val serviceType: ServiceType = ServiceType.TAXI,
+    val selectedTariffId: String = "comfort",
+    val pickupSpeed: PickupSpeed = PickupSpeed.STANDARD,
+    val preferences: RidePreferences = RidePreferences(),
+    val promoCodeInput: String = "",
+    val appliedPromoPercent: Int = 0,
+    val useBonusPoints: Boolean = false,
+    val splitCount: Int = 1,
+    val reserveTimeLabel: String? = null,
+    val selectedFlight: FlightInfo? = null,
+    // Order for Someone Else
+    val bookingForOther: Boolean = false,
+    val recipientName: String = "",
+    val recipientPhone: String = "",
+    // Bidding
+    val biddingActive: Boolean = false,
+    val userBidSom: Int = 0,
+    val bidOffers: List<DriverBidOffer> = emptyList(),
+    // Hourly / Courier / Cargo / Intercity / Food
+    val hourlyHours: Int = 3,
+    val selectedExcursion: ExcursionPreset? = null,
+    val courierRecipient: String = "",
+    val courierComment: String = "Документы / посылка до 5 кг",
+    val cargoVehicle: String = "Портер (до 1.5 т)",
+    val cargoLoaders: Int = 1,
+    val selectedIntercityRoute: IntercityRoute = KgGeoCatalog.intercityRoutes.first(),
+    val selectedIntercitySeats: Set<Int> = setOf(2),
+    val occupiedIntercitySeats: Set<Int> = setOf(1, 4),
+    val selectedVenueId: String = KgGeoCatalog.foodVenues.first().id,
+    val foodCart: List<FoodCartEntry> = emptyList(),
+    // Active Trip, Driver Chat & Post-Trip
+    val activeRide: ActiveRideState? = null,
+    val driverChatMessages: List<DriverChatMessage> = emptyList(),
+    val chatTranslateTargetLang: String = "EN",
+    val chatTranslating: Boolean = false,
+    val postTripReceipt: LocalTripEntity? = null,
+    // Wallet, Referral & Onboarding
+    val showOnboarding: Boolean = false,
+    val walletBalanceSom: Int = 1450,
+    val referralClaimed: Boolean = false,
+    val walletTransactions: List<WalletTransaction> = listOf(
+        WalletTransaction("wt1", "Пополнение кошелька", "MBank ELQR", 1500, "Вчера"),
+        WalletTransaction("wt2", "Кэшбэк KG One 5%", "Бонус", 165, "2 дня назад"),
+        WalletTransaction("wt3", "Поездка Green EV • Бишкек", "Кошелёк", -215, "2 дня назад")
+    ),
+    // Driver Mode, Docs & Analytics
+    val driverOnline: Boolean = false,
+    val driverTodayEarningsSom: Int = 3420,
+    val driverShiftHours: Double = 6.5,
+    val driverWeeklyEarnings: List<Pair<String, Int>> = listOf(
+        "Пн" to 2850, "Вт" to 3190, "Ср" to 3640, "Чт" to 2980, "Пт" to 4420, "Сб" to 4890, "Вс" to 3420
+    ),
+    val driverDocuments: List<DriverDocumentItem> = listOf(
+        DriverDocumentItem("doc1", "Полис ОСАГО КР", "KG-OSAGO-88412", "12.01.2027", 50),
+        DriverDocumentItem("doc2", "Техосмотр ТС", "TO-01KG-5521", "05.12.2026", 12),
+        DriverDocumentItem("doc3", "Водительское удостоверение (B/C)", "KG-DL-449012", "18.08.2031", 1720)
+    ),
+    val driverQuestTripsDone: Int = 8,
+    val driverQuestTarget: Int = 12,
+    val driverIncomingOrders: List<DriverIncomingOrder> = emptyList(),
+    val driverAcceptedOrder: DriverIncomingOrder? = null,
+    val dispatcherActiveOrders: List<DriverIncomingOrder> = emptyList(),
+    val sosAlerts: List<EmergencySosAlert> = emptyList(),
+    // Fuel Calculator
+    val fuelDistanceKm: String = "120",
+    val fuelConsumptionPer100: String = "8.5",
+    val fuelPriceSom: String = "74",
+    // Persisted Lists (Room + Firestore Sync)
+    val trips: List<LocalTripEntity> = emptyList(),
+    val savedPlaces: List<LocalSavedPlaceEntity> = emptyList(),
+    val familyMembers: List<LocalFamilyMemberEntity> = emptyList(),
+    val maintenanceLogs: List<LocalMaintenanceEntity> = emptyList(),
+    // AI Route Chat
+    val aiMessages: List<AiChatMessage> = listOf(
+        AiChatMessage(
+            id = "welcome",
+            fromUser = false,
+            text = "Салам! Я ИИ-маршрутизатор KG Taxi. Помогу спланировать маршрут по Бишкеку и всему Кыргызстану, рассчитать поездку на Иссык-Куль, Ала-Арчу или в аэропорт Манас."
+        )
+    ),
+    val aiLoading: Boolean = false,
+    // Tourist Currency, Business INN, Weather & Mountain Passes
+    val displayCurrency: DisplayCurrency = DisplayCurrency.KGS,
+    val businessCompanyInn: String = "01408202110234",
+    val cityWeather: CityWeatherInfo = KgWeatherAndPassesClient.offlineFallbackWeather("Бишкек"),
+    val mountainPasses: List<KgMountainPass> = KgWeatherAndPassesClient.buildMountainPasses(
+        KgWeatherAndPassesClient.offlineFallbackWeather("Бишкек")
+    ),
+    // Meet & Greet Airport Sign, Courier Parcel Photo, Voice-to-Ride AI
+    val meetAndGreetEnabled: Boolean = false,
+    val meetAndGreetSignText: String = "",
+    val courierParcelPhotoUri: String? = null,
+    val voiceOrderParsing: Boolean = false,
+    val lastVoiceOrderSummary: String? = null,
+    // Favorite / Blocked Drivers & Lost & Found Tickets
+    val favoriteDrivers: Set<String> = setOf("Бекзат А."),
+    val blockedDrivers: Set<String> = emptySet(),
+    val lostItemTickets: List<LostItemTicket> = emptyList(),
+    // Driver Pro: Destination Filter, Tips & Instant Payouts
+    val driverHomeFilterEnabled: Boolean = false,
+    val driverHomeTargetDistrict: String = "Джал",
+    val driverOrderStage: DriverOrderStage = DriverOrderStage.EN_ROUTE_TO_PICKUP,
+    val driverOrderWaitingSeconds: Int = 0,
+    val driverActivityScore: Int = 96,
+    val driverPriorityPoints: Int = 14,
+    val driverAutoAccept: Boolean = false,
+    val driverEnabledTariffs: Set<String> = setOf("economy", "comfort", "green_ev", "courier"),
+    val driverPendingPassengerRating: DriverIncomingOrder? = null,
+    val driverPhotoControlVerified: Boolean = true,
+    val driverTips: List<DriverTipEntry> = listOf(
+        DriverTipEntry("tip1", "Айсулуу К.", 100, "Идеальная чистота салона", "Сегодня, 14:20"),
+        DriverTipEntry("tip2", "Марат Ж.", 50, "Аккуратное вождение", "Сегодня, 11:05"),
+        DriverTipEntry("tip3", "Elena S.", 200, "Great English & smooth airport ride!", "Вчера, 19:40")
+    ),
+    val driverPayouts: List<DriverPayoutRecord> = listOf(
+        DriverPayoutRecord("pay1", "MBank", "+996 555 880 996", 2500, "Вчера, 21:15")
+    ),
+    // 12-Feature Ecosystem Upgrade State
+    val themeMode: AppThemeMode = AppThemeMode.LIGHT,
+    val mapLayerStyle: MapLayerStyle = MapLayerStyle.STANDARD,
+    val carpoolModeEnabled: Boolean = false,
+    val driverBackToBackOffer: DriverIncomingOrder? = null,
+    val driverQueuedNextOrder: DriverIncomingOrder? = null,
+    val driverShiftPass: DriverShiftPass = DriverShiftPass.NONE,
+    val driverCoffeeBreakActive: Boolean = false,
+    val driverDrivingMinutesToday: Int = 390,
+    val driverActiveOrderMessages: List<DriverChatMessage> = emptyList(),
+    val selectedIntercityTripId: String? = "ic1_dep2",
+    val tourGuideTopic: String? = null,
+    val tourGuideText: String? = null,
+    val tourGuideLoading: Boolean = false,
+    // Owner Bank Details & Automated Commission Split
+    val ownerBankConfig: OwnerBankConfig = OwnerBankConfig(),
+    val ownerPendingBalanceSom: Int = 0,
+    val ownerTotalSettledSom: Int = 6840,
+    val ownerCommissionLedger: List<OwnerCommissionEntry> = listOf(
+        OwnerCommissionEntry(
+            id = "oc_seed_1",
+            orderId = "KG-8412",
+            sourceLabel = "Бизнес • Аэропорт Манас",
+            city = "Бишкек",
+            grossAmountSom = 1250,
+            commissionPercent = 14,
+            ownerCommissionSom = 175,
+            driverNetSom = 1075,
+            settledAutomatically = true,
+            destinationMasked = "MBank •••• 9960",
+            timeLabel = "Сегодня, 15:10"
+        ),
+        OwnerCommissionEntry(
+            id = "oc_seed_2",
+            orderId = "KG-8398",
+            sourceLabel = "Комфорт (Поездка)",
+            city = "Бишкек",
+            grossAmountSom = 420,
+            commissionPercent = 14,
+            ownerCommissionSom = 59,
+            driverNetSom = 361,
+            settledAutomatically = true,
+            destinationMasked = "MBank •••• 9960",
+            timeLabel = "Сегодня, 13:45"
+        )
+    ),
+    val ownerSettlements: List<OwnerBankSettlementRecord> = listOf(
+        OwnerBankSettlementRecord(
+            id = "os_seed_1",
+            bankName = "MBank",
+            destinationMasked = "•••• 9960",
+            amountSom = 6840,
+            entriesCount = 42,
+            automatic = true,
+            liveGatewayDelivered = false,
+            referenceCode = "KGT-AUTO-88412",
+            timeLabel = "Вчера, 23:55"
+        )
+    ),
+    val ownerPayoutBusy: Boolean = false
+) {
+    val referralCode: String
+        get() {
+            val clean = profile.displayName.uppercase().filter { it in 'A'..'Z' || it in '0'..'9' }.take(4).ifBlank { "KG" }
+            return "KG-${clean}250"
+        }
+    val routeDistanceKm: Double
+        get() = when (serviceType) {
+            ServiceType.INTERCITY -> selectedIntercityRoute.distanceKm
+            ServiceType.HOURLY -> selectedExcursion?.distanceKm ?: (hourlyHours * 18.0)
+            else -> liveRouteDistanceKm ?: KgGeoCatalog.haversineKm(pickupPoint, dropoffPoint)
+        }
+
+    val routeDurationMin: Int
+        get() = when (serviceType) {
+            ServiceType.INTERCITY -> selectedIntercityRoute.durationMin
+            ServiceType.HOURLY -> (selectedExcursion?.hours ?: hourlyHours) * 60
+            else -> liveRouteDurationMin ?: KgGeoCatalog.estimateDurationMin(routeDistanceKm)
+        }
+
+    val selectedTariff: TaxiTariff
+        get() = KgGeoCatalog.taxiTariffs.firstOrNull { it.id == selectedTariffId }
+            ?: KgGeoCatalog.taxiTariffs[1]
+
+    val priceBreakdown: PriceBreakdown
+        get() {
+            val base: Int
+            val distCost: Int
+            when (serviceType) {
+                ServiceType.TAXI -> {
+                    val t = selectedTariff
+                    base = t.baseSom
+                    distCost = (routeDistanceKm * t.perKmSom).roundToInt()
+                }
+                ServiceType.HOURLY -> {
+                    base = selectedExcursion?.priceSom ?: (hourlyHours * 650)
+                    distCost = 0
+                }
+                ServiceType.COURIER -> {
+                    base = 120
+                    distCost = (routeDistanceKm * 18).roundToInt()
+                }
+                ServiceType.CARGO -> {
+                    val vehicleBase = when {
+                        cargoVehicle.contains("Газель") -> 900
+                        cargoVehicle.contains("Спринтер") -> 750
+                        else -> 550
+                    }
+                    base = vehicleBase + cargoLoaders * 350
+                    distCost = (routeDistanceKm * 38).roundToInt()
+                }
+                ServiceType.INTERCITY -> {
+                    val seats = selectedIntercitySeats.ifEmpty { setOf(2) }
+                    base = seats.sumOf { seat ->
+                        selectedIntercityRoute.seatPriceSom +
+                            if (seat == 1) selectedIntercityRoute.frontSeatExtraSom else 0
+                    }
+                    distCost = 0
+                }
+                ServiceType.FOOD -> {
+                    val foodSum = foodCart.sumOf { it.item.priceSom * it.quantity }
+                    val delivery = if (profile.kgOneActive || foodCart.isEmpty()) 0 else 110
+                    base = foodSum
+                    distCost = delivery
+                }
+            }
+
+            val waypointsCost = if (serviceType == ServiceType.TAXI || serviceType == ServiceType.COURIER) {
+                waypoints.size * 45
+            } else 0
+            val meetAndGreetCost = if (meetAndGreetEnabled && serviceType == ServiceType.TAXI) {
+                if (profile.kgOneActive) 0 else 150
+            } else 0
+            val rawSubtotal = base + distCost + waypointsCost + meetAndGreetCost
+            val surgeExtraRaw = if (serviceType == ServiceType.TAXI && selectedCity.surgeMultiplier > 1.0) {
+                ((rawSubtotal * (selectedCity.surgeMultiplier - 1.0))).roundToInt()
+            } else 0
+            // KG Plus protects against 50% of surge during rush hour
+            val surgeExtra = if (profile.kgOneActive) (surgeExtraRaw * 0.5).roundToInt() else surgeExtraRaw
+            val withSurge = rawSubtotal + surgeExtra
+            val speedDelta = if (serviceType == ServiceType.TAXI) {
+                val flatPriority = if (pickupSpeed == PickupSpeed.PRIORITY && profile.kgOneActive) 0 else pickupSpeed.flatDeltaSom
+                ((withSurge * (pickupSpeed.multiplier - 1.0)).roundToInt()) + flatPriority
+            } else 0
+            val afterSpeed = max(50, withSurge + speedDelta)
+            val carpoolDisc = if (serviceType == ServiceType.TAXI && carpoolModeEnabled) {
+                (afterSpeed * 0.30).roundToInt()
+            } else 0
+            val afterCarpool = max(45, afterSpeed - carpoolDisc)
+            val kgOneDisc = if (profile.kgOneActive && serviceType != ServiceType.FOOD) {
+                (afterCarpool * 0.07).roundToInt()
+            } else 0
+            val promoDisc = if (appliedPromoPercent > 0) {
+                (afterCarpool * appliedPromoPercent / 100.0).roundToInt()
+            } else 0
+            val afterDisc = max(40, afterCarpool - kgOneDisc - promoDisc)
+            val bonusUsed = if (useBonusPoints) minOf(profile.bonusPoints, afterDisc / 2) else 0
+            val total = max(40, afterDisc - bonusUsed)
+            val cashback = if (profile.kgOneActive) max(10, (total * 0.10).roundToInt()) else max(5, (total * 0.05).roundToInt())
+
+            return PriceBreakdown(
+                baseSom = base,
+                distanceSom = distCost,
+                surgeSom = surgeExtra,
+                speedDeltaSom = speedDelta,
+                kgOneDiscountSom = kgOneDisc,
+                promoDiscountSom = promoDisc,
+                bonusUsedSom = bonusUsed,
+                finalTotalSom = total,
+                splitCount = splitCount,
+                waypointsSom = waypointsCost,
+                meetAndGreetSom = meetAndGreetCost,
+                carpoolDiscountSom = carpoolDisc,
+                kgPlusCashbackSom = cashback
+            )
+        }
+}
+
+class KgTaxiViewModel(
+    private val appContext: Context,
+    private val dao: KgTaxiDao,
+    private val firestoreSync: FirestoreSyncRepository,
+    private val aiAssistant: AiRouteAssistant,
+    private val prefsStore: AppPreferencesStore
+) : ViewModel() {
+
+    private val _uiState = MutableStateFlow(KgTaxiUiState())
+    val uiState: StateFlow<KgTaxiUiState> = _uiState.asStateFlow()
+
+    private var rideSimulationJob: Job? = null
+    private var driverWaitingTimerJob: Job? = null
+    private var routeFetchJob: Job? = null
+    private var addressSearchJob: Job? = null
+    private var cloudObserverJobs: MutableList<Job> = mutableListOf()
+
+    init {
+        SoundAndNotificationManager.ensureChannels(appContext)
+        seedAndObserveLocalDatabase()
+        observePreferences()
+        generateNearbyDrivers(_uiState.value.selectedCity)
+        generateDriverIncomingOrders(_uiState.value.selectedCity)
+        _uiState.update { it.copy(offlineMode = !LocationAndVoiceHelper.isNetworkAvailable(appContext)) }
+        refreshLiveRoadRoute()
+        refreshCityWeatherAndPasses()
+    }
+
+    private fun observePreferences() {
+        viewModelScope.launch {
+            prefsStore.prefsFlow.collect { snap ->
+                _uiState.update {
+                    it.copy(
+                        showOnboarding = !snap.onboardingSeen,
+                        walletBalanceSom = snap.walletBalanceSom,
+                        referralClaimed = snap.referralClaimed,
+                        displayCurrency = DisplayCurrency.fromCode(snap.displayCurrencyCode),
+                        businessCompanyInn = snap.businessCompanyInn,
+                        favoriteDrivers = snap.favoriteDrivers,
+                        blockedDrivers = snap.blockedDrivers,
+                        ownerBankConfig = snap.ownerBankConfig,
+                        ownerPendingBalanceSom = snap.ownerPendingBalanceSom,
+                        ownerTotalSettledSom = snap.ownerTotalSettledSom
+                    )
+                }
+            }
+        }
+    }
+
+    private fun seedAndObserveLocalDatabase() {
+        viewModelScope.launch {
+            if (dao.getProfileOnce() == null) {
+                dao.upsertProfile(LocalProfileEntity())
+                dao.upsertSavedPlaces(
+                    listOf(
+                        LocalSavedPlaceEntity("home_1", "Дом", "пр. Чуй 155, Бишкек", "Бишкек", 42.8763, 74.6143, "HOME", 5.0),
+                        LocalSavedPlaceEntity("work_1", "Работа", "ТРЦ Asia Mall, пр. Ч. Айтматова 3", "Бишкек", 42.8559, 74.5855, "WORK", 4.9),
+                        LocalSavedPlaceEntity("fav_1", "Аэропорт Манас (FRU)", "Аэропорт Манас, терминал 1", "Бишкек", 43.0613, 74.4776, "ROUTE", 4.7)
+                    )
+                )
+                dao.upsertFamilyMember(
+                    LocalFamilyMemberEntity("fam_demo", "Айдана (Teen)", "Дочь", "+996 700 441 882", 12000, true)
+                )
+                dao.upsertMaintenance(
+                    LocalMaintenanceEntity("maint_1", "Toyota Camry 70", "Замена масла 5W-30 и фильтров", 95000, 93800, 8.5, false)
+                )
+                dao.upsertTrip(
+                    LocalTripEntity(
+                        id = "trip_seed_1",
+                        serviceType = "TAXI",
+                        tariffName = "Green EV",
+                        city = "Бишкек",
+                        pickupAddress = "Площадь Ала-Тоо",
+                        dropoffAddress = "ТРЦ Asia Mall",
+                        distanceKm = 4.6,
+                        durationMin = 12,
+                        totalPriceSom = 215,
+                        paymentMethod = "MBANK",
+                        status = "COMPLETED",
+                        driverName = "Бакыт К.",
+                        driverCar = "BYD Han EV • 01KG 808 EV",
+                        safetyPin = "4829",
+                        rating = 5,
+                        tipSom = 50,
+                        businessTrip = false,
+                        lostItemNote = "",
+                        createdAtMillis = System.currentTimeMillis() - 86_400_000L
+                    )
+                )
+            }
+        }
+
+        viewModelScope.launch {
+            dao.observeProfile().filterNotNull().collect { profile ->
+                val city = KgGeoCatalog.cityByName(profile.preferredCity)
+                _uiState.update { state ->
+                    state.copy(
+                        profile = profile,
+                        language = AppLanguage.fromCode(profile.language),
+                        darkTheme = profile.darkTheme,
+                        soundEnabled = profile.soundEnabled,
+                        selectedCity = if (state.selectedCity.name != city.name) city else state.selectedCity
+                    )
+                }
+            }
+        }
+        viewModelScope.launch {
+            dao.observeTrips().collect { list ->
+                _uiState.update { it.copy(trips = list) }
+            }
+        }
+        viewModelScope.launch {
+            dao.observeSavedPlaces().collect { list ->
+                _uiState.update { it.copy(savedPlaces = list) }
+            }
+        }
+        viewModelScope.launch {
+            dao.observeFamilyMembers().collect { list ->
+                _uiState.update { it.copy(familyMembers = list) }
+            }
+        }
+        viewModelScope.launch {
+            dao.observeMaintenance().collect { list ->
+                _uiState.update { it.copy(maintenanceLogs = list) }
+            }
+        }
+    }
+
+    // --- GOOGLE AUTH & REALTIME FIRESTORE SYNC ---
+
+    fun onUserSignedIn(uid: String, displayName: String?, email: String?) {
+        if (_uiState.value.signedInUid == uid && cloudObserverJobs.isNotEmpty()) return
+        stopCloudObservers()
+
+        _uiState.update {
+            it.copy(isSignedIn = true, signedInUid = uid, cloudSyncError = null, statusBanner = "Облачная синхронизация Google активна")
+        }
+
+        viewModelScope.launch {
+            val current = _uiState.value.profile
+            val updated = current.copy(
+                displayName = displayName?.takeIf { it.isNotBlank() } ?: current.displayName,
+                email = email ?: current.email
+            )
+            dao.upsertProfile(updated)
+            firestoreSync.syncProfile(updated)
+        }
+
+        // Attach scoped Firestore realtime snapshot listeners with two-tier CancellationException unwrapping
+        cloudObserverJobs += viewModelScope.launch {
+            firestoreSync.observeProfile(uid)
+                .catch { error ->
+                    val fsErr = generateSequence(error) { it.cause }
+                        .filterIsInstance<FirebaseFirestoreException>()
+                        .firstOrNull()
+                    if (fsErr == null && error is CancellationException) throw error
+                    _uiState.update { it.copy(cloudSyncError = (fsErr ?: error).message) }
+                }
+                .collect { remote ->
+                    if (remote != null) {
+                        val local = _uiState.value.profile
+                        dao.upsertProfile(
+                            local.copy(
+                                displayName = remote.displayName.ifBlank { local.displayName },
+                                phone = remote.phone.ifBlank { local.phone },
+                                email = remote.email.ifBlank { local.email },
+                                homeAddress = remote.homeAddress.ifBlank { local.homeAddress },
+                                workAddress = remote.workAddress.ifBlank { local.workAddress },
+                                paymentMethod = remote.paymentMethod,
+                                kgOneActive = remote.kgOneActive,
+                                businessProfileActive = remote.businessProfileActive,
+                                companyName = remote.companyName,
+                                companyEmail = remote.companyEmail,
+                                bonusPoints = remote.bonusPoints.toInt(),
+                                preferredCity = remote.preferredCity,
+                                language = remote.language,
+                                darkTheme = remote.darkTheme,
+                                soundEnabled = remote.soundEnabled
+                            )
+                        )
+                    }
+                }
+        }
+
+        cloudObserverJobs += viewModelScope.launch {
+            firestoreSync.observeTrips(uid)
+                .catch { error ->
+                    val fsErr = generateSequence(error) { it.cause }
+                        .filterIsInstance<FirebaseFirestoreException>()
+                        .firstOrNull()
+                    if (fsErr == null && error is CancellationException) throw error
+                    Log.w("KgTaxiVM", "Trips sync error: ${(fsErr ?: error).message}")
+                }
+                .collect { remoteTrips ->
+                    if (remoteTrips.isNotEmpty()) {
+                        dao.upsertTrips(
+                            remoteTrips.map { t ->
+                                LocalTripEntity(
+                                    id = t.id.ifBlank { UUID.randomUUID().toString() },
+                                    serviceType = t.serviceType,
+                                    tariffName = t.tariffName,
+                                    city = t.city,
+                                    pickupAddress = t.pickupAddress,
+                                    dropoffAddress = t.dropoffAddress,
+                                    distanceKm = t.distanceKm,
+                                    durationMin = t.durationMin.toInt(),
+                                    totalPriceSom = t.totalPriceSom.toInt(),
+                                    paymentMethod = t.paymentMethod,
+                                    status = t.status,
+                                    driverName = t.driverName,
+                                    driverCar = t.driverCar,
+                                    safetyPin = t.safetyPin,
+                                    rating = t.rating.toInt(),
+                                    tipSom = t.tipSom.toInt(),
+                                    businessTrip = t.businessTrip,
+                                    lostItemNote = t.lostItemNote,
+                                    createdAtMillis = t.createdAt?.toDate()?.time ?: System.currentTimeMillis()
+                                )
+                            }
+                        )
+                    }
+                }
+        }
+
+        cloudObserverJobs += viewModelScope.launch {
+            firestoreSync.observeSavedPlaces(uid)
+                .catch { error ->
+                    val fsErr = generateSequence(error) { it.cause }
+                        .filterIsInstance<FirebaseFirestoreException>()
+                        .firstOrNull()
+                    if (fsErr == null && error is CancellationException) throw error
+                }
+                .collect { list ->
+                    if (list.isNotEmpty()) {
+                        dao.upsertSavedPlaces(
+                            list.map { p ->
+                                LocalSavedPlaceEntity(p.id, p.label, p.address, p.city, p.lat, p.lng, p.category, p.rating)
+                            }
+                        )
+                    }
+                }
+        }
+
+        cloudObserverJobs += viewModelScope.launch {
+            firestoreSync.observeFamilyMembers(uid)
+                .catch { error ->
+                    val fsErr = generateSequence(error) { it.cause }
+                        .filterIsInstance<FirebaseFirestoreException>()
+                        .firstOrNull()
+                    if (fsErr == null && error is CancellationException) throw error
+                }
+                .collect { list ->
+                    if (list.isNotEmpty()) {
+                        dao.upsertFamilyMembers(
+                            list.map { m ->
+                                LocalFamilyMemberEntity(m.id, m.name, m.relation, m.phone, m.monthlyLimitSom.toInt(), m.teenControlEnabled)
+                            }
+                        )
+                    }
+                }
+        }
+
+        cloudObserverJobs += viewModelScope.launch {
+            firestoreSync.observeMaintenanceLogs(uid)
+                .catch { error ->
+                    val fsErr = generateSequence(error) { it.cause }
+                        .filterIsInstance<FirebaseFirestoreException>()
+                        .firstOrNull()
+                    if (fsErr == null && error is CancellationException) throw error
+                }
+                .collect { list ->
+                    if (list.isNotEmpty()) {
+                        dao.upsertMaintenanceAll(
+                            list.map { m ->
+                                LocalMaintenanceEntity(
+                                    m.id, m.vehicleName, m.serviceTitle,
+                                    m.dueMileageKm.toInt(), m.currentMileageKm.toInt(),
+                                    m.fuelLitersPer100Km, m.completed
+                                )
+                            }
+                        )
+                    }
+                }
+        }
+    }
+
+    fun stopCloudObservers() {
+        cloudObserverJobs.forEach { it.cancel() }
+        cloudObserverJobs.clear()
+    }
+
+    fun onUserSignedOut() {
+        stopCloudObservers()
+        _uiState.update {
+            it.copy(isSignedIn = false, signedInUid = null, statusBanner = "Вы вышли из аккаунта Google. Локальные данные сохранены.")
+        }
+    }
+
+    // --- HEADER & GLOBAL SETTINGS ---
+
+    fun setRole(role: AppRole) = _uiState.update { it.copy(role = role) }
+
+    fun cycleLanguage() {
+        val next = when (_uiState.value.language) {
+            AppLanguage.RU -> AppLanguage.KG
+            AppLanguage.KG -> AppLanguage.EN
+            AppLanguage.EN -> AppLanguage.RU
+        }
+        updateProfile { it.copy(language = next.code) }
+    }
+
+    fun toggleDarkTheme() {
+        val nextDark = !_uiState.value.darkTheme
+        _uiState.update {
+            it.copy(
+                themeMode = if (nextDark) AppThemeMode.DARK else AppThemeMode.LIGHT,
+                mapLayerStyle = if (nextDark && it.mapLayerStyle == MapLayerStyle.STANDARD) MapLayerStyle.NIGHT else if (!nextDark && it.mapLayerStyle == MapLayerStyle.NIGHT) MapLayerStyle.STANDARD else it.mapLayerStyle
+            )
+        }
+        updateProfile { it.copy(darkTheme = nextDark) }
+    }
+
+    fun setThemeMode(mode: AppThemeMode) {
+        _uiState.update {
+            it.copy(
+                themeMode = mode,
+                statusBanner = "Тема приложения: ${mode.label}"
+            )
+        }
+        if (mode == AppThemeMode.DARK || mode == AppThemeMode.LIGHT) {
+            updateProfile { it.copy(darkTheme = mode == AppThemeMode.DARK) }
+        }
+    }
+
+    fun setMapLayerStyle(style: MapLayerStyle) {
+        _uiState.update {
+            it.copy(
+                mapLayerStyle = style,
+                statusBanner = "Слой карты: ${style.label}"
+            )
+        }
+    }
+
+    fun cycleMapLayerStyle() {
+        val all = MapLayerStyle.entries
+        val next = all[(all.indexOf(_uiState.value.mapLayerStyle) + 1) % all.size]
+        setMapLayerStyle(next)
+    }
+
+    fun toggleSound() = updateProfile { it.copy(soundEnabled = !it.soundEnabled) }
+
+    fun toggleOfflineMode() {
+        _uiState.update {
+            val next = !it.offlineMode
+            it.copy(
+                offlineMode = next,
+                statusBanner = if (next) "Офлайн-режим: доступны сохранённые маршруты и векторная карта" else "Онлайн-режим активен"
+            )
+        }
+        refreshLiveRoadRoute()
+    }
+
+    fun clearBanner() = _uiState.update { it.copy(statusBanner = null) }
+
+    fun selectCity(city: KgCity) {
+        val firstLandmark = city.landmarks.firstOrNull()
+        val secondLandmark = city.landmarks.getOrNull(1) ?: firstLandmark
+        _uiState.update {
+            it.copy(
+                selectedCity = city,
+                pickupPoint = firstLandmark?.point ?: city.center,
+                pickupAddress = firstLandmark?.address ?: "${city.streets.first()}, 1, ${city.name}",
+                dropoffPoint = secondLandmark?.point ?: GeoPoint(city.center.lat + 0.015, city.center.lng + 0.015),
+                dropoffAddress = secondLandmark?.address ?: "${city.streets.last()}, 24, ${city.name}"
+            )
+        }
+        updateProfile { it.copy(preferredCity = city.name) }
+        generateNearbyDrivers(city)
+        generateDriverIncomingOrders(city)
+        refreshLiveRoadRoute()
+        refreshCityWeatherAndPasses()
+    }
+
+    fun toggleSurgeHeatmap() = _uiState.update { it.copy(showSurgeHeatmap = !it.showSurgeHeatmap) }
+
+    fun toggleTrafficOverlay() {
+        _uiState.update {
+            val next = !it.showTrafficOverlay
+            it.copy(
+                showTrafficOverlay = next,
+                statusBanner = if (next) "Слой пробок включён (${it.selectedCity.name})" else null
+            )
+        }
+    }
+
+    fun toggleMapPickTarget() {
+        _uiState.update {
+            val nextIsDropoff = !it.mapPickModeIsDropoff
+            it.copy(
+                mapPickModeIsDropoff = nextIsDropoff,
+                statusBanner = if (nextIsDropoff) "Нажмите карту для выбора Точки Б (куда)" else "Нажмите карту для выбора Точки А (подача)"
+            )
+        }
+    }
+
+    fun refreshLiveRoadRoute() {
+        routeFetchJob?.cancel()
+        routeFetchJob = viewModelScope.launch {
+            delay(180)
+            val s = _uiState.value
+            val result = KyrgyzstanRoutingClient.fetchRoadRoute(
+                pickup = s.pickupPoint,
+                dropoff = s.dropoffPoint,
+                offlineMode = s.offlineMode,
+                waypoints = s.waypoints.map { it.point }
+            )
+            _uiState.update {
+                it.copy(
+                    routePolyline = result.polyline,
+                    liveRouteDistanceKm = result.distanceKm,
+                    liveRouteDurationMin = result.durationMin,
+                    routeFromOsrm = result.fromLiveOsrm
+                )
+            }
+        }
+    }
+
+    fun addWaypoint(place: KgPlace) {
+        if (_uiState.value.waypoints.size >= 2) {
+            _uiState.update { it.copy(statusBanner = "Максимум 2 промежуточные остановки") }
+            return
+        }
+        if (_uiState.value.waypoints.any { it.id == place.id }) return
+        _uiState.update {
+            it.copy(
+                waypoints = it.waypoints + place,
+                statusBanner = "Добавлена остановка: ${place.name} (+45 сом)"
+            )
+        }
+        refreshLiveRoadRoute()
+    }
+
+    fun removeWaypoint(placeId: String) {
+        _uiState.update { it.copy(waypoints = it.waypoints.filterNot { w -> w.id == placeId }) }
+        refreshLiveRoadRoute()
+    }
+
+    fun selectPickupSpot(spot: String?) {
+        _uiState.update {
+            it.copy(
+                selectedPickupSpot = if (it.selectedPickupSpot == spot) null else spot,
+                statusBanner = if (spot != null && it.selectedPickupSpot != spot) "Точка встречи: $spot" else null
+            )
+        }
+    }
+
+    fun setBookingForOther(enabled: Boolean, name: String, phone: String) {
+        _uiState.update {
+            it.copy(
+                bookingForOther = enabled,
+                recipientName = name.trim(),
+                recipientPhone = phone.trim(),
+                statusBanner = if (enabled && name.isNotBlank()) "Заказ для получателя: ${name.trim()}" else null
+            )
+        }
+    }
+
+    fun onMapTapPickPoint(point: GeoPoint, isDropoff: Boolean = _uiState.value.mapPickModeIsDropoff) {
+        viewModelScope.launch {
+            val city = _uiState.value.selectedCity
+            val resolved = LocationAndVoiceHelper.reverseGeocode(appContext, city, point)
+            if (_uiState.value.activeRide != null && _uiState.value.activeRide?.status == TripStatus.IN_PROGRESS) {
+                editDestinationInTrip(resolved, point)
+                return@launch
+            }
+            _uiState.update {
+                if (isDropoff) {
+                    it.copy(dropoffPoint = point, dropoffAddress = resolved, statusBanner = "Точка Б: $resolved")
+                } else {
+                    it.copy(pickupPoint = point, pickupAddress = resolved, statusBanner = "Подача (А): $resolved")
+                }
+            }
+            refreshLiveRoadRoute()
+        }
+    }
+
+    fun locateMyGps() {
+        viewModelScope.launch {
+            val res = LocationAndVoiceHelper.fetchCurrentLocation(appContext, _uiState.value.selectedCity)
+            val matchedCity = KgGeoCatalog.cityByName(res.matchedCityName)
+            _uiState.update {
+                it.copy(
+                    selectedCity = matchedCity,
+                    pickupPoint = res.point,
+                    pickupAddress = res.address,
+                    statusBanner = if (res.fromRealGps) "GPS определён: ${res.address}" else "Точка подачи (${matchedCity.name}): ${res.address}"
+                )
+            }
+            refreshLiveRoadRoute()
+        }
+    }
+
+    // --- SEARCH, FILTERS & SERVICES ---
+
+    fun setSearchQuery(q: String) {
+        _uiState.update { it.copy(searchQuery = q) }
+        addressSearchJob?.cancel()
+        if (q.trim().length < 3 || _uiState.value.offlineMode) {
+            _uiState.update { it.copy(liveSearchResults = emptyList()) }
+            return
+        }
+        addressSearchJob = viewModelScope.launch {
+            delay(380)
+            val live = KyrgyzstanRoutingClient.searchKyrgyzstanAddresses(
+                query = q,
+                cityName = _uiState.value.selectedCity.name,
+                offlineMode = _uiState.value.offlineMode
+            )
+            _uiState.update { it.copy(liveSearchResults = live) }
+        }
+    }
+
+    fun setRatingFilter(minRating: Double) = _uiState.update { it.copy(filterMinRating = minRating) }
+    fun setPriceLevelFilter(maxLevel: Int) = _uiState.update { it.copy(filterMaxPriceLevel = maxLevel) }
+
+    fun selectDestinationPlace(place: KgPlace) {
+        _uiState.update {
+            it.copy(
+                dropoffPoint = place.point,
+                dropoffAddress = "${place.name} • ${place.address}",
+                searchQuery = "",
+                liveSearchResults = emptyList()
+            )
+        }
+        refreshLiveRoadRoute()
+    }
+
+    fun selectSavedAddressQuick(label: String, address: String, point: GeoPoint? = null) {
+        val city = _uiState.value.selectedCity
+        val p = point ?: GeoPoint(city.center.lat + 0.012, city.center.lng - 0.011)
+        _uiState.update {
+            it.copy(dropoffAddress = "$label: $address", dropoffPoint = p)
+        }
+        refreshLiveRoadRoute()
+    }
+
+    fun saveCurrentRouteOffline() {
+        val s = _uiState.value
+        val label = "Маршрут: ${s.pickupAddress.substringBefore(",")} → ${s.dropoffAddress.substringBefore(",")}"
+        val entity = LocalSavedPlaceEntity(
+            id = "offline_route_${System.currentTimeMillis()}",
+            label = label.take(44),
+            address = s.dropoffAddress,
+            city = s.selectedCity.name,
+            lat = s.dropoffPoint.lat,
+            lng = s.dropoffPoint.lng,
+            category = "OFFLINE_ROUTE",
+            rating = 5.0
+        )
+        viewModelScope.launch {
+            dao.upsertSavedPlace(entity)
+            if (s.isSignedIn) firestoreSync.syncSavedPlace(entity)
+            _uiState.update { it.copy(statusBanner = "Маршрут сохранён для офлайн-доступа") }
+        }
+    }
+
+    fun loadSavedPlaceToRoute(place: LocalSavedPlaceEntity) {
+        val city = KgGeoCatalog.cityByName(place.city)
+        val targetPoint = GeoPoint(place.lat, place.lng)
+        _uiState.update {
+            it.copy(
+                selectedCity = city,
+                dropoffPoint = targetPoint,
+                dropoffAddress = "${place.label} • ${place.address}",
+                statusBanner = "Маршрут загружен: ${place.label}"
+            )
+        }
+        generateNearbyDrivers(city)
+        refreshLiveRoadRoute()
+    }
+
+    fun setServiceType(type: ServiceType) = _uiState.update { it.copy(serviceType = type, biddingActive = false) }
+
+    fun selectTariff(tariffId: String) {
+        _uiState.update { it.copy(selectedTariffId = tariffId) }
+        // Adaptive UI learning: remember frequently used tariff
+        val profile = _uiState.value.profile
+        val counts = profile.tariffUsageCounts.split(",")
+            .mapNotNull { entry ->
+                val parts = entry.split(":")
+                if (parts.size == 2) parts[0] to (parts[1].toIntOrNull() ?: 0) else null
+            }.toMap().toMutableMap()
+        counts[tariffId] = (counts[tariffId] ?: 0) + 1
+        val top = counts.maxByOrNull { it.value }?.key ?: tariffId
+        val serialized = counts.entries.joinToString(",") { "${it.key}:${it.value}" }
+        updateProfile { it.copy(preferredTariffId = top, tariffUsageCounts = serialized) }
+    }
+
+    fun setPickupSpeed(speed: PickupSpeed) = _uiState.update { it.copy(pickupSpeed = speed) }
+
+    fun updatePreferences(transform: (RidePreferences) -> RidePreferences) =
+        _uiState.update { it.copy(preferences = transform(it.preferences)) }
+
+    fun setPromoInput(code: String) = _uiState.update { it.copy(promoCodeInput = code) }
+
+    fun applyPromoCode() {
+        val code = _uiState.value.promoCodeInput.trim().uppercase()
+        val pct = when (code) {
+            "KG10", "BISHKEK", "UBERKG" -> 10
+            "ECO15", "GREEN" -> 15
+            "OSH20" -> 20
+            else -> 0
+        }
+        _uiState.update {
+            it.copy(
+                appliedPromoPercent = pct,
+                statusBanner = if (pct > 0) "Промокод $code применён (-$pct%)" else "Попробуйте промокоды: KG10, ECO15 или OSH20"
+            )
+        }
+    }
+
+    fun toggleUseBonusPoints() = _uiState.update { it.copy(useBonusPoints = !it.useBonusPoints) }
+    fun setSplitCount(count: Int) = _uiState.update { it.copy(splitCount = count.coerceIn(1, 4)) }
+    fun setReserveSchedule(timeLabel: String?, flight: FlightInfo?) {
+        _uiState.update {
+            val drop = when (flight?.airport) {
+                "FRU" -> "Аэропорт Манас (FRU) • Рейс ${flight.code}"
+                "OSS" -> "Аэропорт Ош (OSS) • Рейс ${flight.code}"
+                else -> it.dropoffAddress
+            }
+            it.copy(
+                reserveTimeLabel = timeLabel,
+                selectedFlight = flight,
+                dropoffAddress = drop,
+                statusBanner = if (timeLabel != null) "Reserve: подача запланирована на $timeLabel" else null
+            )
+        }
+    }
+
+    // --- BIDDING ("ПРЕДЛОЖИТЬ СВОЮ ЦЕНУ") ---
+
+    fun startBidding(offerSom: Int) {
+        val base = _uiState.value.priceBreakdown.finalTotalSom
+        val safeOffer = offerSom.coerceIn(max(60, (base * 0.6).roundToInt()), base * 2)
+        val offers = listOf(
+            DriverBidOffer("bid1", "Эрмек С.", "Hyundai Sonata (белый)", "01KG 412 ABC", 4.95, 4, safeOffer),
+            DriverBidOffer("bid2", "Азамат Ж.", "Toyota Camry 55 (чёрный)", "01KG 889 KGA", 4.91, 3, safeOffer + 25),
+            DriverBidOffer("bid3", "Айгуль М.", "BYD Qin Plus EV", "01KG 305 EV", 4.98, 5, safeOffer + 15)
+        )
+        _uiState.update { it.copy(biddingActive = true, userBidSom = safeOffer, bidOffers = offers) }
+    }
+
+    fun closeBidding() = _uiState.update { it.copy(biddingActive = false, bidOffers = emptyList()) }
+
+    fun acceptBidOffer(offer: DriverBidOffer) {
+        _uiState.update { it.copy(biddingActive = false, bidOffers = emptyList()) }
+        requestOrder(customPriceSom = offer.offeredPriceSom, forcedDriver = offer.driverName to "${offer.carModel} • ${offer.plateNumber}")
+    }
+
+    // --- HOURLY / COURIER / CARGO / INTERCITY / FOOD ---
+
+    fun setHourlyHours(hours: Int) = _uiState.update { it.copy(hourlyHours = hours.coerceIn(1, 12), selectedExcursion = null) }
+    fun selectExcursion(preset: ExcursionPreset) {
+        _uiState.update {
+            it.copy(selectedExcursion = preset, hourlyHours = preset.hours, dropoffPoint = preset.destination, dropoffAddress = preset.title)
+        }
+        refreshLiveRoadRoute()
+    }
+
+    fun setCourierDetails(recipient: String, comment: String) =
+        _uiState.update { it.copy(courierRecipient = recipient, courierComment = comment) }
+
+    fun setCargoOptions(vehicle: String, loaders: Int) =
+        _uiState.update { it.copy(cargoVehicle = vehicle, cargoLoaders = loaders.coerceIn(0, 4)) }
+
+    fun selectIntercityRoute(route: IntercityRoute) {
+        val firstScheduled = KgGeoCatalog.intercityScheduleForRoute(route.id).firstOrNull()
+        val occ = firstScheduled?.occupiedSeats ?: setOf(1, 4)
+        val firstFree = (1..6).firstOrNull { it !in occ } ?: 2
+        _uiState.update {
+            it.copy(
+                selectedIntercityRoute = route,
+                selectedIntercityTripId = firstScheduled?.id,
+                occupiedIntercitySeats = occ,
+                selectedIntercitySeats = setOf(firstFree)
+            )
+        }
+    }
+
+    fun selectIntercityScheduledTrip(trip: IntercityScheduledTrip) {
+        val firstFree = (1..6).firstOrNull { it !in trip.occupiedSeats } ?: 2
+        _uiState.update {
+            it.copy(
+                selectedIntercityTripId = trip.id,
+                occupiedIntercitySeats = trip.occupiedSeats,
+                selectedIntercitySeats = setOf(firstFree),
+                statusBanner = "Выбран рейс ${trip.departureTime} • ${trip.driverName} (${trip.carModel})"
+            )
+        }
+    }
+
+    fun toggleIntercitySeat(seatNumber: Int) {
+        if (seatNumber in _uiState.value.occupiedIntercitySeats) return
+        _uiState.update { state ->
+            val next = state.selectedIntercitySeats.toMutableSet()
+            if (seatNumber in next && next.size > 1) next.remove(seatNumber) else next.add(seatNumber)
+            state.copy(selectedIntercitySeats = next)
+        }
+    }
+
+    fun selectFoodVenue(venueId: String) = _uiState.update { it.copy(selectedVenueId = venueId) }
+
+    fun addFoodToCart(venue: FoodVenue, item: FoodMenuItem) {
+        _uiState.update { state ->
+            val current = state.foodCart.toMutableList()
+            val idx = current.indexOfFirst { it.item.id == item.id }
+            if (idx >= 0) {
+                current[idx] = current[idx].copy(quantity = current[idx].quantity + 1)
+            } else {
+                current += FoodCartEntry(venue.id, venue.name, item, 1)
+            }
+            state.copy(foodCart = current)
+        }
+    }
+
+    fun removeFoodFromCart(itemId: String) {
+        _uiState.update { state ->
+            val current = state.foodCart.mapNotNull { entry ->
+                if (entry.item.id != itemId) entry
+                else if (entry.quantity > 1) entry.copy(quantity = entry.quantity - 1) else null
+            }
+            state.copy(foodCart = current)
+        }
+    }
+
+    // --- ORDER LIFECYCLE, IN-TRIP EDIT, RIDECHECK & POST-TRIP ---
+
+    fun requestOrder(customPriceSom: Int? = null, forcedDriver: Pair<String, String>? = null) {
+        val s = _uiState.value
+        val price = customPriceSom ?: s.priceBreakdown.finalTotalSom
+        val tripId = "trip_${System.currentTimeMillis()}"
+        val pin = (1000 + Random.nextInt(9000)).toString()
+        val isLady = s.serviceType == ServiceType.TAXI && s.selectedTariff.ladyOnly
+        val isSober = s.serviceType == ServiceType.TAXI && s.selectedTariff.soberDriver
+        val preferredFav = s.favoriteDrivers.firstOrNull { it !in s.blockedDrivers }
+        val (driverName, driverCar) = forcedDriver ?: if (isLady) {
+            "Айпери К." to "Kia K5 (белый) • 01KG 521 LDK"
+        } else if (isSober) {
+            "Руслан А. (Перегон)" to "Ваш автомобиль • Стаж 12 лет"
+        } else if (s.serviceType == ServiceType.TAXI && s.selectedTariff.ecoGreen) {
+            "Тимур Б." to "BYD Song Plus EV • 01KG 901 EV"
+        } else if (preferredFav != null) {
+            preferredFav to "Toyota Camry 70 (Избранный ★) • 01KG 707 VIP"
+        } else {
+            val fallbackName = if ("Нурлан Т." in s.blockedDrivers) "Эрмек С." else "Нурлан Т."
+            fallbackName to "Toyota Camry 70 • 01KG 777 KGT"
+        }
+
+        val tariffLabel = when (s.serviceType) {
+            ServiceType.TAXI -> s.selectedTariff.nameRu
+            ServiceType.HOURLY -> s.selectedExcursion?.title ?: "Почасовая (${s.hourlyHours} ч)"
+            ServiceType.COURIER -> "Курьер от двери до двери"
+            ServiceType.CARGO -> s.cargoVehicle
+            ServiceType.INTERCITY -> "${s.selectedIntercityRoute.fromCity} → ${s.selectedIntercityRoute.toCity} (места ${s.selectedIntercitySeats.sorted().joinToString()})"
+            ServiceType.FOOD -> s.foodCart.firstOrNull()?.venueName ?: "Доставка еды KG"
+        }
+
+        val dropLabel = when (s.serviceType) {
+            ServiceType.INTERCITY -> s.selectedIntercityRoute.toCity
+            ServiceType.FOOD -> s.pickupAddress
+            else -> s.dropoffAddress
+        }
+
+        val ride = ActiveRideState(
+            tripId = tripId,
+            serviceType = s.serviceType,
+            tariffName = tariffLabel,
+            city = s.selectedCity.name,
+            pickupAddress = s.pickupAddress,
+            dropoffAddress = dropLabel,
+            pickupPoint = s.pickupPoint,
+            dropoffPoint = s.dropoffPoint,
+            distanceKm = s.routeDistanceKm,
+            durationMin = s.routeDurationMin,
+            totalPriceSom = price,
+            paymentMethod = PaymentMethod.fromCode(s.profile.paymentMethod),
+            status = TripStatus.SEARCHING,
+            driverName = driverName,
+            driverCar = driverCar,
+            driverRating = 4.96,
+            driverEtaMin = 4,
+            safetyPin = pin,
+            progress = 0f,
+            businessTrip = s.profile.businessProfileActive,
+            splitCount = s.splitCount,
+            scheduledLabel = s.reserveTimeLabel,
+            pickupSpotNote = s.selectedPickupSpot,
+            recipientName = if (s.bookingForOther) s.recipientName.ifBlank { "Гость" } else null,
+            recipientPhone = if (s.bookingForOther) s.recipientPhone else null,
+            waypoints = s.waypoints,
+            waitingSeconds = 0,
+            meetAndGreetSignText = if (s.meetAndGreetEnabled) s.meetAndGreetSignText.ifBlank { s.profile.displayName } else null,
+            courierParcelPhotoUri = if (s.serviceType == ServiceType.COURIER) s.courierParcelPhotoUri else null
+        )
+
+        val welcomeDriverMsg = DriverChatMessage(
+            id = "chat_init_$tripId",
+            fromPassenger = false,
+            originalText = if (s.selectedPickupSpot != null) {
+                "Салам! Выезжаю к точке «${s.selectedPickupSpot}». Буду через ~4 мин."
+            } else {
+                "Салам! Заказ принял, уже еду к точке подачи."
+            }
+        )
+
+        _uiState.update {
+            it.copy(
+                activeRide = ride,
+                driverChatMessages = listOf(welcomeDriverMsg),
+                foodCart = if (s.serviceType == ServiceType.FOOD) emptyList() else it.foodCart
+            )
+        }
+        runRideSimulation(ride)
+    }
+
+    private fun runRideSimulation(initialRide: ActiveRideState) {
+        rideSimulationJob?.cancel()
+        rideSimulationJob = viewModelScope.launch {
+            delay(1800)
+            // Assigned
+            SoundAndNotificationManager.playCue(SoundCue.DRIVER_ASSIGNED, _uiState.value.soundEnabled)
+            SoundAndNotificationManager.postNotification(
+                appContext,
+                "Водитель назначен — ${initialRide.driverName}",
+                "${initialRide.driverCar} • PIN: ${initialRide.safetyPin}"
+            )
+            _uiState.update { state ->
+                state.activeRide?.let { r ->
+                    state.copy(activeRide = r.copy(status = TripStatus.ASSIGNED, progress = 0.12f, driverEtaMin = 3))
+                } ?: state
+            }
+
+            delay(2800)
+            // Arrived
+            SoundAndNotificationManager.playCue(SoundCue.DRIVER_ARRIVED, _uiState.value.soundEnabled)
+            SoundAndNotificationManager.postNotification(
+                appContext,
+                "Автомобиль подан!",
+                "Назовите водителю PIN ${initialRide.safetyPin}"
+            )
+            _uiState.update { state ->
+                state.activeRide?.let { r ->
+                    state.copy(activeRide = r.copy(status = TripStatus.ARRIVED, progress = 0.25f, driverEtaMin = 0, waitingSeconds = 1))
+                } ?: state
+            }
+
+            // Live free-waiting countdown ticks while driver waits at pickup
+            repeat(5) { tick ->
+                delay(1000)
+                _uiState.update { state ->
+                    state.activeRide?.let { r ->
+                        if (r.status == TripStatus.ARRIVED) {
+                            state.copy(activeRide = r.copy(waitingSeconds = tick + 2))
+                        } else state
+                    } ?: state
+                }
+            }
+            // In progress
+            _uiState.update { state ->
+                state.activeRide?.let { r ->
+                    state.copy(activeRide = r.copy(status = TripStatus.IN_PROGRESS, progress = 0.45f))
+                } ?: state
+            }
+
+            // Animate progress smoothly + trigger RideCheck safety prompt midway
+            val steps = listOf(0.60f, 0.72f, 0.88f, 1.0f)
+            steps.forEachIndexed { idx, p ->
+                delay(2400)
+                if (idx == 1) {
+                    SoundAndNotificationManager.playCue(SoundCue.RIDE_CHECK_ALERT, _uiState.value.soundEnabled)
+                }
+                _uiState.update { state ->
+                    state.activeRide?.let { r ->
+                        state.copy(activeRide = r.copy(progress = p, rideCheckAlert = idx == 1 || r.rideCheckAlert))
+                    } ?: state
+                }
+            }
+            completeActiveRide()
+        }
+    }
+
+    fun dismissRideCheck() {
+        _uiState.update { state ->
+            state.activeRide?.let { r -> state.copy(activeRide = r.copy(rideCheckAlert = false)) } ?: state
+        }
+    }
+
+    fun editDestinationInTrip(newAddress: String, newPoint: GeoPoint? = null) {
+        _uiState.update { state ->
+            val r = state.activeRide ?: return@update state
+            val pt = newPoint ?: GeoPoint(r.dropoffPoint.lat + 0.008, r.dropoffPoint.lng + 0.006)
+            val newDist = KgGeoCatalog.haversineKm(r.pickupPoint, pt)
+            val newDur = KgGeoCatalog.estimateDurationMin(newDist)
+            val updatedPrice = max(r.totalPriceSom, (newDist * 26 + 110).roundToInt())
+            SoundAndNotificationManager.postNotification(
+                appContext,
+                "Маршрут обновлён в поездке",
+                "Новый адрес: $newAddress ($updatedPrice сом)"
+            )
+            state.copy(
+                dropoffAddress = newAddress,
+                dropoffPoint = pt,
+                activeRide = r.copy(
+                    dropoffAddress = newAddress,
+                    dropoffPoint = pt,
+                    distanceKm = newDist,
+                    durationMin = newDur,
+                    totalPriceSom = updatedPrice
+                ),
+                statusBanner = "Адрес назначения обновлён: $newAddress"
+            )
+        }
+        refreshLiveRoadRoute()
+    }
+
+    fun cancelActiveRide() {
+        rideSimulationJob?.cancel()
+        _uiState.update { it.copy(activeRide = null, statusBanner = "Заказ отменён") }
+    }
+
+    fun completeActiveRideNow() {
+        rideSimulationJob?.cancel()
+        completeActiveRide()
+    }
+
+    private fun completeActiveRide() {
+        val r = _uiState.value.activeRide ?: return
+        SoundAndNotificationManager.playCue(SoundCue.TRIP_COMPLETED, _uiState.value.soundEnabled)
+        SoundAndNotificationManager.postNotification(
+            appContext,
+            "Поездка завершена • ${r.totalPriceSom} сом",
+            "Спасибо за поездку с KG Taxi! Оцените водителя ${r.driverName}."
+        )
+        val entity = LocalTripEntity(
+            id = r.tripId,
+            serviceType = r.serviceType.name,
+            tariffName = r.tariffName,
+            city = r.city,
+            pickupAddress = r.pickupAddress,
+            dropoffAddress = r.dropoffAddress,
+            distanceKm = r.distanceKm,
+            durationMin = r.durationMin,
+            totalPriceSom = r.totalPriceSom,
+            paymentMethod = r.paymentMethod.code,
+            status = TripStatus.COMPLETED.name,
+            driverName = r.driverName,
+            driverCar = r.driverCar,
+            safetyPin = r.safetyPin,
+            rating = 0,
+            tipSom = 0,
+            businessTrip = r.businessTrip,
+            lostItemNote = "",
+            createdAtMillis = System.currentTimeMillis()
+        )
+        _uiState.update { it.copy(activeRide = null, postTripReceipt = entity) }
+        viewModelScope.launch {
+            dao.upsertTrip(entity)
+            // Award 10% cashback with KG Plus (KG One) or 5% standard
+            val rate = if (_uiState.value.profile.kgOneActive) 0.10 else 0.05
+            val bonusGain = max(10, (r.totalPriceSom * rate).roundToInt())
+            val nextProfile = _uiState.value.profile.copy(bonusPoints = _uiState.value.profile.bonusPoints + bonusGain)
+            dao.upsertProfile(nextProfile)
+            if (_uiState.value.isSignedIn) {
+                firestoreSync.syncTripCreate(entity)
+                firestoreSync.syncProfile(nextProfile)
+            }
+        }
+        recordOwnerCommissionSplit(
+            orderId = r.tripId,
+            sourceLabel = "${r.tariffName} (Пассажир)",
+            city = r.city,
+            grossSom = r.totalPriceSom
+        )
+    }
+
+    fun submitPostTripReview(trip: LocalTripEntity, rating: Int, tipSom: Int, lostItemNote: String) {
+        val updated = trip.copy(rating = rating, tipSom = tipSom, lostItemNote = lostItemNote)
+        _uiState.update {
+            it.copy(
+                postTripReceipt = null,
+                statusBanner = if (lostItemNote.isNotBlank()) "Заявка «Забытые вещи» отправлена водителю ${trip.driverName}" else "Спасибо за оценку ($rating★)!"
+            )
+        }
+        viewModelScope.launch {
+            dao.upsertTrip(updated)
+            if (_uiState.value.isSignedIn) {
+                firestoreSync.syncTripPostUpdate(updated.id, rating, tipSom, lostItemNote)
+            }
+        }
+    }
+
+    fun dismissPostTripReceipt() = _uiState.update { it.copy(postTripReceipt = null) }
+
+    // --- PROFILE, WALLET, FAMILY, BUSINESS & SAVED PLACES ---
+
+    fun updateProfile(transform: (LocalProfileEntity) -> LocalProfileEntity) {
+        val updated = transform(_uiState.value.profile)
+        _uiState.update {
+            it.copy(
+                profile = updated,
+                language = AppLanguage.fromCode(updated.language),
+                darkTheme = updated.darkTheme,
+                soundEnabled = updated.soundEnabled
+            )
+        }
+        viewModelScope.launch {
+            dao.upsertProfile(updated)
+            if (_uiState.value.isSignedIn) {
+                firestoreSync.syncProfile(updated)
+            }
+        }
+    }
+
+    fun addSavedPlace(label: String, address: String, category: String = "FAVORITE") {
+        val city = _uiState.value.selectedCity
+        val entity = LocalSavedPlaceEntity(
+            id = "place_${System.currentTimeMillis()}",
+            label = label.trim().ifBlank { "Избранное" },
+            address = address.trim().ifBlank { _uiState.value.dropoffAddress },
+            city = city.name,
+            lat = _uiState.value.dropoffPoint.lat,
+            lng = _uiState.value.dropoffPoint.lng,
+            category = category,
+            rating = 4.9
+        )
+        viewModelScope.launch {
+            dao.upsertSavedPlace(entity)
+            if (_uiState.value.isSignedIn) firestoreSync.syncSavedPlace(entity)
+        }
+    }
+
+    fun deleteSavedPlace(id: String) {
+        viewModelScope.launch {
+            dao.deleteSavedPlace(id)
+            if (_uiState.value.isSignedIn) firestoreSync.deleteSavedPlace(id)
+        }
+    }
+
+    fun addFamilyMember(name: String, relation: String, phone: String, monthlyLimitSom: Int) {
+        val member = LocalFamilyMemberEntity(
+            id = "fam_${System.currentTimeMillis()}",
+            name = name.trim().ifBlank { "Член семьи" },
+            relation = relation.trim().ifBlank { "Teen" },
+            phone = phone.trim(),
+            monthlyLimitSom = monthlyLimitSom.coerceIn(1000, 500000),
+            teenControlEnabled = true
+        )
+        viewModelScope.launch {
+            dao.upsertFamilyMember(member)
+            if (_uiState.value.isSignedIn) firestoreSync.syncFamilyMember(member)
+        }
+    }
+
+    fun removeFamilyMember(id: String) {
+        viewModelScope.launch {
+            dao.deleteFamilyMember(id)
+            if (_uiState.value.isSignedIn) firestoreSync.deleteFamilyMember(id)
+        }
+    }
+
+    // --- DRIVER CABIN, FUEL CALCULATOR & MAINTENANCE ---
+
+    fun toggleDriverOnline() {
+        _uiState.update {
+            val next = !it.driverOnline
+            it.copy(
+                driverOnline = next,
+                statusBanner = if (next) "Вы на линии! Заказы с Upfront Earnings активны." else "Вы ушли с линии."
+            )
+        }
+        if (_uiState.value.driverOnline) {
+            generateDriverIncomingOrders(_uiState.value.selectedCity)
+            SoundAndNotificationManager.postNotification(
+                appContext,
+                "Трафик в реальном времени — ${_uiState.value.selectedCity.name}",
+                "Повышенный спрос x${_uiState.value.selectedCity.surgeMultiplier} в центре. Средняя скорость 26 км/ч.",
+                isHighPriority = false
+            )
+        }
+    }
+
+    fun acceptDriverOrder(order: DriverIncomingOrder) {
+        driverWaitingTimerJob?.cancel()
+        SoundAndNotificationManager.playCue(SoundCue.DRIVER_ASSIGNED, _uiState.value.soundEnabled)
+        val effectiveOrder = if (_uiState.value.driverShiftPass != DriverShiftPass.NONE) {
+            order.copy(upfrontNetEarningsSom = order.grossFareSom)
+        } else order
+        val initPassengerMsg = DriverChatMessage(
+            id = "drv_chat_init_${order.id}",
+            fromPassenger = true,
+            originalText = "Здравствуйте! Жду вас у точки «${order.pickupAddress.substringBefore(",")}»."
+        )
+        _uiState.update {
+            it.copy(
+                driverCoffeeBreakActive = false,
+                driverAcceptedOrder = effectiveOrder,
+                driverOrderStage = DriverOrderStage.EN_ROUTE_TO_PICKUP,
+                driverOrderWaitingSeconds = 0,
+                driverBackToBackOffer = null,
+                driverActiveOrderMessages = listOf(initPassengerMsg),
+                driverActivityScore = (it.driverActivityScore + 2).coerceAtMost(100),
+                driverIncomingOrders = it.driverIncomingOrders.filterNot { o -> o.id == order.id },
+                statusBanner = "Заказ принят! +2 Активность • Подача ${order.pickupEtaMin} мин"
+            )
+        }
+    }
+
+    fun skipDriverOrder(order: DriverIncomingOrder) {
+        _uiState.update {
+            val remaining = it.driverIncomingOrders.filterNot { o -> o.id == order.id }
+            it.copy(
+                driverActivityScore = (it.driverActivityScore - 4).coerceAtLeast(0),
+                driverIncomingOrders = remaining,
+                statusBanner = "Заказ пропущен (-4 Активность)"
+            )
+        }
+        if (_uiState.value.driverIncomingOrders.isEmpty()) {
+            generateDriverIncomingOrders(_uiState.value.selectedCity)
+        }
+    }
+
+    fun advanceDriverOrderStage() {
+        val currentOrder = _uiState.value.driverAcceptedOrder ?: return
+        when (_uiState.value.driverOrderStage) {
+            DriverOrderStage.EN_ROUTE_TO_PICKUP -> {
+                SoundAndNotificationManager.playCue(SoundCue.DRIVER_ARRIVED, _uiState.value.soundEnabled)
+                _uiState.update {
+                    it.copy(
+                        driverOrderStage = DriverOrderStage.WAITING_AT_PICKUP,
+                        driverOrderWaitingSeconds = 0,
+                        statusBanner = "Вы на месте! Бесплатное ожидание 3:00 запущено"
+                    )
+                }
+                startDriverWaitingTimer()
+            }
+            DriverOrderStage.WAITING_AT_PICKUP -> {
+                driverWaitingTimerJob?.cancel()
+                val city = _uiState.value.selectedCity
+                // Propose a realistic Back-to-Back ("По цепочке") next order near dropoff!
+                val chainedNext = DriverIncomingOrder(
+                    id = "chain_${System.currentTimeMillis()}",
+                    passengerName = "Нурбек К.",
+                    passengerRating = 4.95,
+                    serviceType = ServiceType.TAXI,
+                    tariffName = "Комфорт",
+                    pickupAddress = "Рядом с ${currentOrder.dropoffAddress.substringBefore(",")}",
+                    dropoffAddress = city.landmarks.lastOrNull()?.name ?: "Аэропорт Манас (FRU)",
+                    distanceKm = 7.6,
+                    durationMin = 15,
+                    grossFareSom = 360,
+                    upfrontNetEarningsSom = OwnerPayoutGatewayClient.calculateOrderSplit(
+                        grossSom = 360,
+                        commissionPercent = _uiState.value.ownerBankConfig.commissionPercent,
+                        commissionFreeShiftActive = _uiState.value.driverShiftPass != DriverShiftPass.NONE
+                    ).driverNetSom,
+                    surgeLabel = "x1.3",
+                    city = city.name,
+                    pickupPoint = currentOrder.dropoffPoint,
+                    dropoffPoint = city.landmarks.lastOrNull()?.point ?: city.center,
+                    pickupEtaMin = 2,
+                    pickupDistanceKm = 0.6,
+                    paymentMethodLabel = "MBank",
+                    passengerPin = "6194"
+                )
+                _uiState.update {
+                    it.copy(
+                        driverOrderStage = DriverOrderStage.IN_TRIP,
+                        driverBackToBackOffer = if (it.driverQueuedNextOrder == null) chainedNext else null,
+                        statusBanner = "Поездка началась! Доступен заказ по цепочке рядом с высадкой"
+                    )
+                }
+            }
+            DriverOrderStage.IN_TRIP -> {
+                completeDriverOrder()
+            }
+        }
+    }
+
+    private fun startDriverWaitingTimer() {
+        driverWaitingTimerJob?.cancel()
+        driverWaitingTimerJob = viewModelScope.launch {
+            while (_uiState.value.driverOrderStage == DriverOrderStage.WAITING_AT_PICKUP &&
+                _uiState.value.driverAcceptedOrder != null
+            ) {
+                delay(1000)
+                _uiState.update { it.copy(driverOrderWaitingSeconds = it.driverOrderWaitingSeconds + 1) }
+            }
+        }
+    }
+
+    fun cancelDriverAcceptedOrder() {
+        driverWaitingTimerJob?.cancel()
+        _uiState.update {
+            it.copy(
+                driverAcceptedOrder = null,
+                driverBackToBackOffer = null,
+                driverOrderStage = DriverOrderStage.EN_ROUTE_TO_PICKUP,
+                driverOrderWaitingSeconds = 0,
+                driverActivityScore = (it.driverActivityScore - 8).coerceAtLeast(0),
+                statusBanner = "Заказ отменён (-8 Активность)"
+            )
+        }
+        generateDriverIncomingOrders(_uiState.value.selectedCity)
+    }
+
+    fun completeDriverOrder() {
+        val order = _uiState.value.driverAcceptedOrder ?: return
+        val queuedNext = _uiState.value.driverQueuedNextOrder
+        driverWaitingTimerJob?.cancel()
+        SoundAndNotificationManager.playCue(SoundCue.TRIP_COMPLETED, _uiState.value.soundEnabled)
+        val extraWaitMin = ((_uiState.value.driverOrderWaitingSeconds - 180).coerceAtLeast(0) + 59) / 60
+        val waitBonus = extraWaitMin * 8
+        val newDone = _uiState.value.driverQuestTripsDone + 1
+        val questBonus = if (newDone == _uiState.value.driverQuestTarget) 800 else 0
+        val shiftFree = _uiState.value.driverShiftPass != DriverShiftPass.NONE
+        val split = OwnerPayoutGatewayClient.calculateOrderSplit(
+            grossSom = order.grossFareSom,
+            commissionPercent = _uiState.value.ownerBankConfig.commissionPercent,
+            commissionFreeShiftActive = shiftFree
+        )
+        val baseNet = split.driverNetSom
+        val earned = baseNet + waitBonus + questBonus
+        _uiState.update {
+            val updatedWeek = it.driverWeeklyEarnings.mapIndexed { idx, pair ->
+                if (idx == it.driverWeeklyEarnings.lastIndex) pair.first to (pair.second + earned) else pair
+            }
+            it.copy(
+                driverAcceptedOrder = queuedNext,
+                driverQueuedNextOrder = null,
+                driverBackToBackOffer = null,
+                driverOrderStage = DriverOrderStage.EN_ROUTE_TO_PICKUP,
+                driverOrderWaitingSeconds = 0,
+                driverDrivingMinutesToday = (it.driverDrivingMinutesToday + order.durationMin).coerceAtMost(12 * 60),
+                driverPendingPassengerRating = order.copy(upfrontNetEarningsSom = earned),
+                driverTodayEarningsSom = it.driverTodayEarningsSom + earned,
+                driverWeeklyEarnings = updatedWeek,
+                driverQuestTripsDone = newDone,
+                statusBanner = when {
+                    queuedNext != null -> "Поездка завершена (+$earned с)! Переход к заказу по цепочке"
+                    questBonus > 0 -> "Квест выполнен! +$earned сом!"
+                    else -> "Поездка завершена! +$earned сом на баланс"
+                }
+            )
+        }
+        recordOwnerCommissionSplit(
+            orderId = order.id,
+            sourceLabel = "${order.tariffName} (Водитель)",
+            city = order.city,
+            grossSom = order.grossFareSom,
+            commissionFreeShift = shiftFree
+        )
+        if (queuedNext == null) {
+            generateDriverIncomingOrders(_uiState.value.selectedCity)
+        }
+    }
+
+    fun acceptBackToBackOrder() {
+        val offer = _uiState.value.driverBackToBackOffer ?: return
+        _uiState.update {
+            it.copy(
+                driverQueuedNextOrder = offer,
+                driverBackToBackOffer = null,
+                driverActivityScore = (it.driverActivityScore + 2).coerceAtMost(100),
+                statusBanner = "Заказ по цепочке (+${offer.upfrontNetEarningsSom} с) принят! Начнётся после высадки"
+            )
+        }
+    }
+
+    fun declineBackToBackOrder() {
+        _uiState.update {
+            it.copy(
+                driverBackToBackOffer = null,
+                statusBanner = "Заказ по цепочке пропущен"
+            )
+        }
+    }
+
+    fun purchaseDriverShiftPass(pass: DriverShiftPass) {
+        val prevPass = _uiState.value.driverShiftPass
+        if (pass == prevPass) return
+        val pct = _uiState.value.ownerBankConfig.commissionPercent
+        _uiState.update { state ->
+            val cost = if (pass != DriverShiftPass.NONE) pass.costSom else 0
+            val nextBalance = (state.driverTodayEarningsSom - cost).coerceAtLeast(0)
+            state.copy(
+                driverShiftPass = pass,
+                driverTodayEarningsSom = nextBalance,
+                statusBanner = if (pass == DriverShiftPass.NONE) {
+                    "Возвращена стандартная комиссия $pct% с заказа"
+                } else {
+                    "Куплена ${pass.title} (-${pass.costSom} с) • Комиссия сервиса 0%!"
+                }
+            )
+        }
+        if (pass != DriverShiftPass.NONE && pass.costSom > 0) {
+            recordOwnerCommissionSplit(
+                orderId = "shift_${System.currentTimeMillis()}",
+                sourceLabel = "Смена: ${pass.title} (100% владельцу)",
+                city = _uiState.value.selectedCity.name,
+                grossSom = pass.costSom,
+                forceFullOwnerShare = true
+            )
+        }
+    }
+
+    fun toggleDriverCoffeeBreak() {
+        _uiState.update {
+            val next = !it.driverCoffeeBreakActive
+            it.copy(
+                driverCoffeeBreakActive = next,
+                statusBanner = if (next) "Пауза «Кофе-брейк»: заказы приостановлены, линия сохранена" else "Пауза завершена — вы снова принимаете заказы!"
+            )
+        }
+    }
+
+    fun sendDriverSideChatMessage(text: String) {
+        val clean = text.trim()
+        if (clean.isBlank()) return
+        val drvMsg = DriverChatMessage(
+            id = "dc_drv_${System.currentTimeMillis()}",
+            fromPassenger = false,
+            originalText = clean
+        )
+        _uiState.update { it.copy(driverActiveOrderMessages = it.driverActiveOrderMessages + drvMsg) }
+        viewModelScope.launch {
+            delay(1000)
+            val reply = when {
+                clean.contains("шлагбаум", true) -> "Спасибо, уже иду к шлагбауму!"
+                clean.contains("на месте", true) || clean.contains("күтүп", true) -> "Выхожу через 1 минуту."
+                else -> "Хорошо, понял вас, спасибо!"
+            }
+            val passMsg = DriverChatMessage(
+                id = "dc_pas_${System.currentTimeMillis()}",
+                fromPassenger = true,
+                originalText = reply
+            )
+            _uiState.update { it.copy(driverActiveOrderMessages = it.driverActiveOrderMessages + passMsg) }
+        }
+    }
+
+    fun translateDriverSideChat() {
+        val target = _uiState.value.chatTranslateTargetLang
+        val offline = _uiState.value.offlineMode
+        val msgs = _uiState.value.driverActiveOrderMessages
+        if (msgs.isEmpty() || _uiState.value.chatTranslating) return
+        _uiState.update { it.copy(chatTranslating = true) }
+        viewModelScope.launch {
+            val translated = msgs.map { m ->
+                m.copy(translatedText = aiAssistant.translateChatMessage(m.originalText, target, offline))
+            }
+            _uiState.update {
+                it.copy(
+                    driverActiveOrderMessages = translated,
+                    chatTranslating = false,
+                    statusBanner = "Чат с пассажиром переведён на $target"
+                )
+            }
+        }
+    }
+
+    fun toggleCarpoolMode() {
+        _uiState.update {
+            val next = !it.carpoolModeEnabled
+            it.copy(
+                carpoolModeEnabled = next,
+                statusBanner = if (next) "Попутчик «Вместе» включён: экономия -30% по пути!" else "Режим «Вместе» выключен"
+            )
+        }
+    }
+
+    fun requestAiTourGuide(topic: String) {
+        _uiState.update { it.copy(tourGuideTopic = topic, tourGuideLoading = true) }
+        viewModelScope.launch {
+            val story = aiAssistant.generateTourGuideStory(
+                topic = topic,
+                languageCode = _uiState.value.language.code,
+                offlineMode = _uiState.value.offlineMode
+            )
+            _uiState.update { it.copy(tourGuideText = story, tourGuideLoading = false) }
+        }
+    }
+
+    fun trackFamilyMember(member: LocalFamilyMemberEntity) {
+        _uiState.update {
+            it.copy(
+                statusBanner = "Живой трекинг ${member.name}: Комфорт • в пути по ${it.selectedCity.name} (ETA ~6 мин, RideCheck OK)"
+            )
+        }
+    }
+
+    fun submitDriverPassengerRating(stars: Int) {
+        val rated = _uiState.value.driverPendingPassengerRating
+        _uiState.update {
+            it.copy(
+                driverPendingPassengerRating = null,
+                statusBanner = if (rated != null) "Оценка $stars★ для ${rated.passengerName} отправлена" else null
+            )
+        }
+    }
+
+    fun toggleDriverAutoAccept() {
+        _uiState.update {
+            val next = !it.driverAutoAccept
+            it.copy(
+                driverAutoAccept = next,
+                statusBanner = if (next) "Автоприём заказов включён (+2 к приоритету)" else "Автоприём заказов выключен"
+            )
+        }
+    }
+
+    fun toggleDriverTariff(tariffId: String) {
+        _uiState.update { state ->
+            val current = state.driverEnabledTariffs
+            val next = if (tariffId in current && current.size > 1) current - tariffId else current + tariffId
+            state.copy(driverEnabledTariffs = next)
+        }
+    }
+
+    fun passDriverPhotoControl() {
+        _uiState.update {
+            it.copy(
+                driverPhotoControlVerified = true,
+                driverPriorityPoints = (it.driverPriorityPoints + 2).coerceAtMost(20),
+                statusBanner = "Фотоконтроль авто пройден • +2 к приоритету Яндекс/KG Pro"
+            )
+        }
+    }
+
+    fun updateFuelInputs(distance: String, consumption: String, price: String) {
+        _uiState.update {
+            it.copy(fuelDistanceKm = distance, fuelConsumptionPer100 = consumption, fuelPriceSom = price)
+        }
+    }
+
+    fun addMaintenanceLog(vehicle: String, service: String, dueKm: Int, currentKm: Int, liters: Double) {
+        val item = LocalMaintenanceEntity(
+            id = "maint_${System.currentTimeMillis()}",
+            vehicleName = vehicle.ifBlank { "Моё авто" },
+            serviceTitle = service.ifBlank { "Плановое ТО" },
+            dueMileageKm = dueKm.coerceAtLeast(1000),
+            currentMileageKm = currentKm.coerceAtLeast(0),
+            fuelLitersPer100Km = liters.coerceIn(2.0, 35.0),
+            completed = false
+        )
+        if (dueKm - currentKm <= 1500) {
+            SoundAndNotificationManager.postNotification(
+                appContext,
+                "Напоминание ТО: ${item.vehicleName}",
+                "${item.serviceTitle} через ${max(0, dueKm - currentKm)} км!",
+                isHighPriority = false
+            )
+        }
+        viewModelScope.launch {
+            dao.upsertMaintenance(item)
+            if (_uiState.value.isSignedIn) firestoreSync.syncMaintenance(item)
+        }
+    }
+
+    fun toggleMaintenanceComplete(item: LocalMaintenanceEntity) {
+        val updated = item.copy(completed = !item.completed)
+        viewModelScope.launch {
+            dao.upsertMaintenance(updated)
+            if (_uiState.value.isSignedIn) firestoreSync.syncMaintenance(updated)
+        }
+    }
+
+    // --- VOICE COMMANDS ---
+
+    fun handleVoiceCommand(spokenText: String) {
+        val clean = spokenText.trim()
+        if (clean.isBlank()) return
+        val lower = clean.lowercase(Locale.getDefault())
+        if (_uiState.value.role == AppRole.DRIVER) {
+            when {
+                lower.contains("принять") || lower.contains("accept") -> {
+                    _uiState.value.driverIncomingOrders.firstOrNull()?.let { acceptDriverOrder(it) }
+                }
+                lower.contains("заверш") || lower.contains("complete") -> completeDriverOrder()
+                lower.contains("лини") || lower.contains("online") -> toggleDriverOnline()
+                else -> _uiState.update { it.copy(statusBanner = "Голосовая команда: «$clean»") }
+            }
+            return
+        }
+        // Passenger Voice-to-Ride AI Intent Parser (Gemini 3.8 Flash + offline fallback)
+        _uiState.update { it.copy(voiceOrderParsing = true) }
+        viewModelScope.launch {
+            val s = _uiState.value
+            val intent = aiAssistant.parseVoiceOrderCommand(clean, s.selectedCity.name, s.offlineMode)
+            val allLandmarks = KgGeoCatalog.cities.flatMap { it.landmarks }
+
+            val matchedPickup = intent.pickupQuery?.let { q ->
+                allLandmarks.firstOrNull {
+                    it.name.contains(q, ignoreCase = true) || q.contains(it.name.substringBefore(" "), ignoreCase = true)
+                }
+            }
+            val matchedDropoff = intent.dropoffQuery?.let { q ->
+                allLandmarks.firstOrNull {
+                    it.name.contains(q, ignoreCase = true) || q.contains(it.name.substringBefore(" "), ignoreCase = true)
+                }
+            }
+
+            if (matchedDropoff != null && matchedDropoff.city != _uiState.value.selectedCity.name) {
+                selectCity(KgGeoCatalog.cityByName(matchedDropoff.city))
+            }
+
+            _uiState.update { cur ->
+                val nextPrefs = cur.preferences.copy(
+                    quietRide = intent.quietRide ?: cur.preferences.quietRide,
+                    climateAc = intent.climateAc ?: cur.preferences.climateAc,
+                    luggageHelp = intent.luggageHelp ?: cur.preferences.luggageHelp,
+                    petFriendly = intent.petFriendly ?: cur.preferences.petFriendly
+                )
+                cur.copy(
+                    voiceOrderParsing = false,
+                    lastVoiceOrderSummary = intent.summary,
+                    serviceType = ServiceType.TAXI,
+                    selectedTariffId = intent.tariffId ?: cur.selectedTariffId,
+                    pickupPoint = matchedPickup?.point ?: cur.pickupPoint,
+                    pickupAddress = matchedPickup?.let { "${it.name} • ${it.address}" } ?: intent.pickupQuery ?: cur.pickupAddress,
+                    dropoffPoint = matchedDropoff?.point ?: cur.dropoffPoint,
+                    dropoffAddress = matchedDropoff?.let { "${it.name} • ${it.address}" } ?: intent.dropoffQuery ?: cur.dropoffAddress,
+                    preferences = nextPrefs,
+                    statusBanner = intent.summary
+                )
+            }
+            if (intent.businessTrip == true) {
+                updateProfile { it.copy(businessProfileActive = true) }
+            }
+            refreshLiveRoadRoute()
+        }
+    }
+
+    // --- GEMINI AI ROUTE PLANNER CHAT ---
+
+    fun sendAiMessage(prompt: String) {
+        val trimmed = prompt.trim()
+        if (trimmed.isBlank() || _uiState.value.aiLoading) return
+
+        val userMsg = AiChatMessage("u_${System.currentTimeMillis()}", true, trimmed)
+        val botId = "a_${System.currentTimeMillis() + 1}"
+        val botPlaceholder = AiChatMessage(botId, false, "", isStreaming = true)
+
+        _uiState.update {
+            it.copy(
+                aiMessages = it.aiMessages + userMsg + botPlaceholder,
+                aiLoading = true
+            )
+        }
+
+        viewModelScope.launch {
+            val city = _uiState.value.selectedCity.name
+            val lang = _uiState.value.language.code
+            aiAssistant.streamRouteAdvice(trimmed, city, lang).collect { event ->
+                when (event) {
+                    is AiStreamEvent.Chunk -> {
+                        _uiState.update { state ->
+                            state.copy(
+                                aiMessages = state.aiMessages.map { m ->
+                                    if (m.id == botId) m.copy(text = event.accumulatedText, isStreaming = true) else m
+                                }
+                            )
+                        }
+                    }
+                    is AiStreamEvent.Complete -> {
+                        val suggested = KgGeoCatalog.cities.flatMap { it.landmarks }
+                            .firstOrNull { event.fullText.contains(it.name, ignoreCase = true) }?.name
+                        _uiState.update { state ->
+                            state.copy(
+                                aiLoading = false,
+                                aiMessages = state.aiMessages.map { m ->
+                                    if (m.id == botId) m.copy(
+                                        text = event.fullText,
+                                        suggestedDestination = suggested,
+                                        isStreaming = false
+                                    ) else m
+                                }
+                            )
+                        }
+                    }
+                    is AiStreamEvent.Error -> {
+                        _uiState.update { state ->
+                            state.copy(
+                                aiLoading = false,
+                                aiMessages = state.aiMessages.map { m ->
+                                    if (m.id == botId) m.copy(text = "⚠️ ${event.message}", isStreaming = false) else m
+                                }
+                            )
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    fun triggerPromoNotification() {
+        SoundAndNotificationManager.postNotification(
+            appContext,
+            "Скидка -15% в ${_uiState.value.selectedCity.name}!",
+            "Используйте промокод ECO15 на электромобили Green EV и поездки к избранным локациям.",
+            isHighPriority = false
+        )
+        _uiState.update { it.copy(statusBanner = "Уведомление о скидке ECO15 отправлено") }
+    }
+
+    fun triggerTrafficAlertNotification() {
+        val city = _uiState.value.selectedCity
+        SoundAndNotificationManager.postNotification(
+            appContext,
+            "Трафик в реальном времени • ${city.name}",
+            "Затруднение движения в центре (${city.streets.first()}). Рекомендуем объезд, спрос x${city.surgeMultiplier}.",
+            isHighPriority = false
+        )
+        _uiState.update { it.copy(statusBanner = "Оповещение о пробках в г. ${city.name} отправлено водителям") }
+    }
+
+    fun dispatchOrderToDriver(orderId: String) {
+        val pool = listOf("Нурлан Т. (Camry 70)", "Бакыт К. (BYD Han EV)", "Айпери К. (Kia K5)", "Эрмек С. (Sonata)")
+        val chosen = pool[kotlin.math.abs(orderId.hashCode()) % pool.size]
+        SoundAndNotificationManager.playCue(SoundCue.DRIVER_ASSIGNED, _uiState.value.soundEnabled)
+        _uiState.update { state ->
+            state.copy(
+                dispatcherActiveOrders = state.dispatcherActiveOrders.map { o ->
+                    if (o.id == orderId) o.copy(assignedDriverName = chosen) else o
+                },
+                statusBanner = "Диспетчер назначил водителя: $chosen"
+            )
+        }
+    }
+
+    private fun generateNearbyDrivers(city: KgCity) {
+        val offsets = listOf(
+            Pair(0.005, 0.007) to false,
+            Pair(-0.006, 0.004) to true,
+            Pair(0.008, -0.006) to false,
+            Pair(-0.004, -0.009) to true,
+            Pair(0.002, 0.011) to false
+        )
+        val markers = offsets.mapIndexed { idx, (off, isEv) ->
+            NearbyDriverMarker(
+                id = "drv_${city.name}_$idx",
+                point = GeoPoint(city.center.lat + off.first, city.center.lng + off.second),
+                headingDeg = (idx * 72f) % 360f,
+                isEv = isEv
+            )
+        }
+        _uiState.update { it.copy(nearbyDrivers = markers) }
+    }
+
+    private fun generateDriverIncomingOrders(city: KgCity) {
+        val lm = city.landmarks
+        val p1 = lm.getOrNull(0)?.name ?: "${city.streets.first()}, 12"
+        val p2 = lm.getOrNull(1)?.name ?: "${city.streets.last()}, 44"
+        val p3 = lm.getOrNull(2)?.name ?: "${city.streets.first()}, 90"
+        val pt2 = lm.getOrNull(1)?.point ?: GeoPoint(city.center.lat + 0.012, city.center.lng + 0.014)
+        val pt1 = lm.getOrNull(0)?.point ?: city.center
+        val pt3 = lm.getOrNull(2)?.point ?: GeoPoint(city.center.lat - 0.009, city.center.lng + 0.011)
+        val commPct = _uiState.value.ownerBankConfig.commissionPercent
+        val shiftFree = _uiState.value.driverShiftPass != DriverShiftPass.NONE
+        val net1 = OwnerPayoutGatewayClient.calculateOrderSplit(380, commPct, shiftFree).driverNetSom
+        val net2 = OwnerPayoutGatewayClient.calculateOrderSplit(240, commPct, shiftFree).driverNetSom
+        val net3 = OwnerPayoutGatewayClient.calculateOrderSplit(1250, commPct, shiftFree).driverNetSom
+        val net4 = OwnerPayoutGatewayClient.calculateOrderSplit(690, commPct, shiftFree).driverNetSom
+        val orders = listOf(
+            DriverIncomingOrder(
+                id = "ord_${System.currentTimeMillis()}_1",
+                passengerName = "Алина М.",
+                passengerRating = 4.94,
+                serviceType = ServiceType.TAXI,
+                tariffName = "Комфорт",
+                pickupAddress = p1,
+                dropoffAddress = p2,
+                distanceKm = 8.4,
+                durationMin = 17,
+                grossFareSom = 380,
+                upfrontNetEarningsSom = net1,
+                surgeLabel = "x${city.surgeMultiplier}",
+                city = city.name,
+                pickupPoint = pt1,
+                dropoffPoint = pt2,
+                pickupEtaMin = 3,
+                pickupDistanceKm = 1.1,
+                paymentMethodLabel = "MBank",
+                passengerPin = "4829"
+            ),
+            DriverIncomingOrder(
+                id = "ord_${System.currentTimeMillis()}_2",
+                passengerName = "Дастан Б.",
+                passengerRating = 4.88,
+                serviceType = ServiceType.COURIER,
+                tariffName = "Курьер Экспресс",
+                pickupAddress = p3,
+                dropoffAddress = "мкр. Джал / $p1",
+                distanceKm = 4.1,
+                durationMin = 11,
+                grossFareSom = 240,
+                upfrontNetEarningsSom = net2,
+                surgeLabel = null,
+                city = city.name,
+                pickupPoint = pt3,
+                dropoffPoint = pt1,
+                pickupEtaMin = 4,
+                pickupDistanceKm = 1.6,
+                paymentMethodLabel = "Наличные",
+                passengerPin = "7310"
+            ),
+            DriverIncomingOrder(
+                id = "ord_${System.currentTimeMillis()}_3",
+                passengerName = "Dr. Michael Weber",
+                passengerRating = 4.99,
+                serviceType = ServiceType.TAXI,
+                tariffName = "Бизнес • Meet & Greet",
+                pickupAddress = "Аэропорт Манас (FRU) • Выход 1",
+                dropoffAddress = "Центр / ЦУМ / Восток-5",
+                distanceKm = 28.5,
+                durationMin = 36,
+                grossFareSom = 1250,
+                upfrontNetEarningsSom = net3,
+                surgeLabel = "VIP +x1.4",
+                city = city.name,
+                pickupPoint = GeoPoint(43.0613, 74.4776),
+                dropoffPoint = pt2,
+                meetAndGreetSign = "DR. MICHAEL WEBER • TK 344",
+                pickupEtaMin = 6,
+                pickupDistanceKm = 2.9,
+                paymentMethodLabel = "Visa •••• 4821",
+                passengerPin = "9041"
+            )
+        )
+        val dispatcherList = orders + DriverIncomingOrder(
+            id = "disp_${city.name}_3",
+            passengerName = "Кайрат О. (B2B)",
+            passengerRating = 4.97,
+            serviceType = ServiceType.TAXI,
+            tariffName = "Бизнес",
+            pickupAddress = p2,
+            dropoffAddress = p3,
+            distanceKm = 11.2,
+            durationMin = 21,
+            grossFareSom = 690,
+            upfrontNetEarningsSom = net4,
+            surgeLabel = "x${city.surgeMultiplier}",
+            city = city.name,
+            dropoffPoint = pt2
+        )
+        _uiState.update { it.copy(driverIncomingOrders = orders, dispatcherActiveOrders = dispatcherList) }
+    }
+
+    // --- IN-TRIP CHAT + AI TRANSLATION, WALLET/QR, REFERRAL, DOCS, SOS, ONBOARDING, REPEAT ---
+
+    fun setChatTranslateLang(langCode: String) {
+        _uiState.update { it.copy(chatTranslateTargetLang = langCode) }
+    }
+
+    fun sendDriverChatMessage(text: String) {
+        val clean = text.trim()
+        if (clean.isBlank()) return
+        val userMsg = DriverChatMessage(
+            id = "cm_${System.currentTimeMillis()}",
+            fromPassenger = true,
+            originalText = clean
+        )
+        _uiState.update { it.copy(driverChatMessages = it.driverChatMessages + userMsg) }
+
+        viewModelScope.launch {
+            delay(1100)
+            val reply = when {
+                clean.contains("вход", true) -> "Хорошо, подъезжаю прямо ко входу, включил аварийку."
+                clean.contains("шлагбаум", true) -> "Понял вас, жду у шлагбаума!"
+                clean.contains("2 мин", true) || clean.contains("выхожу", true) -> "Не торопитесь, я на месте и жду вас."
+                else -> "Принял, всё хорошо! Скоро будем на месте."
+            }
+            val drvMsg = DriverChatMessage(
+                id = "cm_drv_${System.currentTimeMillis()}",
+                fromPassenger = false,
+                originalText = reply
+            )
+            _uiState.update { it.copy(driverChatMessages = it.driverChatMessages + drvMsg) }
+        }
+    }
+
+    fun translateAllDriverChat() {
+        val target = _uiState.value.chatTranslateTargetLang
+        val offline = _uiState.value.offlineMode
+        val msgs = _uiState.value.driverChatMessages
+        if (msgs.isEmpty() || _uiState.value.chatTranslating) return
+
+        _uiState.update { it.copy(chatTranslating = true) }
+        viewModelScope.launch {
+            val translated = msgs.map { m ->
+                val tr = aiAssistant.translateChatMessage(m.originalText, target, offline)
+                m.copy(translatedText = tr)
+            }
+            _uiState.update {
+                it.copy(
+                    driverChatMessages = translated,
+                    chatTranslating = false,
+                    statusBanner = "Сообщения переведены на $target"
+                )
+            }
+        }
+    }
+
+    fun topUpWallet(amountSom: Int, method: String) {
+        val next = _uiState.value.walletBalanceSom + amountSom
+        val tx = WalletTransaction("wt_${System.currentTimeMillis()}", "Пополнение кошелька", method, amountSom, "Только что")
+        _uiState.update {
+            it.copy(
+                walletBalanceSom = next,
+                walletTransactions = listOf(tx) + it.walletTransactions,
+                statusBanner = "Кошелёк пополнен на +$amountSom сом ($method)"
+            )
+        }
+        viewModelScope.launch { prefsStore.setWalletBalance(next) }
+    }
+
+    fun markElqrPaymentDone(amountSom: Int, title: String) {
+        val tx = WalletTransaction("qr_${System.currentTimeMillis()}", title, "ELQR • MBank", -amountSom, "Только что")
+        _uiState.update {
+            it.copy(
+                walletTransactions = listOf(tx) + it.walletTransactions,
+                statusBanner = "Оплата по ELQR ($amountSom сом) подтверждена!"
+            )
+        }
+    }
+
+    fun claimReferralBonus() {
+        if (_uiState.value.referralClaimed) return
+        val nextWallet = _uiState.value.walletBalanceSom + 250
+        val tx = WalletTransaction("ref_${System.currentTimeMillis()}", "Бонус «Пригласи друга»", "Реферал", 250, "Только что")
+        _uiState.update {
+            it.copy(
+                referralClaimed = true,
+                walletBalanceSom = nextWallet,
+                walletTransactions = listOf(tx) + it.walletTransactions,
+                statusBanner = "Начислено +250 сом и +250 бонусов по реферальной программе!"
+            )
+        }
+        updateProfile { it.copy(bonusPoints = it.bonusPoints + 250) }
+        viewModelScope.launch {
+            prefsStore.setReferralClaimed(true)
+            prefsStore.setWalletBalance(nextWallet)
+        }
+    }
+
+    fun renewDriverDocument(docId: String) {
+        _uiState.update { state ->
+            state.copy(
+                driverDocuments = state.driverDocuments.map { d ->
+                    if (d.id == docId) d.copy(validUntil = "01.12.2027", daysRemaining = 365) else d
+                },
+                statusBanner = "Документ продлён и проверен диспетчерской"
+            )
+        }
+    }
+
+    fun triggerEmergencySos(fromActiveRide: Boolean = true) {
+        val s = _uiState.value
+        val ride = s.activeRide
+        val alert = EmergencySosAlert(
+            id = "sos_${System.currentTimeMillis()}",
+            passengerName = if (fromActiveRide) s.profile.displayName else "Айзада Т.",
+            driverName = ride?.driverName ?: "Нурлан Т.",
+            carInfo = ride?.driverCar ?: "Toyota Camry 70 • 01KG 777 KGT",
+            city = ride?.city ?: s.selectedCity.name,
+            locationAddress = ride?.pickupAddress ?: s.pickupAddress,
+            timeLabel = "Только что"
+        )
+        SoundAndNotificationManager.playCue(SoundCue.RIDE_CHECK_ALERT, s.soundEnabled)
+        SoundAndNotificationManager.postNotification(
+            appContext,
+            "SOS 102 • ${alert.city}",
+            "Сигнал передан диспетчеру KG Taxi: ${alert.carInfo} (${alert.locationAddress})"
+        )
+        _uiState.update {
+            it.copy(
+                sosAlerts = listOf(alert) + it.sosAlerts,
+                statusBanner = "SOS-сигнал зафиксирован в Диспетчерской (${alert.city})"
+            )
+        }
+    }
+
+    fun resolveSosAlert(alertId: String) {
+        _uiState.update { state ->
+            state.copy(
+                sosAlerts = state.sosAlerts.map { if (it.id == alertId) it.copy(resolved = true) else it },
+                statusBanner = "SOS-инцидент обработан и закрыт"
+            )
+        }
+    }
+
+    fun completeOnboarding() {
+        _uiState.update { it.copy(showOnboarding = false) }
+        viewModelScope.launch { prefsStore.setOnboardingSeen(true) }
+    }
+
+    fun reopenOnboarding() {
+        _uiState.update { it.copy(showOnboarding = true) }
+    }
+
+    fun repeatTripFromHistory(trip: LocalTripEntity) {
+        val city = KgGeoCatalog.cityByName(trip.city)
+        val matchedService = ServiceType.entries.firstOrNull { it.name == trip.serviceType } ?: ServiceType.TAXI
+        val matchedTariff = KgGeoCatalog.taxiTariffs.firstOrNull {
+            it.nameRu.equals(trip.tariffName, ignoreCase = true) || it.nameEn.equals(trip.tariffName, ignoreCase = true)
+        }?.id ?: _uiState.value.selectedTariffId
+        val targetLandmark = city.landmarks.firstOrNull { trip.dropoffAddress.contains(it.name, ignoreCase = true) }
+        _uiState.update {
+            it.copy(
+                role = AppRole.PASSENGER,
+                selectedCity = city,
+                serviceType = matchedService,
+                selectedTariffId = matchedTariff,
+                pickupAddress = trip.pickupAddress,
+                dropoffAddress = trip.dropoffAddress,
+                dropoffPoint = targetLandmark?.point ?: GeoPoint(city.center.lat + 0.011, city.center.lng - 0.009),
+                statusBanner = "Повтор маршрута: ${trip.pickupAddress} → ${trip.dropoffAddress}"
+            )
+        }
+        generateNearbyDrivers(city)
+        refreshLiveRoadRoute()
+    }
+
+    // --- WEATHER, CURRENCY, MEET & GREET, COURIER PHOTO, LOST & FOUND, FAVORITES, DRIVER PRO ---
+
+    fun refreshCityWeatherAndPasses() {
+        val s = _uiState.value
+        viewModelScope.launch {
+            val info = KgWeatherAndPassesClient.fetchCityWeatherAndAqi(
+                cityName = s.selectedCity.name,
+                point = s.selectedCity.center,
+                offlineMode = s.offlineMode
+            )
+            val passes = KgWeatherAndPassesClient.buildMountainPasses(info)
+            _uiState.update { it.copy(cityWeather = info, mountainPasses = passes) }
+        }
+    }
+
+    fun setDisplayCurrency(currency: DisplayCurrency) {
+        _uiState.update {
+            it.copy(
+                displayCurrency = currency,
+                statusBanner = if (currency == DisplayCurrency.KGS) "Валюта: кыргызский сом (KGS)"
+                else "Пересчёт цен в ${currency.code} (${currency.symbol}) включён"
+            )
+        }
+        viewModelScope.launch { prefsStore.setDisplayCurrencyCode(currency.code) }
+    }
+
+    fun setBusinessCompanyInn(inn: String) {
+        val clean = inn.trim()
+        _uiState.update { it.copy(businessCompanyInn = clean) }
+        viewModelScope.launch { prefsStore.setBusinessCompanyInn(clean) }
+    }
+
+    fun setMeetAndGreet(enabled: Boolean, signText: String) {
+        _uiState.update {
+            it.copy(
+                meetAndGreetEnabled = enabled,
+                meetAndGreetSignText = signText,
+                statusBanner = if (enabled) "Встреча с табличкой включена (45 мин бесплатного ожидания)" else null
+            )
+        }
+    }
+
+    fun setCourierParcelPhotoUri(uri: String?) {
+        _uiState.update {
+            it.copy(
+                courierParcelPhotoUri = uri,
+                statusBanner = if (uri != null) "Фото посылки прикреплено к заказу Курьера" else null
+            )
+        }
+    }
+
+    fun toggleFavoriteDriver(driverName: String) {
+        val clean = driverName.trim()
+        if (clean.isBlank()) return
+        val wasFav = clean in _uiState.value.favoriteDrivers
+        _uiState.update {
+            it.copy(
+                statusBanner = if (wasFav) "$clean удалён из Избранных" else "★ $clean добавлен в Избранные водители (приоритет подачи)"
+            )
+        }
+        viewModelScope.launch { prefsStore.toggleFavoriteDriver(clean) }
+    }
+
+    fun toggleBlockedDriver(driverName: String) {
+        val clean = driverName.trim()
+        if (clean.isBlank()) return
+        val wasBlocked = clean in _uiState.value.blockedDrivers
+        _uiState.update {
+            it.copy(
+                statusBanner = if (wasBlocked) "$clean разблокирован" else "$clean больше не будет назначаться на ваши заказы"
+            )
+        }
+        viewModelScope.launch { prefsStore.toggleBlockedDriver(clean) }
+    }
+
+    fun submitLostItemTicket(trip: LocalTripEntity, category: String, note: String) {
+        val fullNote = "$category: $note"
+        val ticket = LostItemTicket(
+            id = "lf_${System.currentTimeMillis()}",
+            tripId = trip.id,
+            driverName = trip.driverName,
+            itemCategory = category,
+            note = note,
+            status = "Отправлено водителю",
+            createdLabel = "Только что"
+        )
+        _uiState.update {
+            it.copy(
+                lostItemTickets = listOf(ticket) + it.lostItemTickets,
+                statusBanner = "Заявка Бюро находок ($category) отправлена водителю ${trip.driverName}"
+            )
+        }
+        viewModelScope.launch {
+            dao.upsertTrip(trip.copy(lostItemNote = fullNote))
+            if (_uiState.value.isSignedIn) {
+                firestoreSync.syncTripPostUpdate(trip.id, trip.rating, trip.tipSom, fullNote)
+            }
+        }
+    }
+
+    fun triggerManualRideCheck() {
+        SoundAndNotificationManager.playCue(SoundCue.RIDE_CHECK_ALERT, _uiState.value.soundEnabled)
+        _uiState.update { state ->
+            state.activeRide?.let { r ->
+                state.copy(activeRide = r.copy(rideCheckAlert = true))
+            } ?: state
+        }
+    }
+
+    fun setDriverHomeFilter(enabled: Boolean, district: String) {
+        _uiState.update {
+            it.copy(
+                driverHomeFilterEnabled = enabled,
+                driverHomeTargetDistrict = district,
+                statusBanner = if (enabled) "Фильтр «По пути домой»: $district" else "Фильтр «По пути домой» выключен"
+            )
+        }
+    }
+
+    fun withdrawDriverEarnings(bankName: String, targetAccount: String, amountSom: Int) {
+        if (amountSom <= 0 || amountSom > _uiState.value.driverTodayEarningsSom) return
+        val record = DriverPayoutRecord(
+            id = "pay_${System.currentTimeMillis()}",
+            bankName = bankName,
+            targetAccount = targetAccount,
+            amountSom = amountSom,
+            timeLabel = "Только что"
+        )
+        _uiState.update {
+            it.copy(
+                driverTodayEarningsSom = (it.driverTodayEarningsSom - amountSom).coerceAtLeast(0),
+                driverPayouts = listOf(record) + it.driverPayouts,
+                statusBanner = "Вывод $amountSom сом на $bankName ($targetAccount) выполнен!"
+            )
+        }
+    }
+
+    // --- OWNER BANK DETAILS & AUTOMATED COMMISSION SPLIT ENGINE ---
+
+    fun saveOwnerBankConfig(config: OwnerBankConfig) {
+        val error = OwnerPayoutGatewayClient.validateBankConfig(config)
+        if (error != null) {
+            _uiState.update { it.copy(statusBanner = error) }
+            return
+        }
+        val clean = config.copy(
+            accountOrCard = config.accountOrCard.trim(),
+            beneficiaryName = config.beneficiaryName.trim(),
+            inn = config.inn.filter(Char::isDigit).take(14),
+            bik = config.bik.filter(Char::isDigit).take(6)
+        )
+        _uiState.update {
+            it.copy(
+                ownerBankConfig = clean,
+                statusBanner = "Реквизиты сохранены (${clean.bankName} ${OwnerPayoutGatewayClient.maskAccount(clean.accountOrCard)}) • Комиссия ${clean.commissionPercent}%"
+            )
+        }
+        viewModelScope.launch {
+            prefsStore.saveOwnerBankConfig(clean)
+        }
+        // Recalculate incoming driver order upfront net fares with the new commission rate
+        generateDriverIncomingOrders(_uiState.value.selectedCity)
+
+        // If owner already had pending commissions and turned on Auto-Payout, settle them immediately
+        val pending = _uiState.value.ownerPendingBalanceSom
+        if (clean.autoPayoutEnabled && pending > 0 && (clean.instantPerOrderSplit || pending >= clean.autoPayoutThresholdSom)) {
+            settleOwnerBalanceToBank(automatic = true, triggerOrderId = null)
+        }
+    }
+
+    fun triggerOwnerManualPayout() {
+        val state = _uiState.value
+        if (!state.ownerBankConfig.isConfigured) {
+            _uiState.update { it.copy(statusBanner = "Сначала заполните и сохраните банковские реквизиты владельца") }
+            return
+        }
+        if (state.ownerPendingBalanceSom <= 0) {
+            _uiState.update { it.copy(statusBanner = "Нет накопленной комиссии к выводу") }
+            return
+        }
+        settleOwnerBalanceToBank(automatic = false, triggerOrderId = null)
+    }
+
+    fun runTestOwnerOrderSplit() {
+        val city = _uiState.value.selectedCity.name
+        val orderNum = 1000 + Random.nextInt(9000)
+        recordOwnerCommissionSplit(
+            orderId = "KG-TEST-$orderNum",
+            sourceLabel = "Тестовый заказ Комфорт (450 с)",
+            city = city,
+            grossSom = 450
+        )
+    }
+
+    private fun recordOwnerCommissionSplit(
+        orderId: String,
+        sourceLabel: String,
+        city: String,
+        grossSom: Int,
+        forceFullOwnerShare: Boolean = false,
+        commissionFreeShift: Boolean = false
+    ) {
+        if (grossSom <= 0) return
+        val state = _uiState.value
+        val cfg = state.ownerBankConfig
+
+        val ownerCut: Int
+        val driverNet: Int
+        val effectivePct: Int
+        if (forceFullOwnerShare) {
+            ownerCut = grossSom
+            driverNet = 0
+            effectivePct = 100
+        } else {
+            val split = OwnerPayoutGatewayClient.calculateOrderSplit(
+                grossSom = grossSom,
+                commissionPercent = cfg.commissionPercent,
+                commissionFreeShiftActive = commissionFreeShift
+            )
+            ownerCut = split.ownerCommissionSom
+            driverNet = split.driverNetSom
+            effectivePct = split.commissionPercent
+        }
+
+        val maskedDest = if (cfg.isConfigured) {
+            "${cfg.bankName} ${OwnerPayoutGatewayClient.maskAccount(cfg.accountOrCard)}"
+        } else {
+            "Внутренний счёт владельца"
+        }
+
+        val willAutoSettleNow = ownerCut > 0 &&
+            cfg.isConfigured &&
+            cfg.autoPayoutEnabled &&
+            (cfg.instantPerOrderSplit || (state.ownerPendingBalanceSom + ownerCut) >= cfg.autoPayoutThresholdSom)
+
+        val entry = OwnerCommissionEntry(
+            id = "oc_${System.currentTimeMillis()}_${Random.nextInt(999)}",
+            orderId = orderId,
+            sourceLabel = sourceLabel,
+            city = city,
+            grossAmountSom = grossSom,
+            commissionPercent = effectivePct,
+            ownerCommissionSom = ownerCut,
+            driverNetSom = driverNet,
+            settledAutomatically = willAutoSettleNow,
+            destinationMasked = maskedDest,
+            timeLabel = "Только что"
+        )
+
+        val nextPending = state.ownerPendingBalanceSom + ownerCut
+        _uiState.update {
+            it.copy(
+                ownerPendingBalanceSom = nextPending,
+                ownerCommissionLedger = (listOf(entry) + it.ownerCommissionLedger).take(40),
+                statusBanner = if (ownerCut > 0 && !willAutoSettleNow) {
+                    "Комиссия владельца +$ownerCut сом ($effectivePct%) зачислена на баланс"
+                } else it.statusBanner
+            )
+        }
+        viewModelScope.launch {
+            prefsStore.saveOwnerBalances(nextPending, _uiState.value.ownerTotalSettledSom)
+        }
+
+        if (willAutoSettleNow) {
+            settleOwnerBalanceToBank(automatic = true, triggerOrderId = orderId)
+        }
+    }
+
+    private fun settleOwnerBalanceToBank(automatic: Boolean, triggerOrderId: String?) {
+        val snapshot = _uiState.value
+        val cfg = snapshot.ownerBankConfig
+        val amount = snapshot.ownerPendingBalanceSom
+        if (!cfg.isConfigured || amount <= 0 || snapshot.ownerPayoutBusy) return
+
+        val refCode = "KGT-${if (automatic) "AUTO" else "MAN"}-${10000 + Random.nextInt(89999)}"
+        _uiState.update { it.copy(ownerPayoutBusy = true) }
+
+        viewModelScope.launch {
+            val result = OwnerPayoutGatewayClient.executeOwnerSettlement(
+                config = cfg,
+                amountSom = amount,
+                referenceCode = refCode,
+                orderId = triggerOrderId,
+                offlineMode = _uiState.value.offlineMode
+            )
+            val masked = OwnerPayoutGatewayClient.maskAccount(cfg.accountOrCard)
+            val record = OwnerBankSettlementRecord(
+                id = "os_${System.currentTimeMillis()}",
+                bankName = cfg.bankName,
+                destinationMasked = masked,
+                amountSom = amount,
+                entriesCount = if (triggerOrderId != null && cfg.instantPerOrderSplit) 1 else max(1, _uiState.value.ownerCommissionLedger.count { !it.settledAutomatically }),
+                automatic = automatic,
+                liveGatewayDelivered = result.deliveredViaLiveGateway,
+                referenceCode = result.referenceCode,
+                timeLabel = "Только что"
+            )
+            val nextSettledTotal = _uiState.value.ownerTotalSettledSom + amount
+            _uiState.update { cur ->
+                cur.copy(
+                    ownerPayoutBusy = false,
+                    ownerPendingBalanceSom = 0,
+                    ownerTotalSettledSom = nextSettledTotal,
+                    ownerCommissionLedger = cur.ownerCommissionLedger.map { it.copy(settledAutomatically = true) },
+                    ownerSettlements = (listOf(record) + cur.ownerSettlements).take(30),
+                    statusBanner = "+$amount сом → ${cfg.bankName} $masked (${if (result.deliveredViaLiveGateway) "Банковский шлюз" else "Авто-реестр"})"
+                )
+            }
+            prefsStore.saveOwnerBalances(0, nextSettledTotal)
+            SoundAndNotificationManager.postNotification(
+                appContext,
+                "Авто-выплата комиссии владельцу: +$amount сом",
+                result.statusMessage,
+                isHighPriority = false
+            )
+        }
+    }
+
+    override fun onCleared() {
+        super.onCleared()
+        stopCloudObservers()
+        rideSimulationJob?.cancel()
+        driverWaitingTimerJob?.cancel()
+        routeFetchJob?.cancel()
+        addressSearchJob?.cancel()
+    }
+}
+
+class KgTaxiViewModelFactory(private val context: Context) : ViewModelProvider.Factory {
+    @Suppress("UNCHECKED_CAST")
+    override fun <T : ViewModel> create(modelClass: Class<T>): T {
+        val appCtx = context.applicationContext
+        val db = KgTaxiDatabase.getInstance(appCtx)
+        val firestoreRepo = FirestoreSyncRepository(appCtx)
+        val aiAssistant = AiRouteAssistant()
+        val prefsStore = AppPreferencesStore(appCtx)
+        return KgTaxiViewModel(appCtx, db.dao(), firestoreRepo, aiAssistant, prefsStore) as T
+    }
+}

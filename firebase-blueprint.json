@@ -1,0 +1,172 @@
+{
+  "entities": {
+    "UserProfile": {
+      "title": "UserProfile",
+      "description": "KG Taxi user profile, preferences, wallet, subscription, and business settings.",
+      "type": "object",
+      "properties": {
+        "userId": { "type": "string", "description": "Firebase Auth UID of the owner." },
+        "displayName": { "type": "string", "description": "User display name." },
+        "phone": { "type": "string", "description": "Contact phone number in Kyrgyzstan." },
+        "email": { "type": "string", "description": "Account email address." },
+        "homeAddress": { "type": "string", "description": "Saved Home address." },
+        "workAddress": { "type": "string", "description": "Saved Work address." },
+        "paymentMethod": { "type": "string", "enum": ["CASH", "MBANK", "ODENGI", "ELCART", "CARD"] },
+        "kgOneActive": { "type": "boolean", "description": "Whether KG One subscription is active." },
+        "businessProfileActive": { "type": "boolean", "description": "Whether Uber for Business mode is active." },
+        "companyName": { "type": "string", "description": "Corporate company name." },
+        "companyEmail": { "type": "string", "description": "Corporate receipts email." },
+        "bonusPoints": { "type": "integer", "description": "Bonus balance in som." },
+        "preferredCity": { "type": "string", "description": "Selected city in Kyrgyzstan." },
+        "language": { "type": "string", "enum": ["RU", "KG", "EN"] },
+        "darkTheme": { "type": "boolean", "description": "Dark theme preference." },
+        "soundEnabled": { "type": "boolean", "description": "Audio notification toggle." },
+        "createdAt": { "type": "string", "format": "date-time", "description": "Server timestamp set via FieldValue.serverTimestamp()." },
+        "updatedAt": { "type": "string", "format": "date-time", "description": "Server timestamp set via FieldValue.serverTimestamp()." }
+      },
+      "required": [
+        "userId",
+        "displayName",
+        "paymentMethod",
+        "kgOneActive",
+        "businessProfileActive",
+        "bonusPoints",
+        "preferredCity",
+        "language",
+        "darkTheme",
+        "soundEnabled",
+        "createdAt",
+        "updatedAt"
+      ]
+    },
+    "TripRecord": {
+      "title": "TripRecord",
+      "description": "Taxi, hourly, courier, cargo, intercity, or food delivery order record.",
+      "type": "object",
+      "properties": {
+        "userId": { "type": "string", "description": "Firebase Auth UID of the passenger." },
+        "serviceType": { "type": "string", "enum": ["TAXI", "HOURLY", "COURIER", "CARGO", "INTERCITY", "FOOD"] },
+        "tariffName": { "type": "string", "description": "Selected tariff or venue title." },
+        "city": { "type": "string", "description": "City where trip takes place." },
+        "pickupAddress": { "type": "string", "description": "Origin address." },
+        "dropoffAddress": { "type": "string", "description": "Destination address." },
+        "distanceKm": { "type": "number", "description": "Calculated route distance in km." },
+        "durationMin": { "type": "integer", "description": "Estimated duration in minutes." },
+        "totalPriceSom": { "type": "integer", "description": "Final trip fare in KGS som." },
+        "paymentMethod": { "type": "string", "description": "Payment method used." },
+        "status": { "type": "string", "enum": ["SEARCHING", "ASSIGNED", "ARRIVED", "IN_PROGRESS", "COMPLETED", "CANCELLED"] },
+        "driverName": { "type": "string", "description": "Assigned driver name." },
+        "driverCar": { "type": "string", "description": "Assigned vehicle model and plate." },
+        "safetyPin": { "type": "string", "description": "4-digit ride verification PIN." },
+        "rating": { "type": "integer", "description": "User rating 0 to 5." },
+        "tipSom": { "type": "integer", "description": "Driver tip in KGS som." },
+        "businessTrip": { "type": "boolean", "description": "Whether billed to business profile." },
+        "lostItemNote": { "type": "string", "description": "Optional lost item inquiry." },
+        "createdAt": { "type": "string", "format": "date-time", "description": "Server timestamp set via FieldValue.serverTimestamp()." },
+        "updatedAt": { "type": "string", "format": "date-time", "description": "Server timestamp set via FieldValue.serverTimestamp()." }
+      },
+      "required": [
+        "userId",
+        "serviceType",
+        "tariffName",
+        "city",
+        "pickupAddress",
+        "dropoffAddress",
+        "distanceKm",
+        "durationMin",
+        "totalPriceSom",
+        "paymentMethod",
+        "status",
+        "safetyPin",
+        "rating",
+        "tipSom",
+        "businessTrip",
+        "createdAt",
+        "updatedAt"
+      ]
+    },
+    "SavedPlace": {
+      "title": "SavedPlace",
+      "description": "User favorite address or offline saved route landmark.",
+      "type": "object",
+      "properties": {
+        "userId": { "type": "string" },
+        "label": { "type": "string" },
+        "address": { "type": "string" },
+        "city": { "type": "string" },
+        "lat": { "type": "number" },
+        "lng": { "type": "number" },
+        "category": { "type": "string", "enum": ["HOME", "WORK", "FAVORITE", "ROUTE"] },
+        "rating": { "type": "number" },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["userId", "label", "address", "city", "lat", "lng", "category", "rating", "createdAt", "updatedAt"]
+    },
+    "FamilyMember": {
+      "title": "FamilyMember",
+      "description": "Family or Teen profile member linked to the user account.",
+      "type": "object",
+      "properties": {
+        "userId": { "type": "string" },
+        "name": { "type": "string" },
+        "relation": { "type": "string" },
+        "phone": { "type": "string" },
+        "monthlyLimitSom": { "type": "integer" },
+        "teenControlEnabled": { "type": "boolean" },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["userId", "name", "relation", "monthlyLimitSom", "teenControlEnabled", "createdAt", "updatedAt"]
+    },
+    "VehicleMaintenance": {
+      "title": "VehicleMaintenance",
+      "description": "Vehicle maintenance reminder and fuel efficiency log.",
+      "type": "object",
+      "properties": {
+        "userId": { "type": "string" },
+        "vehicleName": { "type": "string" },
+        "serviceTitle": { "type": "string" },
+        "dueMileageKm": { "type": "integer" },
+        "currentMileageKm": { "type": "integer" },
+        "fuelLitersPer100Km": { "type": "number" },
+        "completed": { "type": "boolean" },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": [
+        "userId",
+        "vehicleName",
+        "serviceTitle",
+        "dueMileageKm",
+        "currentMileageKm",
+        "fuelLitersPer100Km",
+        "completed",
+        "createdAt",
+        "updatedAt"
+      ]
+    }
+  },
+  "firestore": {
+    "/users/{userId}": {
+      "schema": { "$ref": "#/entities/UserProfile" },
+      "description": "Private user profile, wallet, subscription, and app preferences."
+    },
+    "/users/{userId}/trips/{tripId}": {
+      "schema": { "$ref": "#/entities/TripRecord" },
+      "description": "User trip history and active orders."
+    },
+    "/users/{userId}/saved_places/{placeId}": {
+      "schema": { "$ref": "#/entities/SavedPlace" },
+      "description": "User saved places and offline synced favorite locations."
+    },
+    "/users/{userId}/family_members/{memberId}": {
+      "schema": { "$ref": "#/entities/FamilyMember" },
+      "description": "User family and Teen profile members."
+    },
+    "/users/{userId}/maintenance_logs/{logId}": {
+      "schema": { "$ref": "#/entities/VehicleMaintenance" },
+      "description": "User vehicle maintenance reminders and fuel logs."
+    }
+  }
+}
