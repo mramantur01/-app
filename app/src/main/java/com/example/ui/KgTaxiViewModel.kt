@@ -2920,6 +2920,10 @@ class KgTaxiViewModel(
     }
 
     fun withdrawDriverEarnings(bankName: String, targetAccount: String, amountSom: Int) {
+        if (!FeatureFlags.ONLINE_PAYMENTS) {
+            _uiState.update { it.copy(statusBanner = "Пассажиры платят вам напрямую (наличными или переводом), выводить ничего не нужно.") }
+            return
+        }
         if (amountSom <= 0 || amountSom > _uiState.value.driverTodayEarningsSom) return
         val record = DriverPayoutRecord(
             id = "pay_${System.currentTimeMillis()}",
@@ -2984,6 +2988,10 @@ class KgTaxiViewModel(
     }
 
     fun runTestOwnerOrderSplit() {
+        if (FeatureFlags.REAL_RIDES) {
+            _uiState.update { it.copy(statusBanner = "Тестовые заказы отключены: журнал показывает только настоящие поездки.") }
+            return
+        }
         val city = _uiState.value.selectedCity.name
         val orderNum = 1000 + Random.nextInt(9000)
         recordOwnerCommissionSplit(
