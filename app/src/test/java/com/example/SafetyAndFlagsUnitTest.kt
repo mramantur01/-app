@@ -37,6 +37,21 @@ class SafetyAndFlagsUnitTest {
     }
 
     @Test
+    fun kgPhone_normalizesCommonFormats() {
+        assertEquals("+996555123456", com.example.ui.components.normalizeKgPhone("0555 123 456"))
+        assertEquals("+996555123456", com.example.ui.components.normalizeKgPhone("+996 (555) 12-34-56"))
+        assertEquals("+996700123456", com.example.ui.components.normalizeKgPhone("700123456"))
+        assertEquals("+996220123456", com.example.ui.components.normalizeKgPhone("996220123456"))
+    }
+
+    @Test
+    fun kgPhone_rejectsWrongNumbers() {
+        assertEquals(null, com.example.ui.components.normalizeKgPhone("12345"))
+        assertEquals(null, com.example.ui.components.normalizeKgPhone("0312 123 456")) // landline-style, too short
+        assertEquals(null, com.example.ui.components.normalizeKgPhone("+7 999 123 45 67"))
+    }
+
+    @Test
     fun emergencyNumberIs112() {
         assertEquals("112", EmergencyHelper.EMERGENCY_NUMBER)
     }

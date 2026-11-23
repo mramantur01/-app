@@ -510,12 +510,12 @@ class KgTaxiViewModel(
 
     // --- GOOGLE AUTH & REALTIME FIRESTORE SYNC ---
 
-    fun onUserSignedIn(uid: String, displayName: String?, email: String?) {
+    fun onUserSignedIn(uid: String, displayName: String?, email: String?, phoneNumber: String? = null) {
         if (_uiState.value.signedInUid == uid && cloudObserverJobs.isNotEmpty()) return
         stopCloudObservers()
 
         _uiState.update {
-            it.copy(isSignedIn = true, signedInUid = uid, cloudSyncError = null, statusBanner = "Облачная синхронизация Google активна")
+            it.copy(isSignedIn = true, signedInUid = uid, cloudSyncError = null, statusBanner = "Вы вошли в аккаунт")
         }
         refreshAllowedRoles()
 
@@ -523,7 +523,8 @@ class KgTaxiViewModel(
             val current = _uiState.value.profile
             val updated = current.copy(
                 displayName = displayName?.takeIf { it.isNotBlank() } ?: current.displayName,
-                email = email ?: current.email
+                email = email ?: current.email,
+                phone = phoneNumber?.takeIf { it.isNotBlank() } ?: current.phone
             )
             dao.upsertProfile(updated)
             firestoreSync.syncProfile(updated)
@@ -680,7 +681,7 @@ class KgTaxiViewModel(
                 signedInUid = null,
                 role = AppRole.PASSENGER,
                 allowedRoles = setOf(AppRole.PASSENGER),
-                statusBanner = "Вы вышли из аккаунта Google. Локальные данные сохранены."
+                statusBanner = "Вы вышли из аккаунта. Локальные данные сохранены."
             )
         }
     }

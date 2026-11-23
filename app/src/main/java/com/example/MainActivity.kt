@@ -33,6 +33,7 @@ import com.example.ui.KgTaxiViewModelFactory
 import com.example.ui.components.DriverChatOverlay
 import com.example.ui.components.OnboardingOverlay
 import com.example.ui.components.PostTripReceiptDialog
+import com.example.ui.components.SignInDialog
 import com.example.ui.components.TopHeaderBar
 import com.example.ui.screens.*
 import com.example.ui.theme.KgTaxiTheme
@@ -72,6 +73,7 @@ fun KgTaxiAppRoot() {
 
     var showProfile by remember { mutableStateOf(false) }
     var showAiChat by remember { mutableStateOf(false) }
+    var showSignInDialog by remember { mutableStateOf(false) }
     var showDriverChat by remember { mutableStateOf(false) }
     var isSigningIn by remember { mutableStateOf(false) }
     var authError by remember { mutableStateOf<String?>(null) }
@@ -92,7 +94,7 @@ fun KgTaxiAppRoot() {
     LaunchedEffect(authUser?.uid) {
         val u = authUser
         if (u != null && u.uid.isNotBlank()) {
-            viewModel.onUserSignedIn(u.uid, u.displayName, u.email)
+            viewModel.onUserSignedIn(u.uid, u.displayName, u.email, u.phoneNumber)
         } else {
             viewModel.onUserSignedOut()
         }
@@ -216,7 +218,7 @@ fun KgTaxiAppRoot() {
                     onToggleTheme = viewModel::toggleDarkTheme,
                     onToggleOffline = viewModel::toggleOfflineMode,
                     onOpenProfile = { showProfile = true },
-                    onClickSignIn = triggerGoogleSignIn
+                    onClickSignIn = { showSignInDialog = true }
                 )
 
                 Box(modifier = Modifier.weight(1f).fillMaxWidth()) {
@@ -292,7 +294,7 @@ fun KgTaxiAppRoot() {
                     isSigningIn = isSigningIn,
                     authError = authError,
                     viewModel = viewModel,
-                    onSignInWithGoogle = triggerGoogleSignIn,
+                    onSignInWithGoogle = { showSignInDialog = true },
                     onSignOut = {
                         signOutGoogle(
                             credentialManager = credentialManager,
@@ -327,6 +329,13 @@ fun KgTaxiAppRoot() {
                     onTranslateAll = viewModel::translateAllDriverChat,
                     onSendMessage = viewModel::sendDriverChatMessage,
                     onDismiss = { showDriverChat = false }
+                )
+            }
+
+            if (showSignInDialog) {
+                SignInDialog(
+                    onSignInWithGoogle = triggerGoogleSignIn,
+                    onDismiss = { showSignInDialog = false }
                 )
             }
 

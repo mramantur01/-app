@@ -124,7 +124,7 @@ fun ProfileWalletOverlay(
                                     fontWeight = FontWeight.Bold
                                 )
                                 Text(
-                                    text = if (state.isSignedIn) "Google Sync активен • ${state.profile.email}" else "Локальное сохранение (вход не обязателен)",
+                                    text = if (state.isSignedIn) "Вы вошли • ${state.profile.phone.ifBlank { state.profile.email }}" else "Войдите, чтобы заказывать такси",
                                     style = MaterialTheme.typography.bodySmall,
                                     color = MaterialTheme.colorScheme.onPrimary.copy(alpha = 0.78f)
                                 )
@@ -153,7 +153,7 @@ fun ProfileWalletOverlay(
                                 } else {
                                     Icon(Icons.Default.CloudSync, contentDescription = null, modifier = Modifier.size(18.dp))
                                     Spacer(Modifier.width(8.dp))
-                                    Text("Войти через Google (облачная синхронизация)", fontWeight = FontWeight.Bold)
+                                    Text("Войти по номеру телефона", fontWeight = FontWeight.Bold)
                                 }
                             }
                         } else {
@@ -162,7 +162,7 @@ fun ProfileWalletOverlay(
                                 colors = ButtonDefaults.outlinedButtonColors(contentColor = MaterialTheme.colorScheme.onPrimary),
                                 modifier = Modifier.fillMaxWidth().testTag("profile_sign_out_button")
                             ) {
-                                Text("Выйти из Google аккаунта")
+                                Text("Выйти из аккаунта")
                             }
                         }
                         if (!authError.isNullOrBlank()) {
