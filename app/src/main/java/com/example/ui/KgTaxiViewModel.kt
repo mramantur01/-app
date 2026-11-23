@@ -391,6 +391,7 @@ class KgTaxiViewModel(
     private var driverRideWatchJob: Job? = null
     private var verifiedDriverCar: String = ""
     private var verifiedDriverPlate: String = ""
+    private var verifiedDriverPayPhone: String = ""
     private var driverWaitingTimerJob: Job? = null
     private var routeFetchJob: Job? = null
     private var addressSearchJob: Job? = null
@@ -689,6 +690,7 @@ class KgTaxiViewModel(
             val info = firestoreSync.fetchRoleInfo()
             verifiedDriverCar = info.car
             verifiedDriverPlate = info.plate
+            verifiedDriverPayPhone = info.payPhone
             // Matches firestore.rules: only "driver" may take orders; dispatchers see the panel.
             val allowed = when (info.role) {
                 "driver" -> setOf(AppRole.PASSENGER, AppRole.DRIVER)
@@ -1514,6 +1516,7 @@ class KgTaxiViewModel(
                     status = status,
                     progress = progress,
                     driverName = shared.driverName ?: r.driverName,
+                    driverPayPhone = shared.driverPayPhone?.takeIf { it.isNotBlank() } ?: r.driverPayPhone,
                     driverCar = listOfNotNull(shared.driverCar, shared.driverPlate)
                         .filter { it.isNotBlank() }.joinToString(" • ").ifBlank { r.driverCar }
                 )
@@ -1821,7 +1824,8 @@ class KgTaxiViewModel(
                 rideId = order.id,
                 driverName = _uiState.value.profile.displayName,
                 driverCar = verifiedDriverCar,
-                driverPlate = verifiedDriverPlate
+                driverPlate = verifiedDriverPlate,
+                driverPayPhone = verifiedDriverPayPhone
             )
             res.onSuccess {
                 driverRideId = order.id

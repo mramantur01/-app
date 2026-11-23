@@ -390,7 +390,7 @@ service cloud.firestore {
          existing().driverId == null &&
          incoming().status == 'ASSIGNED' &&
          incoming().driverId == request.auth.uid &&
-         onlyChanged(['status', 'driverId', 'driverName', 'driverCar', 'driverPlate', 'updatedAt'])) ||
+         onlyChanged(['status', 'driverId', 'driverName', 'driverCar', 'driverPlate', 'driverPayPhone', 'updatedAt'])) ||
         // The assigned driver moves the trip forward or cancels it.
         (isDriver() &&
          existing().driverId == request.auth.uid &&

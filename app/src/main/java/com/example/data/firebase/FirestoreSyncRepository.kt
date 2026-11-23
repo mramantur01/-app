@@ -281,7 +281,8 @@ class FirestoreSyncRepository(
             RoleInfo(
                 role = (snap.getString("role") ?: "passenger").lowercase(),
                 car = snap.getString("car").orEmpty(),
-                plate = snap.getString("plate").orEmpty()
+                plate = snap.getString("plate").orEmpty(),
+                payPhone = snap.getString("payPhone").orEmpty()
             )
         } catch (e: CancellationException) {
             throw e
@@ -291,7 +292,12 @@ class FirestoreSyncRepository(
         }
     }
 
-    data class RoleInfo(val role: String = "passenger", val car: String = "", val plate: String = "")
+    data class RoleInfo(
+        val role: String = "passenger",
+        val car: String = "",
+        val plate: String = "",
+        val payPhone: String = ""
+    )
 
     /**
      * Writes an SOS alert to the shared `sos_alerts` collection so that dispatchers see it.

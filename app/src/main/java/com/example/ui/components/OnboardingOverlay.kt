@@ -43,22 +43,22 @@ fun OnboardingOverlay(
         listOf(
             OnboardingSlide(
                 title = "KG Taxi — весь Кыргызстан в одном приложении",
-                subtitle = "Такси в 8 городах КР, Межгород с выбором места в салоне, Почасовая аренда (Ала-Арча, Бурана, Иссык-Куль), Курьер, Грузовой и Доставка еды.",
+                subtitle = "Такси по городу и поездки между городами Кыргызстана. Водители проверены, цена известна до поездки.",
                 badge = "8 ГОРОДОВ КР",
                 icon = Icons.Default.DirectionsCar,
                 imageRes = R.drawable.img_uber_black_sedan_1795421299011
             ),
             OnboardingSlide(
-                title = "Механики Uber + Торг и ИИ-маршрутизатор",
-                subtitle = "Мультистоп-остановки, Wait & Save (-15%), режим «Предложить свою цену», Reserve с отслеживанием рейсов FRU/OSS и встроенный ИИ-планировщик.",
-                badge = "SMART ROUTING & AI",
+                title = "Честная цена и живой статус",
+                subtitle = "Видите цену заранее, имя водителя, машину и номер. Уведомим, когда водитель примет заказ и когда подъедет.",
+                badge = "ПРОЗРАЧНО",
                 icon = Icons.Default.AutoAwesome,
                 imageRes = R.drawable.img_kyrgyzstan_tour_1795421299618
             ),
             OnboardingSlide(
-                title = "Безопасность PIN, SOS 102 и оплата ELQR",
-                subtitle = "4-значный PIN посадки, RideCheck, чат с автопереводом RU/KG/EN, оплата MBank / O!Деньги / Элкарт QR и подписка KG One (-7%).",
-                badge = "БЕЗОПАСНОСТЬ & ELQR",
+                title = "Безопасность: PIN, SOS 112 и оплата наличными",
+                subtitle = "4-значный PIN посадки, кнопка SOS (звонок 112 и SMS близким), «Поделиться поездкой» и оплата наличными водителю.",
+                badge = "БЕЗОПАСНОСТЬ",
                 icon = Icons.Default.Shield,
                 imageRes = R.drawable.img_kg_food_hero_1795421299190
             )

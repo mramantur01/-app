@@ -275,7 +275,9 @@ data class ActiveRideState(
     val waypoints: List<KgPlace> = emptyList(),
     val waitingSeconds: Int = 0,
     val meetAndGreetSignText: String? = null,
-    val courierParcelPhotoUri: String? = null
+    val courierParcelPhotoUri: String? = null,
+    /** Driver phone for a direct bank transfer (real rides only). */
+    val driverPayPhone: String? = null
 )
 
 data class NearbyDriverMarker(

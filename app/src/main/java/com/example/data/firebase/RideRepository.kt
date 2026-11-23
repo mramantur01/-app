@@ -39,6 +39,8 @@ data class SharedRide(
     val driverName: String?,
     val driverCar: String?,
     val driverPlate: String?,
+    /** Phone number for a direct MBank / O!Деньги transfer to the driver. */
+    val driverPayPhone: String?,
     val serviceType: String,
     val city: String,
     val pickupAddress: String,
@@ -66,6 +68,7 @@ data class SharedRide(
                 driverName = snap.getString("driverName"),
                 driverCar = snap.getString("driverCar"),
                 driverPlate = snap.getString("driverPlate"),
+                driverPayPhone = snap.getString("driverPayPhone"),
                 serviceType = snap.getString("serviceType") ?: "TAXI",
                 city = snap.getString("city") ?: "",
                 pickupAddress = snap.getString("pickupAddress") ?: "",
@@ -180,7 +183,13 @@ class RideRepository(
      * A driver takes an open order. Runs in a transaction so two drivers can't take the same order:
      * the second one gets "Заказ уже принят другим водителем".
      */
-    suspend fun acceptAsDriver(rideId: String, driverName: String, driverCar: String, driverPlate: String): Result<Unit> {
+    suspend fun acceptAsDriver(
+        rideId: String,
+        driverName: String,
+        driverCar: String,
+        driverPlate: String,
+        driverPayPhone: String = ""
+    ): Result<Unit> {
         val uid = currentUid ?: return Result.failure(IllegalStateException("Войдите в аккаунт"))
         val ref = rides.document(rideId)
         return runWrite(OperationType.UPDATE, "rides/$rideId") {
@@ -197,6 +206,7 @@ class RideRepository(
                         "driverName" to driverName.ifBlank { "Водитель" }.take(80),
                         "driverCar" to driverCar.take(80),
                         "driverPlate" to driverPlate.take(20),
+                        "driverPayPhone" to driverPayPhone.take(20),
                         "updatedAt" to FieldValue.serverTimestamp()
                     )
                 )

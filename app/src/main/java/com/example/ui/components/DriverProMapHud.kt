@@ -396,10 +396,7 @@ fun DriverLineMapCockpit(
                         onOpenChat = onOpenDriverPassengerChat,
                         onOpenElqr = onOpenElqrDialog,
                         onOpenMeetGreet = onOpenMeetGreetPlacard,
-                        onTriggerSos = {
-                            onTriggerSos()
-                            context.startActivity(Intent(Intent.ACTION_DIAL, Uri.parse("tel:102")))
-                        }
+                        onTriggerSos = onTriggerSos
                     )
                 }
 
@@ -845,7 +842,7 @@ private fun DriverActiveOrderExecutionSheet(
                     colors = IconButtonDefaults.filledTonalIconButtonColors(containerColor = UberRed.copy(alpha = 0.14f)),
                     modifier = Modifier.testTag("driver_sos_102_button")
                 ) {
-                    Icon(Icons.Default.Shield, contentDescription = "SOS 102", tint = UberRed)
+                    Icon(Icons.Default.Shield, contentDescription = "SOS 112", tint = UberRed)
                 }
             }
 

@@ -113,9 +113,10 @@ fun ActiveTripCard(
                                 Text(strings.rideCheckAllGood)
                             }
                             Button(
+                                // Same full SOS as the main button: 112 dialer, SMS to contacts, dispatcher alert.
                                 onClick = {
-                                    val dial = Intent(Intent.ACTION_DIAL, Uri.parse("tel:102"))
-                                    context.startActivity(dial)
+                                    onDismissRideCheck()
+                                    onTriggerSos()
                                 },
                                 colors = ButtonDefaults.buttonColors(containerColor = UberRed, contentColor = Color.White),
                                 modifier = Modifier.weight(1f).testTag("ridecheck_sos_button")
@@ -414,17 +415,54 @@ fun ActiveTripCard(
                 }
             }
 
-            // Safety Bar: SOS 102 + RideCheck + Share Live ETA
+            // Payment: cash, or a direct transfer to the driver's MBank / O!Деньги number.
+            if (ride.status != TripStatus.SEARCHING) {
+                val payPhone = ride.driverPayPhone
+                Surface(
+                    shape = RoundedCornerShape(12.dp),
+                    color = MaterialTheme.colorScheme.surfaceVariant,
+                    modifier = Modifier.fillMaxWidth().testTag("driver_payment_card")
+                ) {
+                    Column(modifier = Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                        Text(
+                            "К оплате: ${ride.totalPriceSom} сом",
+                            fontWeight = FontWeight.Bold
+                        )
+                        if (payPhone.isNullOrBlank()) {
+                            Text(
+                                "Оплата наличными водителю после поездки.",
+                                style = MaterialTheme.typography.bodySmall
+                            )
+                        } else {
+                            Text(
+                                "Наличными или переводом водителю (MBank / O!Деньги) по номеру $payPhone",
+                                style = MaterialTheme.typography.bodySmall
+                            )
+                            val clipboard = androidx.compose.ui.platform.LocalClipboardManager.current
+                            TextButton(
+                                onClick = {
+                                    clipboard.setText(androidx.compose.ui.text.AnnotatedString(payPhone))
+                                    android.widget.Toast.makeText(context, "Номер скопирован", android.widget.Toast.LENGTH_SHORT).show()
+                                },
+                                modifier = Modifier.testTag("copy_driver_pay_phone")
+                            ) {
+                                Icon(Icons.Default.ContentCopy, contentDescription = null, modifier = Modifier.size(16.dp))
+                                Spacer(Modifier.width(4.dp))
+                                Text("Скопировать номер")
+                            }
+                        }
+                    }
+                }
+            }
+
+            // Safety Bar: SOS 112 + RideCheck + Share trip
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.spacedBy(8.dp)
             ) {
                 Button(
-                    onClick = {
-                        onTriggerSos()
-                        val dial = Intent(Intent.ACTION_DIAL, Uri.parse("tel:102"))
-                        context.startActivity(dial)
-                    },
+                    // The ViewModel opens the 112 dialer, the SMS to contacts and alerts the dispatcher.
+                    onClick = onTriggerSos,
                     colors = ButtonDefaults.buttonColors(containerColor = UberRed, contentColor = Color.White),
                     shape = RoundedCornerShape(12.dp),
                     modifier = Modifier.weight(1f).height(48.dp).testTag("sos_102_button")
@@ -444,10 +482,19 @@ fun ActiveTripCard(
                 OutlinedButton(
                     onClick = {
                         val etaRemaining = ((1f - ride.progress).coerceAtLeast(0.1f) * ride.durationMin).toInt().coerceAtLeast(1)
-                        val shareText = "KG Taxi Live ETA • ${ride.city}\n" +
-                            "Статус: $statusText (осталось ~$etaRemaining мин)\n" +
-                            "Откуда: ${ride.pickupAddress}\nКуда: ${ride.dropoffAddress}\n" +
-                            "Водитель: ${ride.driverName} (${ride.driverCar})\nPIN: ${ride.safetyPin}"
+                        val routeLink = String.format(
+                            java.util.Locale.US,
+                            "https://www.google.com/maps/dir/?api=1&origin=%.6f,%.6f&destination=%.6f,%.6f",
+                            ride.pickupPoint.lat, ride.pickupPoint.lng, ride.dropoffPoint.lat, ride.dropoffPoint.lng
+                        )
+                        val shareText = buildString {
+                            append("Я еду на KG Taxi • ${ride.city}\n")
+                            append("Статус: $statusText (осталось ~$etaRemaining мин)\n")
+                            append("Откуда: ${ride.pickupAddress}\nКуда: ${ride.dropoffAddress}\n")
+                            if (ride.driverCar.isNotBlank()) append("Водитель: ${ride.driverName} • ${ride.driverCar}\n")
+                            append("Маршрут: $routeLink\n")
+                            append("Если что-то не так — звоните 112.")
+                        }
                         val send = Intent(Intent.ACTION_SEND).apply {
                             type = "text/plain"
                             putExtra(Intent.EXTRA_TEXT, shareText)
@@ -459,7 +506,7 @@ fun ActiveTripCard(
                 ) {
                     Icon(Icons.Default.Share, contentDescription = null, modifier = Modifier.size(18.dp))
                     Spacer(Modifier.width(4.dp))
-                    Text("Live ETA", maxLines = 1)
+                    Text("Поделиться", maxLines = 1)
                 }
             }
 
@@ -475,12 +522,15 @@ fun ActiveTripCard(
                 ) {
                     Text(strings.cancel)
                 }
-                Button(
-                    onClick = onCompleteNow,
-                    shape = RoundedCornerShape(12.dp),
-                    modifier = Modifier.weight(1f).testTag("complete_ride_demo_button")
-                ) {
-                    Text("Завершить и чек")
+                // In real rides the driver finishes the trip; this shortcut is demo-only.
+                if (!com.example.FeatureFlags.REAL_RIDES) {
+                    Button(
+                        onClick = onCompleteNow,
+                        shape = RoundedCornerShape(12.dp),
+                        modifier = Modifier.weight(1f).testTag("complete_ride_demo_button")
+                    ) {
+                        Text("Завершить и чек")
+                    }
                 }
             }
         }

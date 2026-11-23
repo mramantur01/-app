@@ -115,7 +115,7 @@ object PdfReportExporter {
                 y += 20f
             }
 
-            canvas.drawText("KG Taxi Kyrgyzstan • Поддержка 24/7 • Безопасность SOS 102", 36f, 818f, bodyPaint)
+            canvas.drawText("KG Taxi Kyrgyzstan • Поддержка 24/7 • Безопасность SOS 112", 36f, 818f, bodyPaint)
             document.finishPage(page)
 
             context.contentResolver.openOutputStream(uri)?.use { out ->
