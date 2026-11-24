@@ -643,6 +643,8 @@ private fun PassengerControlSheet(
                 }
 
                 // Pickup Speed Selector (Wait & Save -15% / Standard / Priority +30s)
+                // Hidden until it can be guaranteed (no real matching for pickup speed / shared rides).
+                if (FeatureFlags.DEMO_EXTRAS) {
                 Row(
                     modifier = Modifier.horizontalScroll(rememberScrollState()),
                     horizontalArrangement = Arrangement.spacedBy(6.dp)
@@ -666,8 +668,10 @@ private fun PassengerControlSheet(
                         modifier = Modifier.testTag("speed_priority")
                     )
                 }
+                }
 
                 // Carpool / Share Mode ("Попутчик • Вместе -30%")
+                if (FeatureFlags.DEMO_EXTRAS) {
                 Surface(
                     onClick = viewModel::toggleCarpoolMode,
                     shape = RoundedCornerShape(14.dp),
@@ -711,6 +715,7 @@ private fun PassengerControlSheet(
                             onCheckedChange = { viewModel.toggleCarpoolMode() }
                         )
                     }
+                }
                 }
 
                 // Ride Preferences Chips + Split Fare

@@ -292,6 +292,60 @@ class FirestoreSyncRepository(
         }
     }
 
+    /** What a person fills in to become a KG Taxi driver. Stored in driver_applications/{uid}. */
+    data class DriverApplication(
+        val fullName: String,
+        val phone: String,
+        val city: String,
+        val car: String,
+        val plate: String,
+        val licenseNumber: String,
+        val experienceYears: Int,
+        val payPhone: String
+    )
+
+    /** Saves (or updates while still pending) the signed-in user's driver application. */
+    suspend fun submitDriverApplication(app: DriverApplication): Result<Unit> {
+        val uid = auth.currentUser?.uid ?: return Result.failure(IllegalStateException("Войдите в аккаунт"))
+        val path = "driver_applications/$uid"
+        return try {
+            db.collection("driver_applications").document(uid).set(
+                mapOf(
+                    "userId" to uid,
+                    "fullName" to app.fullName.trim().take(80),
+                    "phone" to app.phone.trim().take(20),
+                    "city" to app.city.trim().take(50),
+                    "car" to app.car.trim().take(80),
+                    "plate" to app.plate.trim().uppercase().take(20),
+                    "licenseNumber" to app.licenseNumber.trim().take(30),
+                    "experienceYears" to app.experienceYears.coerceIn(0, 60),
+                    "payPhone" to app.payPhone.trim().take(20),
+                    "status" to "pending",
+                    "createdAt" to FieldValue.serverTimestamp()
+                )
+            ).await()
+            Result.success(Unit)
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            handleFirestoreError(e, OperationType.WRITE, path)
+            Result.failure(e)
+        }
+    }
+
+    /** "pending", "approved", "rejected", or null when there is no application. */
+    suspend fun fetchDriverApplicationStatus(): String? {
+        val uid = auth.currentUser?.uid ?: return null
+        return try {
+            val snap = db.collection("driver_applications").document(uid).get().await()
+            if (snap.exists()) snap.getString("status") ?: "pending" else null
+        } catch (e: CancellationException) {
+            throw e
+        } catch (_: Exception) {
+            null
+        }
+    }
+
     data class RoleInfo(
         val role: String = "passenger",
         val car: String = "",

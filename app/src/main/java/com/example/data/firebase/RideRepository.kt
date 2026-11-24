@@ -247,6 +247,47 @@ class RideRepository(
             ).await()
         }
 
+    // --- Chat between the passenger and the driver of one ride: rides/{rideId}/messages ---
+
+    data class ChatMessage(val id: String, val senderId: String, val text: String, val createdAtMillis: Long)
+
+    fun observeMessages(rideId: String): Flow<List<ChatMessage>> =
+        rides.document(rideId).collection("messages")
+            .orderBy("createdAt", Query.Direction.ASCENDING)
+            .limit(200)
+            .snapshots()
+            .map { qs ->
+                qs.documents.mapNotNull { d ->
+                    ChatMessage(
+                        id = d.id,
+                        senderId = d.getString("senderId") ?: return@mapNotNull null,
+                        text = d.getString("text") ?: return@mapNotNull null,
+                        createdAtMillis = d.getTimestamp("createdAt")?.toDate()?.time ?: System.currentTimeMillis()
+                    )
+                }
+            }
+            .catch { e ->
+                if (e is CancellationException) throw e
+                handleFirestoreError(e, OperationType.LIST, "rides/$rideId/messages")
+                emit(emptyList())
+            }
+
+    suspend fun sendMessage(rideId: String, text: String): Result<Unit> {
+        val uid = currentUid ?: return Result.failure(IllegalStateException("Войдите в аккаунт"))
+        val clean = text.trim().take(500)
+        if (clean.isEmpty()) return Result.success(Unit)
+        return runWrite(OperationType.CREATE, "rides/$rideId/messages") {
+            rides.document(rideId).collection("messages").add(
+                mapOf(
+                    "senderId" to uid,
+                    "text" to clean,
+                    "createdAt" to FieldValue.serverTimestamp()
+                )
+            ).await()
+            Unit
+        }
+    }
+
     private suspend fun <T> runWrite(op: OperationType, path: String, block: suspend () -> T): Result<T> =
         try {
             Result.success(block())

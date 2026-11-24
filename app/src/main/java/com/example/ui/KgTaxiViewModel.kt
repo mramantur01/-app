@@ -10,6 +10,7 @@ import com.example.data.firebase.AiRouteAssistant
 import com.example.data.firebase.AiStreamEvent
 import com.example.data.firebase.FirestoreSyncRepository
 import com.example.data.firebase.RideRepository
+import com.example.data.firebase.PushTokenRegistry
 import com.example.data.firebase.RideStatus
 import com.example.data.firebase.SharedRide
 import com.example.data.local.AppPreferencesStore
@@ -46,6 +47,11 @@ data class KgTaxiUiState(
     val role: AppRole = AppRole.PASSENGER,
     /** Roles this account may open. Comes from roles/{uid} in Firestore; everyone is a passenger. */
     val allowedRoles: Set<AppRole> = setOf(AppRole.PASSENGER),
+    /** Driver application dialog is open. */
+    val driverApplicationOpen: Boolean = false,
+    /** "pending" / "approved" / "rejected" / null — the signed-in user's driver application. */
+    val driverApplicationStatus: String? = null,
+    val driverApplicationSending: Boolean = false,
     val profile: LocalProfileEntity = LocalProfileEntity(),
     val language: AppLanguage = AppLanguage.RU,
     val darkTheme: Boolean = false,
@@ -353,6 +359,8 @@ class KgTaxiViewModel(
     private var driverLocationJob: Job? = null
     private var driverRideWatchJob: Job? = null
     private var dispatcherFeedJob: Job? = null
+    private var passengerChatJob: Job? = null
+    private var driverChatJob: Job? = null
     private var verifiedDriverCar: String = ""
     private var verifiedDriverPlate: String = ""
     private var verifiedDriverPayPhone: String = ""
@@ -452,6 +460,7 @@ class KgTaxiViewModel(
             it.copy(isSignedIn = true, signedInUid = uid, cloudSyncError = null, statusBanner = "Вы вошли в аккаунт")
         }
         refreshAllowedRoles()
+        syncPushToken()
 
         viewModelScope.launch {
             val current = _uiState.value.profile
@@ -643,6 +652,47 @@ class KgTaxiViewModel(
         }
     }
 
+    /** Tells the server this phone's push token, city and whether the driver is on the line. */
+    private fun syncPushToken() {
+        if (!_uiState.value.isSignedIn) return
+        val s = _uiState.value
+        viewModelScope.launch {
+            PushTokenRegistry.update(
+                context = appContext,
+                city = s.selectedCity.name,
+                driverOnline = s.driverOnline && AppRole.DRIVER in s.allowedRoles
+            )
+        }
+    }
+
+    // --- DRIVER APPLICATION ---
+
+    fun openDriverApplication() {
+        _uiState.update { it.copy(driverApplicationOpen = true) }
+        viewModelScope.launch {
+            val status = firestoreSync.fetchDriverApplicationStatus()
+            _uiState.update { it.copy(driverApplicationStatus = status) }
+        }
+    }
+
+    fun closeDriverApplication() = _uiState.update { it.copy(driverApplicationOpen = false) }
+
+    fun submitDriverApplication(app: FirestoreSyncRepository.DriverApplication) {
+        _uiState.update { it.copy(driverApplicationSending = true) }
+        viewModelScope.launch {
+            val res = firestoreSync.submitDriverApplication(app)
+            _uiState.update {
+                it.copy(
+                    driverApplicationSending = false,
+                    driverApplicationStatus = if (res.isSuccess) "pending" else it.driverApplicationStatus,
+                    driverApplicationOpen = res.isFailure,
+                    statusBanner = if (res.isSuccess) "Заявка отправлена. После проверки откроется режим водителя."
+                    else "Не удалось отправить заявку: проверьте поля и интернет."
+                )
+            }
+        }
+    }
+
     // --- HEADER & GLOBAL SETTINGS ---
 
     fun setRole(role: AppRole) {
@@ -656,7 +706,10 @@ class KgTaxiViewModel(
         }
         val message = when {
             !s.isSignedIn -> "Войдите в аккаунт, чтобы открыть этот режим."
-            role == AppRole.DRIVER -> "Режим водителя открывается после проверки документов. Напишите в поддержку KG Taxi."
+            role == AppRole.DRIVER -> {
+                openDriverApplication()
+                return
+            }
             else -> "Панель диспетчера доступна только сотрудникам KG Taxi."
         }
         _uiState.update { it.copy(statusBanner = message) }
@@ -725,6 +778,7 @@ class KgTaxiViewModel(
     fun clearBanner() = _uiState.update { it.copy(statusBanner = null) }
 
     fun selectCity(city: KgCity) {
+        viewModelScope.launch { delay(300); syncPushToken() }
         val firstLandmark = city.landmarks.firstOrNull()
         val secondLandmark = city.landmarks.getOrNull(1) ?: firstLandmark
         _uiState.update {
@@ -974,7 +1028,10 @@ class KgTaxiViewModel(
         updateProfile { it.copy(preferredTariffId = top, tariffUsageCounts = serialized) }
     }
 
-    fun setPickupSpeed(speed: PickupSpeed) = _uiState.update { it.copy(pickupSpeed = speed) }
+    fun setPickupSpeed(speed: PickupSpeed) {
+        if (!FeatureFlags.DEMO_EXTRAS && speed != PickupSpeed.STANDARD) return
+        _uiState.update { it.copy(pickupSpeed = speed) }
+    }
 
     fun updatePreferences(transform: (RidePreferences) -> RidePreferences) =
         _uiState.update { it.copy(preferences = transform(it.preferences)) }
@@ -1360,6 +1417,12 @@ class KgTaxiViewModel(
         val comment = listOfNotNull(
             s.selectedPickupSpot?.let { "Подъезд/место: $it" },
             if (s.bookingForOther) "Для: ${s.recipientName} ${s.recipientPhone}".trim() else null,
+            listOfNotNull(
+                "тихая поездка".takeIf { s.preferences.quietRide },
+                "без кондиционера".takeIf { !s.preferences.climateAc },
+                "помочь с багажом".takeIf { s.preferences.luggageHelp },
+                "с животным".takeIf { s.preferences.petFriendly }
+            ).takeIf { it.isNotEmpty() }?.joinToString(", ", prefix = "Пожелания: "),
             "PIN $pin"
         ).joinToString(" • ")
 
@@ -1403,6 +1466,7 @@ class KgTaxiViewModel(
             )
             created.onSuccess { id ->
                 passengerRideId = id
+                startPassengerChat(id)
                 _uiState.update { st ->
                     st.copy(
                         activeRide = st.activeRide?.copy(tripId = id),
@@ -1468,6 +1532,7 @@ class KgTaxiViewModel(
                     progress = progress,
                     driverName = shared.driverName ?: r.driverName,
                     driverPayPhone = shared.driverPayPhone?.takeIf { it.isNotBlank() } ?: r.driverPayPhone,
+                    driverPoint = if (shared.driverLat != null && shared.driverLng != null) GeoPoint(shared.driverLat, shared.driverLng) else r.driverPoint,
                     driverCar = listOfNotNull(shared.driverCar, shared.driverPlate)
                         .filter { it.isNotBlank() }.joinToString(" • ").ifBlank { r.driverCar }
                 )
@@ -1495,7 +1560,49 @@ class KgTaxiViewModel(
         }
     }
 
+    private fun RideRepository.ChatMessage.toUi(passengerSide: Boolean): DriverChatMessage {
+        val mine = senderId == rides.currentUid
+        return DriverChatMessage(
+            id = id,
+            fromPassenger = if (passengerSide) mine else !mine,
+            originalText = text,
+            timeLabel = java.text.SimpleDateFormat("HH:mm", java.util.Locale.getDefault()).format(java.util.Date(createdAtMillis))
+        )
+    }
+
+    private fun startPassengerChat(rideId: String) {
+        passengerChatJob?.cancel()
+        var seen = 0
+        passengerChatJob = viewModelScope.launch {
+            rides.observeMessages(rideId).collect { list ->
+                val ui = list.map { it.toUi(passengerSide = true) }
+                if (list.size > seen && seen > 0 && list.last().senderId != rides.currentUid) {
+                    SoundAndNotificationManager.postNotification(appContext, "Сообщение от водителя", list.last().text)
+                }
+                seen = list.size
+                _uiState.update { it.copy(driverChatMessages = ui) }
+            }
+        }
+    }
+
+    private fun startDriverChat(rideId: String) {
+        driverChatJob?.cancel()
+        var seen = 0
+        driverChatJob = viewModelScope.launch {
+            rides.observeMessages(rideId).collect { list ->
+                val ui = list.map { it.toUi(passengerSide = false) }
+                if (list.size > seen && seen > 0 && list.last().senderId != rides.currentUid) {
+                    SoundAndNotificationManager.postNotification(appContext, "Сообщение от пассажира", list.last().text)
+                }
+                seen = list.size
+                _uiState.update { it.copy(driverActiveOrderMessages = ui) }
+            }
+        }
+    }
+
     private fun stopPassengerRideObserver() {
+        passengerChatJob?.cancel()
+        passengerChatJob = null
         passengerRideJob?.cancel()
         passengerRideJob = null
         passengerRideId = null
@@ -1648,6 +1755,7 @@ class KgTaxiViewModel(
         }
         if (FeatureFlags.REAL_RIDES) {
             generateDriverIncomingOrders(_uiState.value.selectedCity)
+            syncPushToken()
             return
         }
         if (_uiState.value.driverOnline) {
@@ -1775,6 +1883,8 @@ class KgTaxiViewModel(
     }
 
     private fun finishDriverRealRide() {
+        driverChatJob?.cancel()
+        driverChatJob = null
         driverRideWatchJob?.cancel()
         driverRideWatchJob = null
         driverRideId = null
@@ -1811,6 +1921,7 @@ class KgTaxiViewModel(
                 applyAcceptedDriverOrder(order)
                 startDriverLocationSharing(order.id)
                 watchDriverRide(order.id)
+                startDriverChat(order.id)
             }.onFailure { e ->
                 _uiState.update {
                     it.copy(
@@ -1840,7 +1951,7 @@ class KgTaxiViewModel(
                 driverOrderStage = DriverOrderStage.EN_ROUTE_TO_PICKUP,
                 driverOrderWaitingSeconds = 0,
                 driverBackToBackOffer = null,
-                driverActiveOrderMessages = listOf(initPassengerMsg),
+                driverActiveOrderMessages = if (FeatureFlags.REAL_RIDES) emptyList() else listOf(initPassengerMsg),
                 driverActivityScore = (it.driverActivityScore + 2).coerceAtMost(100),
                 driverIncomingOrders = it.driverIncomingOrders.filterNot { o -> o.id == order.id },
                 statusBanner = "Заказ принят! +2 Активность • Подача ${order.pickupEtaMin} мин"
@@ -2092,6 +2203,7 @@ class KgTaxiViewModel(
     }
 
     fun toggleDriverCoffeeBreak() {
+        if (!FeatureFlags.DEMO_EXTRAS) return
         _uiState.update {
             val next = !it.driverCoffeeBreakActive
             it.copy(
@@ -2104,6 +2216,15 @@ class KgTaxiViewModel(
     fun sendDriverSideChatMessage(text: String) {
         val clean = text.trim()
         if (clean.isBlank()) return
+        val realId = driverRideId
+        if (FeatureFlags.REAL_RIDES && realId != null) {
+            viewModelScope.launch {
+                if (rides.sendMessage(realId, clean).isFailure) {
+                    _uiState.update { it.copy(statusBanner = "Сообщение не отправлено: нет связи.") }
+                }
+            }
+            return
+        }
         val drvMsg = DriverChatMessage(
             id = "dc_drv_${System.currentTimeMillis()}",
             fromPassenger = false,
@@ -2147,6 +2268,7 @@ class KgTaxiViewModel(
     }
 
     fun toggleCarpoolMode() {
+        if (!FeatureFlags.DEMO_EXTRAS) return
         _uiState.update {
             val next = !it.carpoolModeEnabled
             it.copy(
@@ -2191,6 +2313,7 @@ class KgTaxiViewModel(
     }
 
     fun toggleDriverAutoAccept() {
+        if (!FeatureFlags.DEMO_EXTRAS) return
         _uiState.update {
             val next = !it.driverAutoAccept
             it.copy(
@@ -2554,6 +2677,19 @@ class KgTaxiViewModel(
     fun sendDriverChatMessage(text: String) {
         val clean = text.trim()
         if (clean.isBlank()) return
+        val realId = passengerRideId
+        if (FeatureFlags.REAL_RIDES) {
+            if (realId == null) {
+                _uiState.update { it.copy(statusBanner = "Чат откроется, когда водитель примет заказ.") }
+                return
+            }
+            viewModelScope.launch {
+                if (rides.sendMessage(realId, clean).isFailure) {
+                    _uiState.update { it.copy(statusBanner = "Сообщение не отправлено: нет связи.") }
+                }
+            }
+            return
+        }
         val userMsg = DriverChatMessage(
             id = "cm_${System.currentTimeMillis()}",
             fromPassenger = true,
@@ -2885,6 +3021,7 @@ class KgTaxiViewModel(
     }
 
     fun setDriverHomeFilter(enabled: Boolean, district: String) {
+        if (!FeatureFlags.DEMO_EXTRAS) return
         _uiState.update {
             it.copy(
                 driverHomeFilterEnabled = enabled,

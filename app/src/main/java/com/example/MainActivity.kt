@@ -339,6 +339,18 @@ fun KgTaxiAppRoot() {
                 )
             }
 
+            if (state.driverApplicationOpen) {
+                com.example.ui.components.DriverApplicationDialog(
+                    status = state.driverApplicationStatus,
+                    sending = state.driverApplicationSending,
+                    defaultName = state.profile.displayName,
+                    defaultPhone = state.profile.phone,
+                    defaultCity = state.selectedCity.name,
+                    onSubmit = viewModel::submitDriverApplication,
+                    onDismiss = viewModel::closeDriverApplication
+                )
+            }
+
             // Full-Screen AI Route Planner Overlay (Gemini 3.8 Flash via Firebase AI Logic)
             if (showAiChat) {
                 AiRouteChatOverlay(

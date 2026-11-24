@@ -310,6 +310,45 @@ service cloud.firestore {
       allow write: if false;
     }
 
+    // Push tokens: each user writes only their own; the server (Admin SDK) reads them.
+    match /device_tokens/{uid} {
+      allow get: if isOwner(uid);
+      allow list: if false;
+      allow create, update: if isOwner(uid) &&
+                               incoming().keys().hasOnly(['userId', 'token', 'city', 'driverOnline', 'updatedAt']) &&
+                               incoming().userId == uid &&
+                               incoming().token is string && incoming().token.size() <= 4096 &&
+                               incoming().city is string && incoming().city.size() <= 50 &&
+                               incoming().driverOnline is bool &&
+                               isValidTimestamp(incoming().updatedAt);
+      allow delete: if isOwner(uid);
+    }
+
+    // Driver applications: a person applies once (and may correct it while pending);
+    // the owner reviews it and gives the role in roles/{uid}.
+    match /driver_applications/{uid} {
+      allow get: if isOwner(uid) || isDispatcher();
+      allow list: if isDispatcher();
+      allow create, update: if isOwner(uid) &&
+                               (resource == null || existing().status == 'pending') &&
+                               incoming().keys().hasOnly(['userId', 'fullName', 'phone', 'city', 'car', 'plate',
+                                                          'licenseNumber', 'experienceYears', 'payPhone',
+                                                          'status', 'createdAt']) &&
+                               incoming().userId == uid &&
+                               incoming().status == 'pending' &&
+                               incoming().fullName is string && incoming().fullName.size() >= 2 && incoming().fullName.size() <= 80 &&
+                               incoming().phone is string && incoming().phone.size() >= 6 && incoming().phone.size() <= 20 &&
+                               incoming().city is string && incoming().city.size() <= 50 &&
+                               incoming().car is string && incoming().car.size() >= 2 && incoming().car.size() <= 80 &&
+                               incoming().plate is string && incoming().plate.size() >= 4 && incoming().plate.size() <= 20 &&
+                               incoming().licenseNumber is string && incoming().licenseNumber.size() >= 4 && incoming().licenseNumber.size() <= 30 &&
+                               incoming().experienceYears is int && incoming().experienceYears >= 0 && incoming().experienceYears <= 60 &&
+                               incoming().payPhone is string && incoming().payPhone.size() <= 20 &&
+                               isValidTimestamp(incoming().createdAt);
+      // Approve / reject is done by the owner in the Firebase console.
+      allow delete: if isOwner(uid) && existing().status == 'pending';
+    }
+
     // SOS alerts: the sender creates, dispatchers read and resolve.
     match /sos_alerts/{alertId} {
       allow create: if isSignedIn() &&
@@ -408,6 +447,24 @@ service cloud.firestore {
       );
 
       allow delete: if false;
+
+      // Chat between the passenger and the assigned driver of this ride.
+      match /messages/{msgId} {
+        allow read: if isRideParticipant(rideId) || isDispatcher();
+        allow create: if isRideParticipant(rideId) &&
+                         incoming().keys().hasOnly(['senderId', 'text', 'createdAt']) &&
+                         incoming().senderId == request.auth.uid &&
+                         incoming().text is string &&
+                         incoming().text.size() >= 1 && incoming().text.size() <= 500 &&
+                         isValidTimestamp(incoming().createdAt);
+        allow update, delete: if false;
+      }
+    }
+
+    function isRideParticipant(rideId) {
+      let ride = get(/databases/$(database)/documents/rides/$(rideId)).data;
+      return isSignedIn() &&
+             (ride.passengerId == request.auth.uid || ride.driverId == request.auth.uid);
     }
   }
 }

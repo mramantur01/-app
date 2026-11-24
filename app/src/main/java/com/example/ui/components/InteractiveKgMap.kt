@@ -495,7 +495,9 @@ private fun RealGoogleMapsLayer(
             )
         }
         if (activeRide != null && polyPoints.size >= 2) {
-            val pos = interpolateLatLng(polyPoints, activeRide.progress.coerceIn(0f, 1f))
+            // Real ride: live GPS position of the driver. Demo ride: position along the route.
+            val pos = activeRide.driverPoint?.let { LatLng(it.lat, it.lng) }
+                ?: interpolateLatLng(polyPoints, activeRide.progress.coerceIn(0f, 1f))
             Marker(
                 state = MarkerState(position = pos),
                 title = activeRide.driverName
@@ -724,7 +726,8 @@ private fun InteractiveVectorKgMapCanvas(
             val segT = scaled - idx
             val s0 = screenPolyline[idx]
             val s1 = screenPolyline[idx + 1]
-            val carPos = Offset(s0.x + (s1.x - s0.x) * segT, s0.y + (s1.y - s0.y) * segT)
+            val carPos = activeRide.driverPoint?.let { toScreen(it) }
+                ?: Offset(s0.x + (s1.x - s0.x) * segT, s0.y + (s1.y - s0.y) * segT)
             drawCircle(
                 color = UberBlue.copy(alpha = 0.28f * (1f - pulse)),
                 radius = 18f + 26f * pulse,

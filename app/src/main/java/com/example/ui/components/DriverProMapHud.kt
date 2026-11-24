@@ -219,6 +219,7 @@ fun DriverLineMapCockpit(
                 horizontalArrangement = Arrangement.spacedBy(6.dp)
             ) {
                 // Destination Filter Quick Pill ("По пути домой")
+                if (com.example.FeatureFlags.DEMO_EXTRAS) {
                 Surface(
                     onClick = onToggleHomeFilter,
                     shape = RoundedCornerShape(16.dp),
@@ -290,6 +291,7 @@ fun DriverLineMapCockpit(
                             fontWeight = FontWeight.Bold
                         )
                     }
+                }
                 }
 
                 if (state.driverShiftPass != DriverShiftPass.NONE) {
@@ -484,6 +486,7 @@ fun DriverLineMapCockpit(
                                         color = MaterialTheme.colorScheme.onSurfaceVariant
                                     )
                                 }
+                                if (com.example.FeatureFlags.DEMO_EXTRAS) {
                                 Surface(
                                     shape = RoundedCornerShape(10.dp),
                                     color = UberGreen.copy(alpha = 0.14f),
@@ -497,6 +500,7 @@ fun DriverLineMapCockpit(
                                         style = MaterialTheme.typography.labelMedium,
                                         modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp)
                                     )
+                                }
                                 }
                             }
 

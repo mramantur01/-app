@@ -43,6 +43,12 @@ object FeatureFlags {
      */
     const val SURGE_PRICING = false
 
+    /**
+     * Extras that only pretend to work today: Wait & Save / Priority pickup, shared "Попутчик" rides,
+     * driver quests, coffee pause, "По пути домой" filter, auto-accept. Off until they are real.
+     */
+    const val DEMO_EXTRAS = false
+
     /** Tariffs we can actually guarantee with the drivers we have. */
     val ENABLED_TARIFF_IDS: Set<String> = setOf("econom", "economy", "comfort", "minivan")
 

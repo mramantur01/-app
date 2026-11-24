@@ -277,7 +277,9 @@ data class ActiveRideState(
     val meetAndGreetSignText: String? = null,
     val courierParcelPhotoUri: String? = null,
     /** Driver phone for a direct bank transfer (real rides only). */
-    val driverPayPhone: String? = null
+    val driverPayPhone: String? = null,
+    /** Live position of the driver, shared every ~10 s during a real ride. */
+    val driverPoint: GeoPoint? = null
 )
 
 data class NearbyDriverMarker(
