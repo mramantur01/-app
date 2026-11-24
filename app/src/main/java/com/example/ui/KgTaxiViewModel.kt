@@ -181,7 +181,7 @@ data class KgTaxiUiState(
     val driverActivityScore: Int = 100,
     val driverPriorityPoints: Int = 0,
     val driverAutoAccept: Boolean = false,
-    val driverEnabledTariffs: Set<String> = setOf("economy", "comfort", "green_ev", "courier"),
+    val driverEnabledTariffs: Set<String> = setOf("econom", "comfort", "minivan"),
     val driverPendingPassengerRating: DriverIncomingOrder? = null,
     val driverPhotoControlVerified: Boolean = true,
     val driverTips: List<DriverTipEntry> = emptyList(),
