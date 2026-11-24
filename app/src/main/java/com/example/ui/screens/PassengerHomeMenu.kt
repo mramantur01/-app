@@ -217,6 +217,13 @@ fun PassengerHomeMenu(
             )
         }
 
+        // Safety, become a driver, support.
+        SafetyCard()
+        if (!state.isAdmin && com.example.data.model.AppRole.DRIVER !in state.allowedRoles) {
+            BecomeDriverCard(status = state.registration?.driverStatus, onStart = viewModel::openDriverApplication)
+        }
+        SupportCard(sending = state.supportSending, onSend = { text -> viewModel.sendSupportMessage(text, null) })
+
     }
 }
 
@@ -381,5 +388,127 @@ private fun RideHistoryRow(ride: com.example.data.firebase.SharedRide, onRepeat:
                 }
             }
         }
+    }
+}
+
+
+@Composable
+private fun InfoCardFrame(icon: ImageVector, title: String, content: @Composable ColumnScope.() -> Unit) {
+    Surface(
+        shape = RoundedCornerShape(18.dp),
+        color = com.example.ui.theme.KgTurquoiseBg,
+        border = androidx.compose.foundation.BorderStroke(1.dp, KgTurquoiseLight),
+        modifier = Modifier.fillMaxWidth()
+    ) {
+        Column(modifier = Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                Icon(icon, contentDescription = null, tint = KgTurquoise, modifier = Modifier.size(22.dp))
+                Text(title, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold, color = KgInk)
+            }
+            content()
+        }
+    }
+}
+
+@Composable
+private fun InfoLine(icon: ImageVector, text: String) {
+    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+        Icon(icon, contentDescription = null, tint = KgTurquoise, modifier = Modifier.size(18.dp))
+        Text(text, style = MaterialTheme.typography.bodyMedium, color = KgInk)
+    }
+}
+
+/** What keeps a ride safe, plus a quick call to 112. */
+@Composable
+private fun SafetyCard() {
+    val context = androidx.compose.ui.platform.LocalContext.current
+    InfoCardFrame(Icons.Default.Shield, "Безопасность") {
+        InfoLine(Icons.Default.VerifiedUser, "Водители проверены: паспорт, права и фото авто")
+        InfoLine(Icons.Default.Share, "В поездке — «Поделиться» маршрутом с близкими")
+        InfoLine(Icons.Default.Pin, "PIN-код: садитесь, только когда водитель назвал его")
+        InfoLine(Icons.Default.Sos, "Кнопка SOS в поездке отправляет тревогу диспетчеру")
+        OutlinedButton(
+            onClick = {
+                runCatching {
+                    context.startActivity(android.content.Intent(android.content.Intent.ACTION_DIAL, android.net.Uri.parse("tel:112")))
+                }
+            },
+            colors = ButtonDefaults.outlinedButtonColors(contentColor = Color(0xFFC62828)),
+            modifier = Modifier.fillMaxWidth().testTag("home_call_112")
+        ) {
+            Icon(Icons.Default.Call, contentDescription = null, modifier = Modifier.size(18.dp))
+            Spacer(Modifier.width(6.dp))
+            Text("Экстренный вызов 112")
+        }
+    }
+}
+
+/** Invitation to drive with KG Taxi (hidden for drivers and the owner). */
+@Composable
+private fun BecomeDriverCard(status: String?, onStart: () -> Unit) {
+    InfoCardFrame(Icons.Default.DirectionsCar, "Стать водителем") {
+        Text(
+            when (status) {
+                "pending" -> "Ваша заявка на проверке. Мы сообщим, когда откроется экран водителя."
+                "rejected" -> "Заявка отклонена. Можно исправить данные и подать снова."
+                else -> "Зарабатывайте на своём авто. Регистрация в приложении: паспорт, права и фото машины — тариф подберём сами."
+            },
+            style = MaterialTheme.typography.bodyMedium,
+            color = KgInk
+        )
+        Button(
+            onClick = onStart,
+            colors = ButtonDefaults.buttonColors(containerColor = KgTurquoise, contentColor = Color.White),
+            modifier = Modifier.fillMaxWidth().testTag("home_become_driver")
+        ) {
+            Text(
+                when (status) {
+                    "pending" -> "Статус заявки"
+                    "rejected" -> "Подать заново"
+                    else -> "Начать"
+                }
+            )
+        }
+    }
+}
+
+/** Message to support right from the home screen. */
+@Composable
+private fun SupportCard(sending: Boolean, onSend: (String) -> Unit) {
+    var open by remember { mutableStateOf(false) }
+    var text by remember { mutableStateOf("") }
+    InfoCardFrame(Icons.Default.SupportAgent, "Поддержка") {
+        Text(
+            "Вопрос, жалоба или забыли вещь в машине — напишите нам, ответим по телефону из профиля.",
+            style = MaterialTheme.typography.bodyMedium,
+            color = KgInk
+        )
+        OutlinedButton(onClick = { open = true }, modifier = Modifier.fillMaxWidth().testTag("home_support")) {
+            Icon(Icons.Default.Chat, contentDescription = null, modifier = Modifier.size(18.dp))
+            Spacer(Modifier.width(6.dp))
+            Text("Написать нам")
+        }
+    }
+    if (open) {
+        AlertDialog(
+            onDismissRequest = { open = false },
+            title = { Text("Написать в поддержку") },
+            text = {
+                OutlinedTextField(
+                    value = text,
+                    onValueChange = { text = it.take(1000) },
+                    label = { Text("Опишите вопрос") },
+                    minLines = 4,
+                    modifier = Modifier.fillMaxWidth().testTag("home_support_text")
+                )
+            },
+            confirmButton = {
+                Button(
+                    onClick = { onSend(text); text = ""; open = false },
+                    enabled = text.isNotBlank() && !sending
+                ) { Text("Отправить") }
+            },
+            dismissButton = { TextButton(onClick = { open = false }) { Text("Отмена") } }
+        )
     }
 }
