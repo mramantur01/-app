@@ -505,9 +505,12 @@ class KgTaxiViewModel(
         refreshRegistration()
 
         viewModelScope.launch {
-            val current = _uiState.value.profile
+            // Read the saved profile first: the screen state may still be the empty default at startup,
+            // and writing it back would wipe the phone and saved addresses.
+            val current = dao.getProfileOnce() ?: _uiState.value.profile
+            val keepName = current.displayName.takeIf { it.isNotBlank() && it != "Пассажир" && it != "Гость" }
             val updated = current.copy(
-                displayName = displayName?.takeIf { it.isNotBlank() } ?: current.displayName,
+                displayName = keepName ?: displayName?.takeIf { it.isNotBlank() } ?: current.displayName,
                 email = email ?: current.email,
                 phone = phoneNumber?.takeIf { it.isNotBlank() } ?: current.phone
             )
@@ -930,6 +933,15 @@ class KgTaxiViewModel(
         if (!_uiState.value.isSignedIn) return
         viewModelScope.launch {
             val info = registrationRepo.fetch()
+            // Restore the phone from registration if the local profile lost it.
+            if (info.phone.isNotBlank()) {
+                val saved = dao.getProfileOnce()
+                if (saved != null && saved.phone.isBlank()) {
+                    val fixed = saved.copy(phone = info.phone)
+                    dao.upsertProfile(fixed)
+                    firestoreSync.syncProfile(fixed)
+                }
+            }
             _uiState.update {
                 it.copy(
                     registration = info,

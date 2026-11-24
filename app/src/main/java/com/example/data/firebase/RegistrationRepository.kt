@@ -41,7 +41,8 @@ data class RegistrationInfo(
     val fullName: String = "",
     /** Driver application status: "pending", "approved", "rejected" (null for passengers). */
     val driverStatus: String? = null,
-    val rejectReason: String? = null
+    val rejectReason: String? = null,
+    val phone: String = ""
 )
 
 data class DriverRegistration(
@@ -89,7 +90,7 @@ class RegistrationRepository(
                     reason = app.getString("rejectReason")
                 }
             }
-            RegistrationInfo(type, reg.getString("fullName").orEmpty(), status, reason)
+            RegistrationInfo(type, reg.getString("fullName").orEmpty(), status, reason, reg.getString("phone").orEmpty())
         } catch (e: CancellationException) {
             throw e
         } catch (e: Exception) {

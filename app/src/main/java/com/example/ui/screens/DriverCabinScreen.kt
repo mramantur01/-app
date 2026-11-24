@@ -315,7 +315,7 @@ private fun DriverEarningsTabContent(
                     color = MaterialTheme.colorScheme.onPrimary
                 )
                 Row(horizontalArrangement = Arrangement.spacedBy(14.dp)) {
-                    Text("Поездок: ${state.driverQuestTripsDone}", style = MaterialTheme.typography.labelMedium, color = UberGreen)
+                    Text("Поездок: ${state.driverQuestTripsDone}", style = MaterialTheme.typography.labelMedium, color = Color.White, fontWeight = FontWeight.Bold)
                     Text("На линии: ${state.driverShiftHours} ч", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onPrimary.copy(alpha = 0.85f))
                     Text(
                         text = if (state.driverShiftPass != DriverShiftPass.NONE) "Комиссия: 0% (Смена)" else "Комиссия: ${state.ownerBankConfig.commissionPercent}%",
@@ -517,10 +517,10 @@ private fun DriverVehicleAndDocsTabContent(
                         .clip(RoundedCornerShape(12.dp))
                         .background(MaterialTheme.colorScheme.surface)
                         .padding(12.dp),
-                    horizontalArrangement = Arrangement.SpaceBetween
+                    horizontalArrangement = Arrangement.spacedBy(12.dp)
                 ) {
                     Text("Расход: ${String.format(Locale.US, "%.1f", litersNeeded)} л", fontFamily = JetBrainsMono)
-                    Text("Топливо: $totalFuelSom ${strings.currencySom} (${String.format(Locale.US, "%.1f", perKmSom)} с/км)", fontFamily = JetBrainsMono, fontWeight = FontWeight.Bold, color = UberBlue)
+                    Text("Топливо: $totalFuelSom ${strings.currencySom} (${String.format(Locale.US, "%.1f", perKmSom)} с/км)", fontFamily = JetBrainsMono, fontWeight = FontWeight.Bold, color = UberBlue, modifier = Modifier.weight(1f))
                 }
                 Surface(
                     shape = RoundedCornerShape(12.dp),
@@ -797,10 +797,20 @@ private fun DriverProStatusTabContent(
                 ) {
                     KgGeoCatalog.taxiTariffs.filter { it.id in com.example.FeatureFlags.ENABLED_TARIFF_IDS }.forEach { t ->
                         val active = t.id in state.driverEnabledTariffs
+                        val allowed = state.driverAllowedTariffs.isEmpty() || t.id in state.driverAllowedTariffs
                         FilterChip(
                             selected = active,
+                            enabled = allowed,
                             onClick = { viewModel.toggleDriverTariff(t.id) },
                             label = { Text(t.nameRu) },
+                            leadingIcon = if (active) {
+                                { Icon(Icons.Default.Check, contentDescription = null, modifier = Modifier.size(16.dp)) }
+                            } else null,
+                            colors = FilterChipDefaults.filterChipColors(
+                                selectedContainerColor = MaterialTheme.colorScheme.primary,
+                                selectedLabelColor = MaterialTheme.colorScheme.onPrimary,
+                                selectedLeadingIconColor = MaterialTheme.colorScheme.onPrimary
+                            ),
                             modifier = Modifier.testTag("driver_tariff_toggle_${t.id}")
                         )
                     }
