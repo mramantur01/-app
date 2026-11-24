@@ -392,7 +392,7 @@ fun ActiveTripCard(
             ) {
                 Icon(Icons.Default.Chat, contentDescription = null, modifier = Modifier.size(18.dp), tint = UberBlue)
                 Spacer(Modifier.width(8.dp))
-                Text("Чат с водителем (ИИ-перевод RU/KG/EN) • $chatMessageCount", fontWeight = FontWeight.Bold)
+                Text(if (chatMessageCount > 0) "Чат с водителем • $chatMessageCount" else "Чат с водителем", fontWeight = FontWeight.Bold, maxLines = 1)
             }
 
             // Turn-by-Turn External Navigation Strip (Google Maps, 2GIS, Yandex)
@@ -400,7 +400,7 @@ fun ActiveTripCard(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.spacedBy(6.dp)
             ) {
-                listOf("GOOGLE" to "Google Maps", "2GIS" to "2GIS", "YANDEX" to "Яндекс").forEach { (provider, title) ->
+                listOf("GOOGLE" to "Google", "2GIS" to "2GIS", "YANDEX" to "Яндекс").forEach { (provider, title) ->
                     AssistChip(
                         onClick = {
                             ExternalMapNavigator.openTurnByTurnNavigation(
@@ -506,6 +506,7 @@ fun ActiveTripCard(
                         context.startActivity(Intent.createChooser(send, strings.shareRoute))
                     },
                     shape = RoundedCornerShape(12.dp),
+                    contentPadding = PaddingValues(horizontal = 8.dp),
                     modifier = Modifier.weight(1f).height(48.dp).testTag("share_route_button")
                 ) {
                     Icon(Icons.Default.Share, contentDescription = null, modifier = Modifier.size(18.dp))
