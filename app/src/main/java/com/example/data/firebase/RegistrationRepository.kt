@@ -180,7 +180,7 @@ class RegistrationRepository(
                     "carModel" to reg.carModel.take(40),
                     "carYear" to reg.carYear,
                     "carColor" to reg.carColor.take(30),
-                    "tariffs" to reg.tariffs.take(5),
+                    "tariffs" to reg.tariffs.take(15),
                     "status" to "pending",
                     "createdAt" to FieldValue.serverTimestamp()
                 )

@@ -87,6 +87,11 @@ fun RegistrationScreen(
     var experience by rememberSaveable { mutableStateOf("") }
     var payPhone by rememberSaveable { mutableStateOf("") }
     var city by rememberSaveable { mutableStateOf(defaultCity) }
+    var vehicleType by rememberSaveable { mutableStateOf(com.example.data.model.VehicleType.CAR) }
+    var childSeat by rememberSaveable { mutableStateOf(false) }
+    var ladyDriver by rememberSaveable { mutableStateOf(false) }
+    var soberDriver by rememberSaveable { mutableStateOf(false) }
+    var courier by rememberSaveable { mutableStateOf(false) }
     var make by rememberSaveable { mutableStateOf("") }
     var model by rememberSaveable { mutableStateOf("") }
     var year by rememberSaveable { mutableStateOf<Int?>(null) }
@@ -184,20 +189,35 @@ fun RegistrationScreen(
                     }
 
                     RegStep.DRIVER_CAR -> {
+                        Text("Тип машины", fontWeight = FontWeight.SemiBold, color = KgInk)
+                        ChipFlow(com.example.data.model.VehicleType.entries.map { it.label }, vehicleType.label) { label ->
+                            val t = com.example.data.model.VehicleType.entries.first { it.label == label }
+                            if (t != vehicleType) { vehicleType = t; make = ""; model = "" }
+                        }
                         Text("Марка", fontWeight = FontWeight.SemiBold, color = KgInk)
-                        ChipFlow(CarCatalog.makes.map { it.name }, make) { make = it; model = "" }
+                        ChipFlow(CarCatalog.makesFor(vehicleType).map { it.name }, make) { make = it; model = "" }
                         if (make.isNotBlank()) {
-                            Text("Модель", fontWeight = FontWeight.SemiBold, color = KgInk)
-                            ChipFlow(CarCatalog.modelsOf(make).map { it.name }, model) { model = it }
+                            Text(if (vehicleType == com.example.data.model.VehicleType.TRUCK) "Модель и грузоподъёмность" else "Модель", fontWeight = FontWeight.SemiBold, color = KgInk)
+                            ChipFlow(CarCatalog.modelsOf(make, vehicleType).map { it.name }, model) { model = it }
                         }
                         Text("Год выпуска", fontWeight = FontWeight.SemiBold, color = KgInk)
                         ChipRow(CarCatalog.years.map { it.toString() }, year?.toString().orEmpty()) { year = it.toInt() }
                         Text("Цвет", fontWeight = FontWeight.SemiBold, color = KgInk)
                         ChipFlow(CarCatalog.colors, color) { color = it }
                         RegField(plate, { plate = it.uppercase().take(12) }, "Госномер (например 01KG123ABC)", "reg_plate")
+                        // Options that add tariffs.
+                        if (vehicleType == com.example.data.model.VehicleType.CAR || vehicleType == com.example.data.model.VehicleType.BUS) {
+                            Text("Дополнительно", fontWeight = FontWeight.SemiBold, color = KgInk)
+                            OptionCheck("Есть детское кресло — тариф «Детский»", childSeat) { childSeat = it }
+                            OptionCheck("Я женщина-водитель — тариф «Леди-такси»", ladyDriver) { ladyDriver = it }
+                            OptionCheck("Беру курьерские заказы — тариф «Курьер»", courier) { courier = it }
+                            if (vehicleType == com.example.data.model.VehicleType.CAR) {
+                                OptionCheck("Стаж от 3 лет, готов быть трезвым водителем", soberDriver) { soberDriver = it }
+                            }
+                        }
                         val y = year
                         if (make.isNotBlank() && model.isNotBlank() && y != null) {
-                            val tariffs = CarCatalog.tariffsFor(make, model, y)
+                            val tariffs = CarCatalog.tariffsFor(make, model, y, vehicleType, com.example.data.model.DriverOptions(childSeat, ladyDriver, soberDriver, courier))
                             TariffResultCard(tariffs)
                         }
                     }
@@ -227,7 +247,7 @@ fun RegistrationScreen(
                     passport.length >= 6 && license.length >= 6 && experience.isNotBlank() &&
                     photos[RegPhoto.PASSPORT] != null && photos[RegPhoto.LICENSE] != null
                 RegStep.DRIVER_CAR -> make.isNotBlank() && model.isNotBlank() && year != null && color.isNotBlank() &&
-                    plate.length >= 5 && CarCatalog.tariffsFor(make, model, year ?: 0).isNotEmpty()
+                    plate.length >= 5 && CarCatalog.tariffsFor(make, model, year ?: 0, vehicleType, com.example.data.model.DriverOptions(childSeat, ladyDriver, soberDriver, courier)).isNotEmpty()
                 RegStep.DRIVER_PHOTOS -> RegPhoto.CAR.all { photos[it] != null }
             }
             if (step != RegStep.CHOICE && step != RegStep.DRIVER_STATUS) {
@@ -265,7 +285,7 @@ fun RegistrationScreen(
                                             carYear = year ?: 0,
                                             carColor = color,
                                             plate = plate,
-                                            tariffs = CarCatalog.tariffsFor(make, model, year ?: 0)
+                                            tariffs = CarCatalog.tariffsFor(make, model, year ?: 0, vehicleType, com.example.data.model.DriverOptions(childSeat, ladyDriver, soberDriver, courier))
                                         ),
                                         photos.toMap()
                                     )
@@ -459,7 +479,7 @@ private fun TariffResultCard(tariffs: List<String>) {
         Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
             if (tariffs.isEmpty()) {
                 Text("Авто не подходит", fontWeight = FontWeight.Bold, color = Color(0xFFC62828))
-                Text("Принимаем машины от ${CarCatalog.MIN_YEAR} года выпуска.", color = KgInk)
+                Text("Принимаем легковые от ${CarCatalog.MIN_YEAR} года, грузовые и эвакуаторы от ${CarCatalog.MIN_YEAR_TRUCK} года.", color = KgInk)
             } else {
                 Text("Ваше авто подходит для тарифов:", fontWeight = FontWeight.Bold, color = KgInk)
                 Text(
@@ -469,7 +489,7 @@ private fun TariffResultCard(tariffs: List<String>) {
                     color = KgTurquoise
                 )
                 Text(
-                    "Тариф выбран автоматически по модели и году: Комфорт — с ${CarCatalog.COMFORT_MIN_YEAR}, Комфорт+ — с ${CarCatalog.COMFORT_PLUS_MIN_YEAR}, Бизнес — с ${CarCatalog.BUSINESS_MIN_YEAR} года.",
+                    "Тарифы выбраны автоматически по типу машины, модели и году: Комфорт — с ${CarCatalog.COMFORT_MIN_YEAR}, Комфорт+ — с ${CarCatalog.COMFORT_PLUS_MIN_YEAR}, Бизнес — с ${CarCatalog.BUSINESS_MIN_YEAR}, Премиум — с ${CarCatalog.PREMIUM_MIN_YEAR} года. Грузовые — по грузоподъёмности.",
                     style = MaterialTheme.typography.bodySmall,
                     color = KgInk.copy(alpha = 0.7f)
                 )
@@ -575,5 +595,21 @@ private fun PhotoSlot(kind: RegPhoto, uri: Uri?, onPicked: (Uri) -> Unit) {
                 }
             }
         }
+    }
+}
+
+
+@Composable
+private fun OptionCheck(text: String, checked: Boolean, onChange: (Boolean) -> Unit) {
+    Row(
+        verticalAlignment = Alignment.CenterVertically,
+        modifier = Modifier.fillMaxWidth()
+    ) {
+        Checkbox(
+            checked = checked,
+            onCheckedChange = onChange,
+            colors = CheckboxDefaults.colors(checkedColor = KgTurquoise)
+        )
+        Text(text, color = KgInk, style = MaterialTheme.typography.bodyMedium)
     }
 }

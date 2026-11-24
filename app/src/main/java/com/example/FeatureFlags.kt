@@ -53,7 +53,11 @@ object FeatureFlags {
     const val DEMO_EXTRAS = false
 
     /** Tariffs we can actually guarantee with the drivers we have. */
-    val ENABLED_TARIFF_IDS: Set<String> = setOf("econom", "economy", "comfort", "comfort_plus", "business", "minivan")
+    val ENABLED_TARIFF_IDS: Set<String> = setOf(
+        "econom", "economy", "comfort", "comfort_plus", "business", "premium", "minivan", "microbus",
+        "child", "lady", "green_ev", "courier", "sober_driver",
+        "cargo_15", "cargo_35", "cargo_5", "cargo_10", "tow"
+    )
 
     /** Services passengers can order now. */
     val ENABLED_SERVICES: Set<ServiceType> = setOf(ServiceType.TAXI, ServiceType.INTERCITY)

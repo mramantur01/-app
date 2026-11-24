@@ -588,7 +588,19 @@ private fun PassengerControlSheet(
                                 verticalArrangement = Arrangement.spacedBy(4.dp)
                             ) {
                                 Icon(
-                                    imageVector = if (tariff.id == "minivan") Icons.Default.AirportShuttle else Icons.Default.DirectionsCar,
+                                    imageVector = when (tariff.id) {
+                                        "minivan", "microbus" -> Icons.Default.AirportShuttle
+                                        "child" -> Icons.Default.ChildCare
+                                        "lady" -> Icons.Default.Woman
+                                        "green_ev" -> Icons.Default.ElectricCar
+                                        "courier" -> Icons.Default.Inventory2
+                                        "sober_driver" -> Icons.Default.Key
+                                        "cargo_15", "cargo_35" -> Icons.Default.LocalShipping
+                                        "cargo_5", "cargo_10" -> Icons.Default.FireTruck
+                                        "tow" -> Icons.Default.CarRepair
+                                        "business", "premium" -> Icons.Default.Star
+                                        else -> Icons.Default.DirectionsCar
+                                    },
                                     contentDescription = displayName,
                                     tint = if (selected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
                                     modifier = Modifier.size(30.dp)
@@ -969,7 +981,8 @@ private fun PassengerControlSheet(
             modifier = Modifier.fillMaxWidth(),
             horizontalArrangement = Arrangement.spacedBy(8.dp)
         ) {
-            if (state.serviceType == ServiceType.TAXI) {
+            // Own price is off: prices are set only by the owner.
+            if (state.serviceType == ServiceType.TAXI && FeatureFlags.DEMO_EXTRAS) {
                 OutlinedButton(
                     onClick = {
                         bidInput = (pb.finalTotalSom * 0.9).roundToInt().toString()
