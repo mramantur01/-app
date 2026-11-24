@@ -261,7 +261,12 @@ fun KgTaxiAppRoot() {
                             onResolveSos = viewModel::resolveSosAlert,
                             onSaveOwnerBankConfig = viewModel::saveOwnerBankConfig,
                             onTriggerOwnerPayout = viewModel::triggerOwnerManualPayout,
-                            onRunTestOwnerOrderSplit = viewModel::runTestOwnerOrderSplit
+                            onRunTestOwnerOrderSplit = viewModel::runTestOwnerOrderSplit,
+                            onOpenApplicationPhotos = viewModel::loadApplicationPhotos,
+                            onCloseApplicationPhotos = viewModel::closeApplicationPhotos,
+                            onApproveApplication = viewModel::approveApplication,
+                            onRejectApplication = viewModel::rejectApplication,
+                            onSetDriverBlocked = viewModel::setDriverBlocked
                         )
                     }
                 }
@@ -404,6 +409,21 @@ fun KgTaxiAppRoot() {
             // First-Launch Interactive Onboarding Guide
             if (state.showOnboarding) {
                 OnboardingOverlay(onComplete = viewModel::completeOnboarding)
+            }
+
+            // Registration: "Кто вы?" passenger / driver, documents, car and photo check.
+            if (state.registrationOpen && state.isSignedIn) {
+                com.example.ui.screens.RegistrationScreen(
+                    registration = state.registration,
+                    startAsDriver = state.registrationStartAsDriver,
+                    sending = state.registrationSending,
+                    defaultName = state.profile.displayName,
+                    defaultPhone = state.profile.phone,
+                    defaultCity = state.selectedCity.name,
+                    onRegisterPassenger = viewModel::registerPassenger,
+                    onRegisterDriver = viewModel::registerDriver,
+                    onClose = viewModel::closeRegistration
+                )
             }
         }
     }

@@ -292,8 +292,13 @@ service cloud.firestore {
       return isSignedIn() && roleOf(request.auth.uid) == r;
     }
 
+    // The owner (admin) may also drive, e.g. to test the app.
     function isDriver() {
-      return hasRole('driver');
+      return hasRole('driver') || hasRole('admin');
+    }
+
+    function isAdmin() {
+      return hasRole('admin');
     }
 
     function isDispatcher() {
@@ -304,10 +309,43 @@ service cloud.firestore {
       return incoming().diff(existing()).affectedKeys().hasOnly(keys);
     }
 
+    // Roles are given only by the owner (admin) from the owner panel.
     match /roles/{uid} {
       allow get: if isOwner(uid) || isDispatcher();
-      allow list: if hasRole('admin');
-      allow write: if false;
+      allow list: if isAdmin();
+      allow create, update: if isAdmin() &&
+                               request.auth.uid != uid &&
+                               incoming().role in ['driver', 'driver_blocked', 'dispatcher', 'passenger'] &&
+                               incoming().keys().hasOnly(['role', 'name', 'car', 'plate', 'payPhone', 'tariffs',
+                                                          'blocked', 'approvedAt']);
+      allow delete: if isAdmin() && request.auth.uid != uid;
+    }
+
+    // Registration: who the user is (passenger or driver) and their passport number.
+    // Document photos live in the photos subcollection: only the user and the owner can see them.
+    match /registrations/{uid} {
+      allow get: if isOwner(uid) || isAdmin();
+      allow list: if isAdmin();
+      allow create, update: if isOwner(uid) &&
+                               incoming().keys().hasOnly(['userId', 'type', 'fullName', 'phone', 'passportNumber', 'createdAt']) &&
+                               incoming().userId == uid &&
+                               incoming().type in ['passenger', 'driver'] &&
+                               incoming().fullName is string && incoming().fullName.size() >= 2 && incoming().fullName.size() <= 80 &&
+                               incoming().phone is string && incoming().phone.size() <= 20 &&
+                               incoming().passportNumber is string && incoming().passportNumber.size() >= 4 && incoming().passportNumber.size() <= 20 &&
+                               isValidTimestamp(incoming().createdAt);
+      allow delete: if false;
+
+      match /photos/{kind} {
+        allow read: if isOwner(uid) || isAdmin();
+        allow create, update: if isOwner(uid) &&
+                                 kind in ['passport', 'license', 'car_front', 'car_back', 'car_left', 'car_right', 'car_interior'] &&
+                                 incoming().keys().hasOnly(['kind', 'data', 'createdAt']) &&
+                                 incoming().kind == kind &&
+                                 incoming().data is string && incoming().data.size() > 100 && incoming().data.size() < 900000 &&
+                                 isValidTimestamp(incoming().createdAt);
+        allow delete: if isOwner(uid);
+      }
     }
 
     // Push tokens: each user writes only their own; the server (Admin SDK) reads them.
@@ -330,10 +368,13 @@ service cloud.firestore {
       allow get: if isOwner(uid) || isDispatcher();
       allow list: if isDispatcher();
       allow create, update: if isOwner(uid) &&
-                               (resource == null || existing().status == 'pending') &&
+                               (resource == null || existing().status in ['pending', 'rejected']) &&
                                incoming().keys().hasOnly(['userId', 'fullName', 'phone', 'city', 'car', 'plate',
                                                           'licenseNumber', 'experienceYears', 'payPhone',
-                                                          'status', 'createdAt']) &&
+                                                          'passportNumber', 'carMake', 'carModel', 'carYear',
+                                                          'carColor', 'tariffs', 'status', 'createdAt']) &&
+                               (!('carYear' in incoming()) || (incoming().carYear is int && incoming().carYear >= 1990 && incoming().carYear <= 2100)) &&
+                               (!('tariffs' in incoming()) || (incoming().tariffs is list && incoming().tariffs.size() <= 5)) &&
                                incoming().userId == uid &&
                                incoming().status == 'pending' &&
                                incoming().fullName is string && incoming().fullName.size() >= 2 && incoming().fullName.size() <= 80 &&
@@ -345,7 +386,11 @@ service cloud.firestore {
                                incoming().experienceYears is int && incoming().experienceYears >= 0 && incoming().experienceYears <= 60 &&
                                incoming().payPhone is string && incoming().payPhone.size() <= 20 &&
                                isValidTimestamp(incoming().createdAt);
-      // Approve / reject is done by the owner in the Firebase console.
+      // The owner approves or rejects from the owner panel.
+      allow update: if isAdmin() &&
+                       incoming().status in ['approved', 'rejected'] &&
+                       onlyChanged(['status', 'rejectReason', 'reviewedAt']) &&
+                       (!('rejectReason' in incoming()) || (incoming().rejectReason is string && incoming().rejectReason.size() <= 200));
       allow delete: if isOwner(uid) && existing().status == 'pending';
     }
 

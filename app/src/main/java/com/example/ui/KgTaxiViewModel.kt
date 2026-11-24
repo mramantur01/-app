@@ -120,6 +120,23 @@ data class KgTaxiUiState(
     val selectedIntercityRoute: IntercityRoute = KgGeoCatalog.intercityRoutes.first(),
     val selectedIntercitySeats: Set<Int> = setOf(2),
     val occupiedIntercitySeats: Set<Int> = emptySet(),
+    /** Registration of this account; null until loaded after sign-in. */
+    val registration: com.example.data.firebase.RegistrationInfo? = null,
+    /** Registration screen is open (first sign-in, or "Стать водителем"). */
+    val registrationOpen: Boolean = false,
+    val registrationStartAsDriver: Boolean = false,
+    val registrationSending: Boolean = false,
+    /** Owner account (role "admin"): sees the owner panel. */
+    val isAdmin: Boolean = false,
+    /** Tariffs the owner approved for this driver's car (empty = not limited). */
+    val driverAllowedTariffs: Set<String> = emptySet(),
+    val ownerApplications: List<com.example.data.firebase.OwnerApplication> = emptyList(),
+    val ownerDrivers: List<com.example.data.firebase.OwnerDriver> = emptyList(),
+    val ownerBlockedDrivers: List<com.example.data.firebase.OwnerDriver> = emptyList(),
+    val ownerStats: com.example.data.firebase.OwnerDayStats = com.example.data.firebase.OwnerDayStats(),
+    /** Photos of the application the owner opened: kind id -> base64 JPEG. */
+    val ownerPhotos: Map<String, String> = emptyMap(),
+    val ownerPhotosUid: String? = null,
     /** Departure of an intercity pre-order; null = "right now". */
     val intercityDepartureMillis: Long? = null,
     /** Passenger's intercity pre-orders that haven't started yet (searching or booked). */
@@ -380,6 +397,9 @@ class KgTaxiViewModel(
     private var driverChatJob: Job? = null
     private var driverHistoryJob: Job? = null
     private var passengerPreordersJob: Job? = null
+    private val registrationRepo by lazy { com.example.data.firebase.RegistrationRepository(appContext) }
+    private val ownerRepo by lazy { com.example.data.firebase.OwnerRepository(appContext) }
+    private val ownerJobs = mutableListOf<Job>()
     private var driverPreordersJob: Job? = null
     private var verifiedDriverCar: String = ""
     private var verifiedDriverPlate: String = ""
@@ -482,6 +502,7 @@ class KgTaxiViewModel(
         refreshAllowedRoles()
         syncPushToken()
         startPassengerPreorders()
+        refreshRegistration()
 
         viewModelScope.launch {
             val current = _uiState.value.profile
@@ -638,6 +659,8 @@ class KgTaxiViewModel(
     }
 
     fun onUserSignedOut() {
+        stopOwnerFeeds()
+        _uiState.update { it.copy(registration = null, registrationOpen = false, isAdmin = false, driverAllowedTariffs = emptySet()) }
         passengerPreordersJob?.cancel()
         passengerPreordersJob = null
         driverPreordersJob?.cancel()
@@ -663,15 +686,25 @@ class KgTaxiViewModel(
             verifiedDriverCar = info.car
             verifiedDriverPlate = info.plate
             verifiedDriverPayPhone = info.payPhone
-            _uiState.update { it.copy(driverCar = info.car, driverPlate = info.plate) }
-            if (info.role == "driver") {
+            _uiState.update {
+                it.copy(
+                    driverCar = info.car,
+                    driverPlate = info.plate,
+                    isAdmin = info.role == "admin",
+                    driverAllowedTariffs = info.tariffs.toSet(),
+                    driverEnabledTariffs = if (info.tariffs.isNotEmpty()) info.tariffs.toSet() else it.driverEnabledTariffs
+                )
+            }
+            if (info.role == "admin") startOwnerFeeds() else stopOwnerFeeds()
+            if (info.role == "driver" || info.role == "admin") {
                 startDriverHistory()
                 startDriverPreorders(_uiState.value.selectedCity.name)
             } else stopDriverHistory()
             // Matches firestore.rules: only "driver" may take orders; dispatchers see the panel.
             val allowed = when (info.role) {
                 "driver" -> setOf(AppRole.PASSENGER, AppRole.DRIVER)
-                "dispatcher", "admin" -> setOf(AppRole.PASSENGER, AppRole.DISPATCHER)
+                "admin" -> setOf(AppRole.PASSENGER, AppRole.DRIVER, AppRole.DISPATCHER)
+                "dispatcher" -> setOf(AppRole.PASSENGER, AppRole.DISPATCHER)
                 else -> setOf(AppRole.PASSENGER)
             }
             _uiState.update {
@@ -891,7 +924,154 @@ class KgTaxiViewModel(
 
     // --- DRIVER APPLICATION ---
 
+    // --- REGISTRATION (passenger: passport; driver: passport, licence, car, photo check) ---
+
+    fun refreshRegistration() {
+        if (!_uiState.value.isSignedIn) return
+        viewModelScope.launch {
+            val info = registrationRepo.fetch()
+            _uiState.update {
+                it.copy(
+                    registration = info,
+                    // First sign-in: ask who the user is.
+                    registrationOpen = it.registrationOpen || info.type == null,
+                    driverApplicationStatus = info.driverStatus ?: it.driverApplicationStatus
+                )
+            }
+        }
+    }
+
+    fun openRegistration(asDriver: Boolean) {
+        if (!_uiState.value.isSignedIn) {
+            _uiState.update { it.copy(statusBanner = "Сначала войдите через Google") }
+            return
+        }
+        _uiState.update { it.copy(registrationOpen = true, registrationStartAsDriver = asDriver) }
+    }
+
+    fun closeRegistration() = _uiState.update { it.copy(registrationOpen = false, registrationStartAsDriver = false) }
+
+    fun registerPassenger(fullName: String, phone: String, passportNumber: String, passportPhoto: android.net.Uri) {
+        _uiState.update { it.copy(registrationSending = true) }
+        viewModelScope.launch {
+            val data = registrationRepo.encodePhoto(passportPhoto)
+            if (data == null) {
+                _uiState.update { it.copy(registrationSending = false, statusBanner = "Не удалось прочитать фото паспорта. Сфотографируйте ещё раз.") }
+                return@launch
+            }
+            val res = registrationRepo.registerPassenger(
+                fullName, phone, passportNumber, mapOf(com.example.data.firebase.RegPhoto.PASSPORT to data)
+            )
+            res.onSuccess {
+                updateProfile { p -> p.copy(displayName = fullName.trim(), phone = phone.trim()) }
+            }
+            _uiState.update {
+                it.copy(
+                    registrationSending = false,
+                    registrationOpen = res.isFailure,
+                    registration = if (res.isSuccess) com.example.data.firebase.RegistrationInfo("passenger", fullName.trim()) else it.registration,
+                    role = if (res.isSuccess) AppRole.PASSENGER else it.role,
+                    statusBanner = if (res.isSuccess) "Регистрация завершена. Можно заказывать такси!" else "Не удалось сохранить. Проверьте интернет и попробуйте снова."
+                )
+            }
+        }
+    }
+
+    fun registerDriver(reg: com.example.data.firebase.DriverRegistration, photos: Map<com.example.data.firebase.RegPhoto, android.net.Uri>) {
+        _uiState.update { it.copy(registrationSending = true) }
+        viewModelScope.launch {
+            val encoded = mutableMapOf<com.example.data.firebase.RegPhoto, String>()
+            for ((kind, uri) in photos) {
+                val data = registrationRepo.encodePhoto(uri)
+                if (data == null) {
+                    _uiState.update { it.copy(registrationSending = false, statusBanner = "Не удалось прочитать фото «${kind.title}». Сфотографируйте ещё раз.") }
+                    return@launch
+                }
+                encoded[kind] = data
+            }
+            val res = registrationRepo.registerDriver(reg, encoded)
+            res.onSuccess {
+                updateProfile { p -> p.copy(displayName = reg.fullName.trim(), phone = reg.phone.trim()) }
+            }
+            _uiState.update {
+                it.copy(
+                    registrationSending = false,
+                    registrationOpen = res.isFailure,
+                    registration = if (res.isSuccess) com.example.data.firebase.RegistrationInfo("driver", reg.fullName.trim(), "pending") else it.registration,
+                    driverApplicationStatus = if (res.isSuccess) "pending" else it.driverApplicationStatus,
+                    statusBanner = if (res.isSuccess) "Заявка водителя отправлена. После проверки документов откроется экран водителя." else "Не удалось отправить. Проверьте интернет и попробуйте снова."
+                )
+            }
+        }
+    }
+
+    // --- OWNER PANEL (role "admin") ---
+
+    private fun startOwnerFeeds() {
+        if (ownerJobs.isNotEmpty()) return
+        val dayStart = java.util.Calendar.getInstance().apply {
+            set(java.util.Calendar.HOUR_OF_DAY, 0); set(java.util.Calendar.MINUTE, 0)
+            set(java.util.Calendar.SECOND, 0); set(java.util.Calendar.MILLISECOND, 0)
+        }.timeInMillis
+        ownerJobs += viewModelScope.launch {
+            ownerRepo.observeApplications().collect { list -> _uiState.update { it.copy(ownerApplications = list) } }
+        }
+        ownerJobs += viewModelScope.launch {
+            ownerRepo.observeDrivers().collect { list -> _uiState.update { it.copy(ownerDrivers = list) } }
+        }
+        ownerJobs += viewModelScope.launch {
+            ownerRepo.observeBlockedDrivers().collect { list -> _uiState.update { it.copy(ownerBlockedDrivers = list) } }
+        }
+        ownerJobs += viewModelScope.launch {
+            ownerRepo.observeRidesSince(dayStart).collect { st -> _uiState.update { it.copy(ownerStats = st) } }
+        }
+    }
+
+    private fun stopOwnerFeeds() {
+        ownerJobs.forEach { it.cancel() }
+        ownerJobs.clear()
+    }
+
+    fun loadApplicationPhotos(uid: String) {
+        _uiState.update { it.copy(ownerPhotosUid = uid, ownerPhotos = emptyMap()) }
+        viewModelScope.launch {
+            val photos = ownerRepo.fetchPhotos(uid)
+            _uiState.update { if (it.ownerPhotosUid == uid) it.copy(ownerPhotos = photos) else it }
+        }
+    }
+
+    fun closeApplicationPhotos() = _uiState.update { it.copy(ownerPhotosUid = null, ownerPhotos = emptyMap()) }
+
+    fun approveApplication(app: com.example.data.firebase.OwnerApplication) {
+        viewModelScope.launch {
+            val res = ownerRepo.approve(app)
+            _uiState.update {
+                it.copy(statusBanner = if (res.isSuccess) "${app.fullName}: водитель одобрен" else "Не удалось одобрить. Проверьте интернет.")
+            }
+        }
+    }
+
+    fun rejectApplication(uid: String, reason: String) {
+        viewModelScope.launch {
+            val res = ownerRepo.reject(uid, reason.ifBlank { "Документы не прошли проверку" })
+            _uiState.update { it.copy(statusBanner = if (res.isSuccess) "Заявка отклонена" else "Не удалось. Проверьте интернет.") }
+        }
+    }
+
+    fun setDriverBlocked(uid: String, blocked: Boolean) {
+        viewModelScope.launch {
+            val res = ownerRepo.setBlocked(uid, blocked)
+            _uiState.update {
+                it.copy(statusBanner = if (res.isFailure) "Не удалось. Проверьте интернет." else if (blocked) "Водитель заблокирован" else "Водитель разблокирован")
+            }
+        }
+    }
+
     fun openDriverApplication() {
+        if (FeatureFlags.REAL_RIDES) {
+            openRegistration(asDriver = true)
+            return
+        }
         _uiState.update { it.copy(driverApplicationOpen = true) }
         viewModelScope.launch {
             val status = firestoreSync.fetchDriverApplicationStatus()
@@ -1787,11 +1967,25 @@ class KgTaxiViewModel(
                     driverRating = shared.driverRatingAvg?.takeIf { it > 0 } ?: r.driverRating,
                     driverPayPhone = shared.driverPayPhone?.takeIf { it.isNotBlank() } ?: r.driverPayPhone,
                     driverPoint = if (shared.driverLat != null && shared.driverLng != null) GeoPoint(shared.driverLat, shared.driverLng) else r.driverPoint,
+                    driverEtaMin = pickupEtaMinutes(shared, status, r.pickupPoint) ?: r.driverEtaMin,
                     driverCar = listOfNotNull(shared.driverCar, shared.driverPlate)
                         .filter { it.isNotBlank() }.joinToString(" • ").ifBlank { r.driverCar }
                 )
             )
         }
+    }
+
+    /**
+     * Real pickup time from the driver position (shared every ~10 s): straight distance × 1.35
+     * for city roads at ~25 km/h. Null when the driver position is not known yet.
+     */
+    private fun pickupEtaMinutes(shared: SharedRide, status: TripStatus, pickup: GeoPoint): Int? {
+        if (status == TripStatus.ARRIVED || status == TripStatus.IN_PROGRESS) return 0
+        if (status != TripStatus.ASSIGNED) return null
+        val lat = shared.driverLat ?: return null
+        val lng = shared.driverLng ?: return null
+        val roadKm = KgGeoCatalog.haversineKm(GeoPoint(lat, lng), pickup) * 1.35
+        return max(1, kotlin.math.ceil(roadKm / 25.0 * 60.0).toInt())
     }
 
     private fun notifyPassengerStatus(shared: SharedRide) {
@@ -2589,6 +2783,10 @@ class KgTaxiViewModel(
 
     fun toggleDriverTariff(tariffId: String) {
         _uiState.update { state ->
+            // Only tariffs the owner approved for this car can be switched on.
+            if (state.driverAllowedTariffs.isNotEmpty() && tariffId !in state.driverAllowedTariffs) {
+                return@update state.copy(statusBanner = "Ваше авто не подходит для этого тарифа")
+            }
             val current = state.driverEnabledTariffs
             val next = if (tariffId in current && current.size > 1) current - tariffId else current + tariffId
             state.copy(driverEnabledTariffs = next)

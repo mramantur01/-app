@@ -63,7 +63,10 @@ fun ActiveTripCard(
     } else {
         when (ride.status) {
             TripStatus.SEARCHING -> "Ищем ближайшего водителя..."
-            TripStatus.ASSIGNED -> "Водитель в пути • ~${ride.driverEtaMin} ${strings.minUnit}"
+            TripStatus.ASSIGNED -> if (ride.driverEtaMin > 0) {
+                val at = java.text.SimpleDateFormat("HH:mm", java.util.Locale.US).format(java.util.Date(System.currentTimeMillis() + ride.driverEtaMin * 60_000L))
+                "Водитель будет через ${ride.driverEtaMin} ${strings.minUnit} (в $at)"
+            } else "Водитель в пути • уточняем время"
             TripStatus.ARRIVED -> "Водитель прибыл на точку подачи!"
             TripStatus.IN_PROGRESS -> "В поездке • ${(ride.progress * 100).toInt()}%"
             TripStatus.COMPLETED -> "Поездка завершена"

@@ -282,7 +282,8 @@ class FirestoreSyncRepository(
                 role = (snap.getString("role") ?: "passenger").lowercase(),
                 car = snap.getString("car").orEmpty(),
                 plate = snap.getString("plate").orEmpty(),
-                payPhone = snap.getString("payPhone").orEmpty()
+                payPhone = snap.getString("payPhone").orEmpty(),
+                tariffs = (snap.get("tariffs") as? List<*>)?.filterIsInstance<String>().orEmpty()
             )
         } catch (e: CancellationException) {
             throw e
@@ -350,7 +351,9 @@ class FirestoreSyncRepository(
         val role: String = "passenger",
         val car: String = "",
         val plate: String = "",
-        val payPhone: String = ""
+        val payPhone: String = "",
+        /** Tariffs approved for the driver car by the owner. */
+        val tariffs: List<String> = emptyList()
     )
 
     /**

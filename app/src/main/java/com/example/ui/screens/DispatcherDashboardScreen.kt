@@ -42,6 +42,11 @@ fun DispatcherDashboardScreen(
     onSaveOwnerBankConfig: (OwnerBankConfig) -> Unit,
     onTriggerOwnerPayout: () -> Unit,
     onRunTestOwnerOrderSplit: () -> Unit,
+    onOpenApplicationPhotos: (String) -> Unit = {},
+    onCloseApplicationPhotos: () -> Unit = {},
+    onApproveApplication: (com.example.data.firebase.OwnerApplication) -> Unit = {},
+    onRejectApplication: (String, String) -> Unit = { _, _ -> },
+    onSetDriverBlocked: (String, Boolean) -> Unit = { _, _ -> },
     modifier: Modifier = Modifier
 ) {
     var activeTab by remember { mutableIntStateOf(0) } // 0 = Владелец & Банк, 1 = Мониторинг
@@ -58,6 +63,16 @@ fun DispatcherDashboardScreen(
             .navigationBarsPadding(),
         verticalArrangement = Arrangement.spacedBy(14.dp)
     ) {
+        if (state.isAdmin) {
+            OwnerPanel(
+                state = state,
+                onOpenPhotos = onOpenApplicationPhotos,
+                onClosePhotos = onCloseApplicationPhotos,
+                onApprove = onApproveApplication,
+                onReject = onRejectApplication,
+                onSetBlocked = onSetDriverBlocked
+            )
+        }
         // Header Actions
         Row(
             modifier = Modifier.fillMaxWidth(),

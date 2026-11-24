@@ -1,0 +1,5 @@
+<?xml version="1.0" encoding="utf-8"?>
+<paths>
+    <!-- Photos taken during registration (documents and car), deleted after upload. -->
+    <cache-path name="reg_photos" path="reg_photos/" />
+</paths>

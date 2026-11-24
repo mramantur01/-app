@@ -1382,12 +1382,25 @@ private fun DriverOfflineCard(
                 StatTile("Поездок", "${state.driverQuestTripsDone}", Modifier.weight(1f))
                 StatTile("Тарифов", "${state.driverEnabledTariffs.size}", Modifier.weight(1f))
             }
-            SwipeToConfirmSlider(
-                text = "Выйти на линию",
-                containerColor = UberBlue,
-                onConfirmed = onGoOnline,
-                modifier = Modifier.fillMaxWidth().testTag("driver_online_toggle_button")
-            )
+            // Big round GO button: one tap to go on the line (other actions use swipes).
+            Box(modifier = Modifier.fillMaxWidth(), contentAlignment = Alignment.Center) {
+                Surface(
+                    onClick = onGoOnline,
+                    shape = CircleShape,
+                    color = com.example.ui.theme.KgTurquoise,
+                    shadowElevation = 10.dp,
+                    border = androidx.compose.foundation.BorderStroke(6.dp, com.example.ui.theme.KgTurquoiseLight),
+                    modifier = Modifier.size(132.dp).testTag("driver_online_toggle_button")
+                ) {
+                    Column(
+                        horizontalAlignment = Alignment.CenterHorizontally,
+                        verticalArrangement = Arrangement.Center
+                    ) {
+                        Text("GO", color = Color.White, fontSize = 40.sp, fontWeight = FontWeight.Black)
+                        Text("В путь", color = Color.White, style = MaterialTheme.typography.labelLarge)
+                    }
+                }
+            }
         }
     }
 }
