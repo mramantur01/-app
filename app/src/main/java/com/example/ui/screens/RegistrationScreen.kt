@@ -92,6 +92,8 @@ fun RegistrationScreen(
     var ladyDriver by rememberSaveable { mutableStateOf(false) }
     var soberDriver by rememberSaveable { mutableStateOf(false) }
     var courier by rememberSaveable { mutableStateOf(false) }
+    var wheelchair by rememberSaveable { mutableStateOf(false) }
+    var loaders by rememberSaveable { mutableStateOf(false) }
     var make by rememberSaveable { mutableStateOf("") }
     var model by rememberSaveable { mutableStateOf("") }
     var year by rememberSaveable { mutableStateOf<Int?>(null) }
@@ -211,13 +213,18 @@ fun RegistrationScreen(
                             OptionCheck("Есть детское кресло — тариф «Детский»", childSeat) { childSeat = it }
                             OptionCheck("Я женщина-водитель — тариф «Леди-такси»", ladyDriver) { ladyDriver = it }
                             OptionCheck("Беру курьерские заказы — тариф «Курьер»", courier) { courier = it }
+                            OptionCheck("Есть рампа или подъёмник для коляски — «Инва-такси»", wheelchair) { wheelchair = it }
                             if (vehicleType == com.example.data.model.VehicleType.CAR) {
                                 OptionCheck("Стаж от 3 лет, готов быть трезвым водителем", soberDriver) { soberDriver = it }
                             }
                         }
+                        if (vehicleType == com.example.data.model.VehicleType.TRUCK) {
+                            Text("Дополнительно", fontWeight = FontWeight.SemiBold, color = KgInk)
+                            OptionCheck("Работаю с грузчиками — тариф «Грузчики»", loaders) { loaders = it }
+                        }
                         val y = year
                         if (make.isNotBlank() && model.isNotBlank() && y != null) {
-                            val tariffs = CarCatalog.tariffsFor(make, model, y, vehicleType, com.example.data.model.DriverOptions(childSeat, ladyDriver, soberDriver, courier))
+                            val tariffs = CarCatalog.tariffsFor(make, model, y, vehicleType, com.example.data.model.DriverOptions(childSeat, ladyDriver, soberDriver, courier, wheelchair, loaders))
                             TariffResultCard(tariffs)
                         }
                     }
@@ -247,7 +254,7 @@ fun RegistrationScreen(
                     passport.length >= 6 && license.length >= 6 && experience.isNotBlank() &&
                     photos[RegPhoto.PASSPORT] != null && photos[RegPhoto.LICENSE] != null
                 RegStep.DRIVER_CAR -> make.isNotBlank() && model.isNotBlank() && year != null && color.isNotBlank() &&
-                    plate.length >= 5 && CarCatalog.tariffsFor(make, model, year ?: 0, vehicleType, com.example.data.model.DriverOptions(childSeat, ladyDriver, soberDriver, courier)).isNotEmpty()
+                    plate.length >= 5 && CarCatalog.tariffsFor(make, model, year ?: 0, vehicleType, com.example.data.model.DriverOptions(childSeat, ladyDriver, soberDriver, courier, wheelchair, loaders)).isNotEmpty()
                 RegStep.DRIVER_PHOTOS -> RegPhoto.CAR.all { photos[it] != null }
             }
             if (step != RegStep.CHOICE && step != RegStep.DRIVER_STATUS) {
@@ -285,7 +292,7 @@ fun RegistrationScreen(
                                             carYear = year ?: 0,
                                             carColor = color,
                                             plate = plate,
-                                            tariffs = CarCatalog.tariffsFor(make, model, year ?: 0, vehicleType, com.example.data.model.DriverOptions(childSeat, ladyDriver, soberDriver, courier))
+                                            tariffs = CarCatalog.tariffsFor(make, model, year ?: 0, vehicleType, com.example.data.model.DriverOptions(childSeat, ladyDriver, soberDriver, courier, wheelchair, loaders))
                                         ),
                                         photos.toMap()
                                     )

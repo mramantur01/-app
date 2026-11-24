@@ -20,7 +20,11 @@ data class DriverOptions(
     val childSeat: Boolean = false,
     val ladyDriver: Boolean = false,
     val soberDriver: Boolean = false,
-    val courier: Boolean = false
+    val courier: Boolean = false,
+    /** Car with a ramp or lift for a wheelchair. */
+    val wheelchair: Boolean = false,
+    /** Truck driver brings movers. */
+    val loaders: Boolean = false
 )
 
 /**
@@ -126,6 +130,8 @@ object CarCatalog {
     const val COMFORT_PLUS_MIN_YEAR = 2016
     const val BUSINESS_MIN_YEAR = 2018
     const val PREMIUM_MIN_YEAR = 2020
+    const val ECONOM_PLUS_MIN_YEAR = 2015
+    const val WEDDING_MIN_YEAR = 2016
 
     val years: List<Int> = (java.util.Calendar.getInstance().get(java.util.Calendar.YEAR) downTo MIN_YEAR_TRUCK).toList()
 
@@ -183,7 +189,15 @@ object CarCatalog {
             CarClass.TOW -> listOf("tow")
         }
         val passenger = !heavy
+        val comfortOrBetter = cls == CarClass.COMFORT || cls == CarClass.BUSINESS || cls == CarClass.PREMIUM
         val extra = buildList {
+            // Economy+ : a newer economy car, or any comfort-class car.
+            if (type == VehicleType.CAR && (comfortOrBetter || year >= ECONOM_PLUS_MIN_YEAR)) add("econom_plus")
+            if (passenger) add("airport")
+            if (passenger && (comfortOrBetter || cls == CarClass.MINIVAN || cls == CarClass.MICROBUS)) add("hourly")
+            if ((cls == CarClass.BUSINESS || cls == CarClass.PREMIUM) && year >= WEDDING_MIN_YEAR) add("wedding")
+            if (passenger && options.wheelchair) add("inva")
+            if (type == VehicleType.TRUCK && options.loaders) add("cargo_loaders")
             if (passenger && make in electricMakes) add("green_ev")
             if (passenger && options.childSeat) add("child")
             if (passenger && options.ladyDriver) add("lady")
@@ -195,6 +209,12 @@ object CarCatalog {
 
     fun tariffLabel(id: String): String = when (id) {
         "econom" -> "Эконом"
+        "econom_plus" -> "Эконом+"
+        "airport" -> "Аэропорт"
+        "hourly" -> "Почасовая"
+        "inva" -> "Инва-такси"
+        "wedding" -> "Свадебный кортеж"
+        "cargo_loaders" -> "Грузчики"
         "comfort" -> "Комфорт"
         "comfort_plus" -> "Комфорт+"
         "business" -> "Бизнес"

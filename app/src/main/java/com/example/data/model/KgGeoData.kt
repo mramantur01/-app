@@ -244,22 +244,28 @@ object KgGeoCatalog {
 
     val taxiTariffs: List<TaxiTariff> = listOf(
         TaxiTariff("econom", "Эконом", "Эконом", "Economy", "Быстрая подача на каждый день", 90, 20, 3, 4),
+        TaxiTariff("econom_plus", "Эконом+", "Эконом+", "Economy+", "Машины новее и просторнее", 110, 23, 4, 4),
         TaxiTariff("comfort", "Комфорт", "Комфорт", "Comfort", "Просторный седан, кондиционер", 130, 26, 4, 4),
         TaxiTariff("comfort_plus", "Комфорт+", "Комфорт+", "Comfort+", "Новые седаны, больше места", 170, 32, 5, 4),
         TaxiTariff("business", "Бизнес", "Бизнес", "Business", "Lexus ES, Camry 75, Mercedes E", 250, 42, 6, 4),
         TaxiTariff("premium", "Премиум", "Премиум", "Premium", "Mercedes S, BMW 7, Lexus LS", 420, 60, 8, 4),
         TaxiTariff("minivan", "Минивэн", "Минивэн", "Minivan", "До 7 пассажиров и большой багаж", 190, 32, 7, 6),
         TaxiTariff("microbus", "Микроавтобус", "Микроавтобус", "Minibus", "До 15–18 мест: группы, свадьбы", 400, 42, 12, 15),
+        TaxiTariff("airport", "Аэропорт", "Аэропорт", "Airport", "Трансфер, встреча с табличкой", 600, 15, 10, 4),
+        TaxiTariff("hourly", "Почасовая", "Сааттык", "Hourly", "Машина с водителем: 2 часа", 1400, 0, 10, 4),
         TaxiTariff("child", "Детский", "Балдар", "Kids", "С детским креслом", 150, 28, 6, 4),
         TaxiTariff("lady", "Леди-такси", "Айым-такси", "Lady Taxi", "Водитель — женщина", 145, 26, 6, 4, ladyOnly = true),
         TaxiTariff("green_ev", "Электро", "Электро", "Electric", "Электромобили BYD, Tesla, Zeekr", 110, 22, 5, 4, ecoGreen = true),
+        TaxiTariff("inva", "Инва-такси", "Инва-такси", "Wheelchair", "Для пассажира на коляске", 200, 28, 15, 3),
         TaxiTariff("courier", "Курьер", "Курьер", "Courier", "Документы и посылки до 20 кг", 120, 18, 5, 1),
         TaxiTariff("sober_driver", "Трезвый водитель", "Айдоочу (перегон)", "Sober Driver", "Отвезём вас на вашей машине", 450, 45, 10, 4, soberDriver = true),
+        TaxiTariff("wedding", "Свадебный кортеж", "Той кортежи", "Wedding", "Бизнес и Премиум, от 3 часов", 3000, 60, 30, 4),
+        TaxiTariff("tow", "Эвакуатор", "Эвакуатор", "Tow truck", "Перевезём авто после поломки или ДТП", 1500, 60, 25, 2),
         TaxiTariff("cargo_15", "Грузовой 1,5 т", "Жүк 1,5 т", "Cargo 1.5 t", "Портер, ГАЗель: переезд, мебель", 550, 38, 15, 2),
         TaxiTariff("cargo_35", "Грузовой 3,5 т", "Жүк 3,5 т", "Cargo 3.5 t", "Isuzu Elf, Canter: стройматериалы", 900, 45, 20, 2),
         TaxiTariff("cargo_5", "Грузовой 5 т", "Жүк 5 т", "Cargo 5 t", "HD78, ГАЗон: крупные грузы", 1400, 55, 25, 2),
         TaxiTariff("cargo_10", "Грузовой 10 т", "Жүк 10 т", "Cargo 10 t", "КамАЗ, MAN: тяжёлые грузы", 2200, 70, 30, 2),
-        TaxiTariff("tow", "Эвакуатор", "Эвакуатор", "Tow truck", "Перевезём авто после поломки или ДТП", 1500, 60, 25, 2)
+        TaxiTariff("cargo_loaders", "Грузчики", "Жүк ташуучулар", "Movers", "Грузовой + 2 грузчика", 1700, 45, 25, 2)
     )
 
     val pickupSpotsByKeyword: List<Pair<String, List<String>>> = listOf(

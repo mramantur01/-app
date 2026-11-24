@@ -54,9 +54,9 @@ object FeatureFlags {
 
     /** Tariffs we can actually guarantee with the drivers we have. */
     val ENABLED_TARIFF_IDS: Set<String> = setOf(
-        "econom", "economy", "comfort", "comfort_plus", "business", "premium", "minivan", "microbus",
-        "child", "lady", "green_ev", "courier", "sober_driver",
-        "cargo_15", "cargo_35", "cargo_5", "cargo_10", "tow"
+        "econom", "economy", "econom_plus", "comfort", "comfort_plus", "business", "premium", "minivan", "microbus",
+        "airport", "hourly", "child", "lady", "green_ev", "inva", "courier", "sober_driver", "wedding",
+        "cargo_15", "cargo_35", "cargo_5", "cargo_10", "cargo_loaders", "tow"
     )
 
     /** Services passengers can order now. */

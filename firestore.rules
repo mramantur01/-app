@@ -408,7 +408,7 @@ service cloud.firestore {
                                                           'passportNumber', 'carMake', 'carModel', 'carYear',
                                                           'carColor', 'tariffs', 'status', 'createdAt']) &&
                                (!('carYear' in incoming()) || (incoming().carYear is int && incoming().carYear >= 1990 && incoming().carYear <= 2100)) &&
-                               (!('tariffs' in incoming()) || (incoming().tariffs is list && incoming().tariffs.size() <= 15)) &&
+                               (!('tariffs' in incoming()) || (incoming().tariffs is list && incoming().tariffs.size() <= 25)) &&
                                incoming().userId == uid &&
                                incoming().status == 'pending' &&
                                incoming().fullName is string && incoming().fullName.size() >= 2 && incoming().fullName.size() <= 80 &&

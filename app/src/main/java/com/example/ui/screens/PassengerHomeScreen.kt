@@ -599,6 +599,11 @@ private fun PassengerControlSheet(
                                         "cargo_5", "cargo_10" -> Icons.Default.FireTruck
                                         "tow" -> Icons.Default.CarRepair
                                         "business", "premium" -> Icons.Default.Star
+                                        "airport" -> Icons.Default.Flight
+                                        "hourly" -> Icons.Default.Schedule
+                                        "inva" -> Icons.Default.Accessible
+                                        "wedding" -> Icons.Default.Favorite
+                                        "cargo_loaders" -> Icons.Default.Groups
                                         else -> Icons.Default.DirectionsCar
                                     },
                                     contentDescription = displayName,
