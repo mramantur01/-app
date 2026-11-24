@@ -219,9 +219,12 @@ fun PassengerHomeMenu(
 
         // Safety, become a driver, support.
         SafetyCard()
-        if (!state.isAdmin && com.example.data.model.AppRole.DRIVER !in state.allowedRoles) {
-            BecomeDriverCard(status = state.registration?.driverStatus, onStart = viewModel::openDriverApplication)
-        }
+        BecomeDriverCard(
+            isDriver = state.isAdmin || com.example.data.model.AppRole.DRIVER in state.allowedRoles,
+            status = state.registration?.driverStatus,
+            onStart = viewModel::openDriverApplication,
+            onOpenDriverMode = { viewModel.setRole(com.example.data.model.AppRole.DRIVER) }
+        )
         SupportCard(sending = state.supportSending, onSend = { text -> viewModel.sendSupportMessage(text, null) })
 
     }
@@ -392,8 +395,20 @@ private fun RideHistoryRow(ride: com.example.data.firebase.SharedRide, onRepeat:
 }
 
 
+/**
+ * Card with a title. With [collapseKey] it gets an arrow in the corner to hide / show the content;
+ * the choice is remembered on the phone.
+ */
 @Composable
-private fun InfoCardFrame(icon: ImageVector, title: String, content: @Composable ColumnScope.() -> Unit) {
+private fun InfoCardFrame(
+    icon: ImageVector,
+    title: String,
+    collapseKey: String? = null,
+    content: @Composable ColumnScope.() -> Unit
+) {
+    val context = androidx.compose.ui.platform.LocalContext.current
+    val prefs = remember(context) { context.getSharedPreferences("home_ui", android.content.Context.MODE_PRIVATE) }
+    var expanded by remember(collapseKey) { mutableStateOf(collapseKey == null || prefs.getBoolean(collapseKey, true)) }
     Surface(
         shape = RoundedCornerShape(18.dp),
         color = com.example.ui.theme.KgTurquoiseBg,
@@ -403,9 +418,24 @@ private fun InfoCardFrame(icon: ImageVector, title: String, content: @Composable
         Column(modifier = Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
             Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 Icon(icon, contentDescription = null, tint = KgTurquoise, modifier = Modifier.size(22.dp))
-                Text(title, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold, color = KgInk)
+                Text(title, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold, color = KgInk, modifier = Modifier.weight(1f))
+                if (collapseKey != null) {
+                    IconButton(
+                        onClick = {
+                            expanded = !expanded
+                            prefs.edit().putBoolean(collapseKey, expanded).apply()
+                        },
+                        modifier = Modifier.size(36.dp).testTag("toggle_$collapseKey")
+                    ) {
+                        Icon(
+                            if (expanded) Icons.Default.ExpandLess else Icons.Default.ExpandMore,
+                            contentDescription = if (expanded) "Свернуть" else "Развернуть",
+                            tint = KgTurquoise
+                        )
+                    }
+                }
             }
-            content()
+            if (expanded) content()
         }
     }
 }
@@ -422,7 +452,7 @@ private fun InfoLine(icon: ImageVector, text: String) {
 @Composable
 private fun SafetyCard() {
     val context = androidx.compose.ui.platform.LocalContext.current
-    InfoCardFrame(Icons.Default.Shield, "Безопасность") {
+    InfoCardFrame(Icons.Default.Shield, "Безопасность", collapseKey = "safety_expanded") {
         InfoLine(Icons.Default.VerifiedUser, "Водители проверены: паспорт, права и фото авто")
         InfoLine(Icons.Default.Share, "В поездке — «Поделиться» маршрутом с близкими")
         InfoLine(Icons.Default.Pin, "PIN-код помогает пассажиру и водителю убедиться, что они нашли друг друга")
@@ -445,8 +475,21 @@ private fun SafetyCard() {
 
 /** Invitation to drive with KG Taxi (hidden for drivers and the owner). */
 @Composable
-private fun BecomeDriverCard(status: String?, onStart: () -> Unit) {
-    InfoCardFrame(Icons.Default.DirectionsCar, "Стать водителем") {
+private fun BecomeDriverCard(isDriver: Boolean, status: String?, onStart: () -> Unit, onOpenDriverMode: () -> Unit) {
+    InfoCardFrame(Icons.Default.DirectionsCar, "Стать водителем", collapseKey = "driver_invite_expanded") {
+        if (isDriver) {
+            Text(
+                "Вы уже водитель KG Taxi. Откройте режим водителя и нажмите GO, чтобы выйти на линию.",
+                style = MaterialTheme.typography.bodyMedium,
+                color = KgInk
+            )
+            Button(
+                onClick = onOpenDriverMode,
+                colors = ButtonDefaults.buttonColors(containerColor = KgTurquoise, contentColor = Color.White),
+                modifier = Modifier.fillMaxWidth().testTag("home_driver_mode")
+            ) { Text("Режим водителя") }
+            return@InfoCardFrame
+        }
         Text(
             when (status) {
                 "pending" -> "Ваша заявка на проверке. Мы сообщим, когда откроется экран водителя."
@@ -477,9 +520,9 @@ private fun BecomeDriverCard(status: String?, onStart: () -> Unit) {
 private fun SupportCard(sending: Boolean, onSend: (String) -> Unit) {
     var open by remember { mutableStateOf(false) }
     var text by remember { mutableStateOf("") }
-    InfoCardFrame(Icons.Default.SupportAgent, "Поддержка") {
+    InfoCardFrame(Icons.Default.SupportAgent, "Поддержка", collapseKey = "support_expanded") {
         Text(
-            "Вопрос, жалоба или забыли вещь в машине — напишите нам, ответим по телефону из профиля.",
+            "Есть вопрос или что-то пошло не так? Напишите нам: поможем с поездкой, оплатой или забытыми вещами и перезвоним по номеру из вашего профиля.",
             style = MaterialTheme.typography.bodyMedium,
             color = KgInk
         )
