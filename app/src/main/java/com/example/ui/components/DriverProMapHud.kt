@@ -863,7 +863,7 @@ private fun DriverActiveOrderExecutionSheet(
             // How the PIN check works, so both sides understand it the same way.
             if (stage != DriverOrderStage.IN_TRIP) {
                 Text(
-                    "PIN-код — для уточнения своего такси и пассажира",
+                    "PIN-код помогает водителю и пассажиру убедиться, что они нашли друг друга",
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                     modifier = Modifier.testTag("pin_hint_driver")
