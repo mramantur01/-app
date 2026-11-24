@@ -12,6 +12,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.*
+import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -44,8 +45,15 @@ fun PassengerHomeScreen(
     onRequestVoice: () -> Unit,
     onOpenAiChat: () -> Unit,
     onOpenDriverChat: () -> Unit,
+    onOpenMyRides: () -> Unit = {},
     modifier: Modifier = Modifier
 ) {
+    // Home menu first (search, tiles, recent); the map and tariffs open after a choice.
+    if (state.passengerHome && state.activeRide == null) {
+        PassengerHomeMenu(state = state, viewModel = viewModel, onOpenMyRides = onOpenMyRides, modifier = modifier)
+        return
+    }
+    androidx.activity.compose.BackHandler(enabled = state.activeRide == null) { viewModel.backToPassengerHome() }
     BoxWithConstraints(modifier = modifier.fillMaxSize()) {
         val isWide = maxWidth >= 720.dp
         if (isWide) {
@@ -178,8 +186,17 @@ private fun PassengerControlSheet(
             return@Column
         }
 
-        // Live Weather + AQI + Personal/Business Switcher + Tourist Multi-Currency (KGS/USD/RUB/KZT/EUR)
-        CityWeatherAndCurrencyStrip(
+        // Back to the home menu.
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            TextButton(onClick = viewModel::backToPassengerHome, modifier = Modifier.testTag("order_back_home")) {
+                Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = null, modifier = Modifier.size(18.dp))
+                Spacer(Modifier.width(6.dp))
+                Text("Главная")
+            }
+        }
+
+        // Weather / currency strip: hidden to keep the order screen short.
+        if (FeatureFlags.DEMO_EXTRAS) CityWeatherAndCurrencyStrip(
             weather = state.cityWeather,
             currency = state.displayCurrency,
             businessModeActive = state.profile.businessProfileActive,
@@ -260,7 +277,7 @@ private fun PassengerControlSheet(
                             tint = UberAmber
                         )
                     }
-                    IconButton(
+                    if (FeatureFlags.DEMO_EXTRAS) IconButton(
                         onClick = viewModel::saveCurrentRouteOffline,
                         modifier = Modifier.testTag("save_offline_route_button")
                     ) {
@@ -299,7 +316,7 @@ private fun PassengerControlSheet(
 
         // Smart Pickup Spots (Uber US Hub Entrances — Airport, Asia Mall, TSUM, Ala-Too, etc.)
         val smartSpots = remember(state.pickupAddress) { KgGeoCatalog.pickupSpotsForAddress(state.pickupAddress) }
-        Row(
+        if (FeatureFlags.DEMO_EXTRAS) Row(
             modifier = Modifier.horizontalScroll(rememberScrollState()),
             horizontalArrangement = Arrangement.spacedBy(6.dp),
             verticalAlignment = Alignment.CenterVertically
@@ -317,7 +334,7 @@ private fun PassengerControlSheet(
 
         // 1-Tap Repeat Last Trip Bar (if trip history exists)
         val lastTrip = state.trips.firstOrNull()
-        if (lastTrip != null) {
+        if (lastTrip != null && FeatureFlags.DEMO_EXTRAS) {
             Surface(
                 onClick = { viewModel.repeatTripFromHistory(lastTrip) },
                 shape = RoundedCornerShape(14.dp),
@@ -341,108 +358,6 @@ private fun PassengerControlSheet(
                         }
                     }
                     Text("${lastTrip.totalPriceSom}с", fontFamily = JetBrainsMono, fontWeight = FontWeight.Bold, color = UberBlue)
-                }
-            }
-        }
-
-        // Live Autocomplete (Nominatim Live + Curated KG Landmarks) & Rating/Price Filtered Places
-        val matchingPlaces = remember(
-            state.searchQuery,
-            state.selectedCity,
-            state.filterMinRating,
-            state.filterMaxPriceLevel,
-            state.liveSearchResults
-        ) {
-            val base = state.selectedCity.landmarks.filter {
-                it.rating >= state.filterMinRating && it.priceLevel <= state.filterMaxPriceLevel
-            }
-            if (state.searchQuery.isBlank()) base.take(5)
-            else {
-                val curated = KgGeoCatalog.cities.flatMap { it.landmarks }.filter {
-                    (it.name.contains(state.searchQuery, ignoreCase = true) ||
-                        it.address.contains(state.searchQuery, ignoreCase = true) ||
-                        it.category.contains(state.searchQuery, ignoreCase = true)) &&
-                        it.rating >= state.filterMinRating &&
-                        it.priceLevel <= state.filterMaxPriceLevel
-                }
-                (state.liveSearchResults + curated).distinctBy { it.name }.take(8)
-            }
-        }
-
-        // Quick Saved Cards: Дом / Работа + Другому человеку + Filters + Reserve
-        Row(
-            modifier = Modifier.horizontalScroll(rememberScrollState()),
-            horizontalArrangement = Arrangement.spacedBy(8.dp),
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            AssistChip(
-                onClick = { viewModel.selectSavedAddressQuick(strings.home, state.profile.homeAddress) },
-                label = { Text(strings.home) },
-                leadingIcon = { Icon(Icons.Default.Home, contentDescription = null, modifier = Modifier.size(16.dp)) },
-                modifier = Modifier.testTag("quick_home_chip")
-            )
-            AssistChip(
-                onClick = { viewModel.selectSavedAddressQuick(strings.work, state.profile.workAddress) },
-                label = { Text(strings.work) },
-                leadingIcon = { Icon(Icons.Default.Work, contentDescription = null, modifier = Modifier.size(16.dp)) },
-                modifier = Modifier.testTag("quick_work_chip")
-            )
-            FilterChip(
-                selected = state.bookingForOther,
-                onClick = { showForOtherDialog = true },
-                label = { Text(if (state.bookingForOther && state.recipientName.isNotBlank()) "Для: ${state.recipientName}" else "Другому") },
-                leadingIcon = { Icon(Icons.Default.PersonAdd, contentDescription = null, modifier = Modifier.size(16.dp)) },
-                modifier = Modifier.testTag("book_for_other_chip")
-            )
-            // Rating / budget filters used made-up place data; scheduled rides are not supported by
-            // real orders yet (they would go out immediately). Hidden with the demo extras.
-            if (FeatureFlags.DEMO_EXTRAS) FilterChip(
-                selected = state.filterMinRating >= 4.5,
-                onClick = { viewModel.setRatingFilter(if (state.filterMinRating >= 4.5) 0.0 else 4.5) },
-                label = { Text(strings.filterRating) },
-                leadingIcon = { Icon(Icons.Default.Star, contentDescription = null, tint = UberAmber, modifier = Modifier.size(16.dp)) }
-            )
-            if (FeatureFlags.DEMO_EXTRAS) FilterChip(
-                selected = state.filterMaxPriceLevel == 1,
-                onClick = { viewModel.setPriceLevelFilter(if (state.filterMaxPriceLevel == 1) 3 else 1) },
-                label = { Text("$ Бюджет") }
-            )
-            if (FeatureFlags.DEMO_EXTRAS) FilterChip(
-                selected = state.reserveTimeLabel != null,
-                onClick = { showReserveDialog = true },
-                label = { Text(state.reserveTimeLabel ?: strings.reserveTrip) },
-                leadingIcon = { Icon(Icons.Default.Schedule, contentDescription = null, modifier = Modifier.size(16.dp)) },
-                modifier = Modifier.testTag("reserve_schedule_chip")
-            )
-        }
-
-        // Popular Landmarks / Live Search Results Carousel
-        Row(
-            modifier = Modifier.horizontalScroll(rememberScrollState()),
-            horizontalArrangement = Arrangement.spacedBy(8.dp)
-        ) {
-            matchingPlaces.forEach { place ->
-                Surface(
-                    onClick = { viewModel.selectDestinationPlace(place) },
-                    shape = RoundedCornerShape(12.dp),
-                    color = MaterialTheme.colorScheme.surfaceVariant,
-                    modifier = Modifier.testTag("landmark_${place.id}")
-                ) {
-                    Row(
-                        modifier = Modifier.padding(horizontal = 10.dp, vertical = 8.dp),
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(6.dp)
-                    ) {
-                        Icon(Icons.Default.Place, contentDescription = null, tint = UberBlue, modifier = Modifier.size(15.dp))
-                        Column {
-                            Text(place.name, style = MaterialTheme.typography.labelLarge, maxLines = 1)
-                            Text(
-                                place.address,
-                                style = MaterialTheme.typography.labelSmall, maxLines = 1,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant
-                            )
-                        }
-                    }
                 }
             }
         }
@@ -529,8 +444,8 @@ private fun PassengerControlSheet(
                     }
                 }
 
-                // Executive Sedan Visual Polish Banner
-                Box(
+                // Photo banner: hidden to keep tariffs right under the addresses.
+                if (FeatureFlags.DEMO_EXTRAS) Box(
                     modifier = Modifier
                         .fillMaxWidth()
                         .height(92.dp)
@@ -728,6 +643,109 @@ private fun PassengerControlSheet(
             ServiceType.CARGO -> CargoPanel(strings, state, viewModel::setCargoOptions)
             ServiceType.INTERCITY -> IntercitySeatPickerPanel(strings, state, viewModel::selectIntercityRoute, viewModel::setIntercityDeparture, viewModel::toggleIntercitySeat, viewModel::requestAiTourGuide)
             ServiceType.FOOD -> FoodDeliveryPanel(strings, state, viewModel::selectFoodVenue, viewModel::addFoodToCart, viewModel::removeFoodFromCart)
+        }
+
+        // Saved addresses, "для другого" and destination suggestions (below the tariffs).
+        // Live Autocomplete (Nominatim Live + Curated KG Landmarks) & Rating/Price Filtered Places
+        val matchingPlaces = remember(
+            state.searchQuery,
+            state.selectedCity,
+            state.filterMinRating,
+            state.filterMaxPriceLevel,
+            state.liveSearchResults
+        ) {
+            val base = state.selectedCity.landmarks.filter {
+                it.rating >= state.filterMinRating && it.priceLevel <= state.filterMaxPriceLevel
+            }
+            if (state.searchQuery.isBlank()) base.take(5)
+            else {
+                val curated = KgGeoCatalog.cities.flatMap { it.landmarks }.filter {
+                    (it.name.contains(state.searchQuery, ignoreCase = true) ||
+                        it.address.contains(state.searchQuery, ignoreCase = true) ||
+                        it.category.contains(state.searchQuery, ignoreCase = true)) &&
+                        it.rating >= state.filterMinRating &&
+                        it.priceLevel <= state.filterMaxPriceLevel
+                }
+                (state.liveSearchResults + curated).distinctBy { it.name }.take(8)
+            }
+        }
+
+        // Quick Saved Cards: Дом / Работа + Другому человеку + Filters + Reserve
+        Row(
+            modifier = Modifier.horizontalScroll(rememberScrollState()),
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            AssistChip(
+                onClick = { viewModel.selectSavedAddressQuick(strings.home, state.profile.homeAddress) },
+                label = { Text(strings.home) },
+                leadingIcon = { Icon(Icons.Default.Home, contentDescription = null, modifier = Modifier.size(16.dp)) },
+                modifier = Modifier.testTag("quick_home_chip")
+            )
+            AssistChip(
+                onClick = { viewModel.selectSavedAddressQuick(strings.work, state.profile.workAddress) },
+                label = { Text(strings.work) },
+                leadingIcon = { Icon(Icons.Default.Work, contentDescription = null, modifier = Modifier.size(16.dp)) },
+                modifier = Modifier.testTag("quick_work_chip")
+            )
+            FilterChip(
+                selected = state.bookingForOther,
+                onClick = { showForOtherDialog = true },
+                label = { Text(if (state.bookingForOther && state.recipientName.isNotBlank()) "Для: ${state.recipientName}" else "Другому") },
+                leadingIcon = { Icon(Icons.Default.PersonAdd, contentDescription = null, modifier = Modifier.size(16.dp)) },
+                modifier = Modifier.testTag("book_for_other_chip")
+            )
+            // Rating / budget filters used made-up place data; scheduled rides are not supported by
+            // real orders yet (they would go out immediately). Hidden with the demo extras.
+            if (FeatureFlags.DEMO_EXTRAS) FilterChip(
+                selected = state.filterMinRating >= 4.5,
+                onClick = { viewModel.setRatingFilter(if (state.filterMinRating >= 4.5) 0.0 else 4.5) },
+                label = { Text(strings.filterRating) },
+                leadingIcon = { Icon(Icons.Default.Star, contentDescription = null, tint = UberAmber, modifier = Modifier.size(16.dp)) }
+            )
+            if (FeatureFlags.DEMO_EXTRAS) FilterChip(
+                selected = state.filterMaxPriceLevel == 1,
+                onClick = { viewModel.setPriceLevelFilter(if (state.filterMaxPriceLevel == 1) 3 else 1) },
+                label = { Text("$ Бюджет") }
+            )
+            if (FeatureFlags.DEMO_EXTRAS) FilterChip(
+                selected = state.reserveTimeLabel != null,
+                onClick = { showReserveDialog = true },
+                label = { Text(state.reserveTimeLabel ?: strings.reserveTrip) },
+                leadingIcon = { Icon(Icons.Default.Schedule, contentDescription = null, modifier = Modifier.size(16.dp)) },
+                modifier = Modifier.testTag("reserve_schedule_chip")
+            )
+        }
+
+        // Popular Landmarks / Live Search Results Carousel
+        Row(
+            modifier = Modifier.horizontalScroll(rememberScrollState()),
+            horizontalArrangement = Arrangement.spacedBy(8.dp)
+        ) {
+            matchingPlaces.forEach { place ->
+                Surface(
+                    onClick = { viewModel.selectDestinationPlace(place) },
+                    shape = RoundedCornerShape(12.dp),
+                    color = MaterialTheme.colorScheme.surfaceVariant,
+                    modifier = Modifier.testTag("landmark_${place.id}")
+                ) {
+                    Row(
+                        modifier = Modifier.padding(horizontal = 10.dp, vertical = 8.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(6.dp)
+                    ) {
+                        Icon(Icons.Default.Place, contentDescription = null, tint = UberBlue, modifier = Modifier.size(15.dp))
+                        Column {
+                            Text(place.name, style = MaterialTheme.typography.labelLarge, maxLines = 1)
+                            Text(
+                                place.address,
+                                style = MaterialTheme.typography.labelSmall, maxLines = 1,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
+                    }
+                }
+            }
         }
 
         // Bidding Offers List if active

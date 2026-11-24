@@ -239,7 +239,8 @@ fun KgTaxiAppRoot() {
                                 if (FeatureFlags.AI_ASSISTANT) showAiChat = true
                                 else viewModel.showComingSoon("ИИ-помощник")
                             },
-                            onOpenDriverChat = { showDriverChat = true }
+                            onOpenDriverChat = { showDriverChat = true },
+                            onOpenMyRides = { showProfile = true }
                         )
                         AppRole.DRIVER -> DriverCabinScreen(
                             strings = strings,

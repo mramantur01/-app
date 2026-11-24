@@ -120,6 +120,8 @@ data class KgTaxiUiState(
     val selectedIntercityRoute: IntercityRoute = KgGeoCatalog.intercityRoutes.first(),
     val selectedIntercitySeats: Set<Int> = setOf(2),
     val occupiedIntercitySeats: Set<Int> = emptySet(),
+    /** Passenger sees the home menu (search + tiles); false = the order screen with the map. */
+    val passengerHome: Boolean = true,
     /** Owner settings: tariff prices, commission, promo (config/app). */
     val appConfig: com.example.data.firebase.AppConfig = com.example.data.firebase.AppConfig(),
     /** Passenger's real orders, newest first. */
@@ -1175,12 +1177,53 @@ class KgTaxiViewModel(
 
     // --- MY RIDES, SUPPORT, ACCOUNT DELETION ---
 
+    // --- PASSENGER HOME MENU ---
+
+    fun openPassengerOrder(service: ServiceType) {
+        if (_uiState.value.serviceType != service) setServiceType(service)
+        if (service == ServiceType.INTERCITY) setIntercityDeparture(null)
+        _uiState.update { it.copy(passengerHome = false) }
+    }
+
+    /** Intercity pre-order: opens the intercity order with tomorrow 08:00 already chosen. */
+    fun openPassengerPreorder() {
+        if (_uiState.value.serviceType != ServiceType.INTERCITY) setServiceType(ServiceType.INTERCITY)
+        setIntercityDeparture(com.example.util.departureMillis(1, 8))
+        _uiState.update { it.copy(passengerHome = false) }
+    }
+
+    fun backToPassengerHome() = _uiState.update { it.copy(passengerHome = true) }
+
+    fun goToSavedAddress(label: String, address: String) {
+        if (address.isBlank()) {
+            _uiState.update { it.copy(statusBanner = "Укажите адрес «$label» в профиле") }
+            return
+        }
+        if (_uiState.value.serviceType != ServiceType.TAXI) setServiceType(ServiceType.TAXI)
+        selectSavedAddressQuick(label, address)
+        _uiState.update { it.copy(passengerHome = false) }
+    }
+
+    /** Recent destination: keep the current pickup, set where to go. */
+    fun goToRecentDestination(r: SharedRide) {
+        if (_uiState.value.serviceType != ServiceType.TAXI) setServiceType(ServiceType.TAXI)
+        _uiState.update {
+            it.copy(
+                passengerHome = false,
+                dropoffAddress = r.dropoffAddress,
+                dropoffPoint = GeoPoint(r.dropoffLat, r.dropoffLng)
+            )
+        }
+        refreshLiveRoadRoute()
+    }
+
     /** Puts the addresses of a past order back on the order screen. */
     fun repeatRide(r: SharedRide) {
         val city = KgGeoCatalog.cityByName(r.city)
         _uiState.update {
             it.copy(
                 role = AppRole.PASSENGER,
+                passengerHome = false,
                 selectedCity = city,
                 serviceType = if (r.serviceType == "INTERCITY") ServiceType.INTERCITY else ServiceType.TAXI,
                 pickupAddress = r.pickupAddress,
