@@ -26,6 +26,9 @@ interface KgTaxiDao {
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun upsertTrips(trips: List<LocalTripEntity>)
 
+    @Query("DELETE FROM local_trips WHERE id = :id")
+    suspend fun deleteTrip(id: String)
+
     @Query("SELECT * FROM local_saved_places ORDER BY category ASC, label ASC")
     fun observeSavedPlaces(): Flow<List<LocalSavedPlaceEntity>>
 

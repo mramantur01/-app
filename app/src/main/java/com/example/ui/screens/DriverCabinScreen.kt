@@ -607,7 +607,7 @@ private fun DriverProStatusTabContent(
                     }
                     Surface(shape = RoundedCornerShape(12.dp), color = UberAmber) {
                         Text(
-                            text = "★ 4.96",
+                            text = "★ новый",
                             fontFamily = JetBrainsMono,
                             fontWeight = FontWeight.Black,
                             color = Color.Black,
@@ -666,7 +666,7 @@ private fun DriverProStatusTabContent(
                     modifier = Modifier.horizontalScroll(rememberScrollState()),
                     horizontalArrangement = Arrangement.spacedBy(6.dp)
                 ) {
-                    KgGeoCatalog.taxiTariffs.forEach { t ->
+                    KgGeoCatalog.taxiTariffs.filter { it.id in com.example.FeatureFlags.ENABLED_TARIFF_IDS }.forEach { t ->
                         val active = t.id in state.driverEnabledTariffs
                         FilterChip(
                             selected = active,

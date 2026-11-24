@@ -90,13 +90,9 @@ fun DriverRatingsTipsAndPayoutSection(
     modifier: Modifier = Modifier
 ) {
     var selectedBank by remember { mutableStateOf("MBank") }
-    var targetAccount by remember { mutableStateOf("+996 555 880 996") }
-    val ratingMetrics = listOf(
-        "Вежливость" to 4.98f,
-        "Чистота салона" to 4.96f,
-        "Аккуратное вождение" to 4.94f,
-        "Точность навигации" to 4.92f
-    )
+    var targetAccount by remember { mutableStateOf("") }
+    // Real per-category ratings need passenger reviews stored on the server; none yet.
+    val ratingMetrics = emptyList<Pair<String, Float>>()
 
     Column(modifier = modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(12.dp)) {
         // Instant Payout Card (MBank / Элкарт / O!Деньги)
@@ -185,7 +181,7 @@ fun DriverRatingsTipsAndPayoutSection(
                     horizontalArrangement = Arrangement.SpaceBetween,
                     verticalAlignment = Alignment.CenterVertically
                 ) {
-                    Text("Рейтинг 4.96 ★ и чаевые", fontWeight = FontWeight.Bold)
+                    Text("Рейтинг и чаевые", fontWeight = FontWeight.Bold)
                     Text(
                         text = "+${tips.sumOf { it.amountSom }} с чаевых",
                         fontFamily = JetBrainsMono,

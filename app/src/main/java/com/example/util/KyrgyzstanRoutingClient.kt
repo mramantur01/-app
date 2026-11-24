@@ -127,15 +127,81 @@ object KyrgyzstanRoutingClient {
     }
 
     /**
-     * Live address autocomplete in Kyrgyzstan via OpenStreetMap Nominatim.
+     * Live address autocomplete in Kyrgyzstan.
+     *
+     * 1. Photon (OpenStreetMap data) — finds streets while the word is still being typed
+     *    ("ахунб" → улица Ахунбаева), works with Russian and Kyrgyz names.
+     * 2. Nominatim as a fallback for full addresses when Photon finds little.
+     * Results are limited to Kyrgyzstan and ranked around the selected city.
      */
     suspend fun searchKyrgyzstanAddresses(
         query: String,
         cityName: String,
-        offlineMode: Boolean
+        offlineMode: Boolean,
+        cityCenter: GeoPoint? = null
     ): List<KgPlace> = withContext(Dispatchers.IO) {
-        if (offlineMode || query.trim().length < 3) return@withContext emptyList()
-        try {
+        val q = query.trim()
+        if (offlineMode || q.length < 2) return@withContext emptyList()
+        val photon = searchPhoton(q, cityName, cityCenter)
+        if (photon.size >= 3) return@withContext photon
+        val nominatim = searchNominatim(q, cityName)
+        (photon + nominatim)
+            .distinctBy { "%.4f,%.4f".format(java.util.Locale.US, it.point.lat, it.point.lng) }
+            .take(8)
+    }
+
+    private fun searchPhoton(query: String, cityName: String, center: GeoPoint?): List<KgPlace> = try {
+        val encoded = URLEncoder.encode(query, "UTF-8")
+        val bias = center?.let { "&lat=${it.lat}&lon=${it.lng}" }.orEmpty()
+        // Bounding box of Kyrgyzstan: lon 69.2..80.3, lat 39.1..43.3
+        val url = "https://photon.komoot.io/api/?q=$encoded&limit=8$bias&bbox=69.2,39.1,80.3,43.3"
+        val req = Request.Builder()
+            .url(url)
+            .header("User-Agent", "KGTaxiAndroid/1.0")
+            .build()
+        client.newCall(req).execute().use { resp ->
+            if (!resp.isSuccessful) return@use emptyList()
+            val body = resp.body?.string() ?: return@use emptyList()
+            val features = org.json.JSONObject(body).optJSONArray("features") ?: return@use emptyList()
+            val results = mutableListOf<KgPlace>()
+            for (i in 0 until features.length()) {
+                val f = features.optJSONObject(i) ?: continue
+                val props = f.optJSONObject("properties") ?: continue
+                if (props.optString("countrycode").uppercase() != "KG") continue
+                val coords = f.optJSONObject("geometry")?.optJSONArray("coordinates") ?: continue
+                val lng = coords.optDouble(0, Double.NaN)
+                val lat = coords.optDouble(1, Double.NaN)
+                if (lat.isNaN() || lng.isNaN()) continue
+                val street = props.optString("street")
+                val house = props.optString("housenumber")
+                val streetLine = listOf(street, house).filter { it.isNotBlank() }.joinToString(" ")
+                val name = props.optString("name").ifBlank { streetLine }.ifBlank { continue }
+                val city = props.optString("city").ifBlank { props.optString("county") }.ifBlank { cityName }
+                val address = listOf(
+                    streetLine.takeIf { it.isNotBlank() && it != name },
+                    props.optString("district").takeIf { it.isNotBlank() },
+                    city
+                ).filterNotNull().joinToString(", ")
+                results += KgPlace(
+                    id = "ph_${props.optString("osm_type")}${props.optLong("osm_id", i.toLong())}",
+                    name = name,
+                    address = if (address.isBlank()) name else "$name, $address",
+                    city = city,
+                    point = GeoPoint(lat, lng),
+                    category = "Адрес",
+                    rating = 0.0,
+                    reviewCount = 0,
+                    priceLevel = 1
+                )
+            }
+            results
+        }
+    } catch (_: Exception) {
+        emptyList()
+    }
+
+    private fun searchNominatim(query: String, cityName: String): List<KgPlace> {
+        return try {
             val encoded = URLEncoder.encode("$query, $cityName, Kyrgyzstan", "UTF-8")
             val url = "https://nominatim.openstreetmap.org/search?format=json&countrycodes=kg&limit=5&q=$encoded"
             val req = Request.Builder()
@@ -144,8 +210,8 @@ object KyrgyzstanRoutingClient {
                 .header("Accept-Language", "ru,ky,en")
                 .build()
             client.newCall(req).execute().use { resp ->
-                if (!resp.isSuccessful) return@withContext emptyList()
-                val body = resp.body?.string() ?: return@withContext emptyList()
+                if (!resp.isSuccessful) return@use emptyList()
+                val body = resp.body?.string() ?: return@use emptyList()
                 val arr = JSONArray(body)
                 val results = mutableListOf<KgPlace>()
                 for (i in 0 until arr.length()) {
@@ -162,8 +228,8 @@ object KyrgyzstanRoutingClient {
                         city = cityName,
                         point = GeoPoint(lat, lng),
                         category = "Адрес",
-                        rating = 4.7,
-                        reviewCount = 120,
+                        rating = 0.0,
+                        reviewCount = 0,
                         priceLevel = 1
                     )
                 }

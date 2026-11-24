@@ -23,6 +23,7 @@ import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import com.example.data.model.EmergencySosAlert
+import com.example.data.model.activeSurgeZones
 import com.example.data.model.KgCity
 import com.example.data.model.NearbyDriverMarker
 import com.example.ui.theme.*
@@ -77,7 +78,7 @@ fun DispatcherFleetMapAndSosPanel(
                             drawLine(gridColor, Offset(0f, h * j / 5f), Offset(w, h * j / 5f), strokeWidth = 2f)
                         }
                         // Draw surge rings
-                        city.surgeZones.forEachIndexed { idx, _ ->
+                        city.activeSurgeZones.forEachIndexed { idx, _ ->
                             val cx = w * (0.28f + idx * 0.24f).coerceAtMost(0.84f)
                             val cy = h * (0.35f + (idx % 2) * 0.3f)
                             drawCircle(UberAmber.copy(alpha = 0.2f), radius = 34f, center = Offset(cx, cy))

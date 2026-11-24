@@ -408,3 +408,11 @@ object KgGeoCatalog {
     )
 }
 
+
+/** Surge multiplier actually used for prices and shown in the app (1.0 while surge is off). */
+val KgCity.effectiveSurge: Double
+    get() = if (com.example.FeatureFlags.SURGE_PRICING) surgeMultiplier else 1.0
+
+/** Busy zones actually shown in the app (none while surge is off). */
+val KgCity.activeSurgeZones: List<SurgeZone>
+    get() = if (com.example.FeatureFlags.SURGE_PRICING) surgeZones else emptyList()

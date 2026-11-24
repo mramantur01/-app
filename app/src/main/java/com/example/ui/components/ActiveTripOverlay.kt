@@ -287,7 +287,7 @@ fun ActiveTripCard(
                     }
                     Column {
                         Text(
-                            text = "${ride.driverName} ★ ${ride.driverRating}",
+                            text = if (ride.driverRating > 0.0) "${ride.driverName} ★ ${ride.driverRating}" else ride.driverName,
                             style = MaterialTheme.typography.titleSmall,
                             fontWeight = FontWeight.Bold
                         )
@@ -582,7 +582,7 @@ fun PostTripReceiptDialog(
 ) {
     val context = LocalContext.current
     var rating by remember { mutableIntStateOf(5) }
-    var tipSom by remember { mutableIntStateOf(50) }
+    var tipSom by remember { mutableIntStateOf(0) }
     var showLostItem by remember { mutableStateOf(false) }
     var lostItemNote by remember { mutableStateOf("") }
     var showQrDialog by remember { mutableStateOf(false) }
@@ -686,14 +686,22 @@ fun PostTripReceiptDialog(
                     )
                 }
 
-                // ELQR / MBank QR Payment Button
-                FilledTonalButton(
-                    onClick = { showQrDialog = true },
-                    modifier = Modifier.fillMaxWidth().testTag("receipt_elqr_pay_button")
-                ) {
-                    Icon(Icons.Default.QrCode2, contentDescription = null, modifier = Modifier.size(18.dp), tint = UberBlue)
-                    Spacer(Modifier.width(6.dp))
-                    Text("Оплатить по ELQR / MBank (${trip.totalPriceSom + tipSom} сом)", fontWeight = FontWeight.Bold)
+                // ELQR / MBank QR payment: only when online payments are switched on.
+                if (com.example.FeatureFlags.ONLINE_PAYMENTS) {
+                    FilledTonalButton(
+                        onClick = { showQrDialog = true },
+                        modifier = Modifier.fillMaxWidth().testTag("receipt_elqr_pay_button")
+                    ) {
+                        Icon(Icons.Default.QrCode2, contentDescription = null, modifier = Modifier.size(18.dp), tint = UberBlue)
+                        Spacer(Modifier.width(6.dp))
+                        Text("Оплатить по ELQR / MBank (${trip.totalPriceSom + tipSom} сом)", fontWeight = FontWeight.Bold)
+                    }
+                } else {
+                    Text(
+                        "Оплата наличными водителю: ${trip.totalPriceSom + tipSom} сом",
+                        style = MaterialTheme.typography.bodyMedium,
+                        fontWeight = FontWeight.Bold
+                    )
                 }
 
                 // PDF Export, B2B Text Receipt Share & Lost Item Flow

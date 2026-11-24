@@ -318,7 +318,7 @@ fun DriverHourlyDemandChartCard(
 ) {
     val context = LocalContext.current
     val peak = remember(forecast) { forecast.maxByOrNull { it.demandFraction } ?: forecast.first() }
-    val peakZone = city.surgeZones.maxByOrNull { it.multiplier }
+    val peakZone = city.activeSurgeZones.maxByOrNull { it.multiplier }
 
     Surface(
         shape = RoundedCornerShape(18.dp),

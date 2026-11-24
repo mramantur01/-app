@@ -287,8 +287,8 @@ data class KgTaxiUiState(
                 if ((FeatureFlags.WALLET && profile.kgOneActive)) 0 else 150
             } else 0
             val rawSubtotal = base + distCost + waypointsCost + meetAndGreetCost
-            val surgeExtraRaw = if (serviceType == ServiceType.TAXI && selectedCity.surgeMultiplier > 1.0) {
-                ((rawSubtotal * (selectedCity.surgeMultiplier - 1.0))).roundToInt()
+            val surgeExtraRaw = if (serviceType == ServiceType.TAXI && selectedCity.effectiveSurge > 1.0) {
+                ((rawSubtotal * (selectedCity.effectiveSurge - 1.0))).roundToInt()
             } else 0
             // KG Plus protects against 50% of surge during rush hour
             val surgeExtra = if ((FeatureFlags.WALLET && profile.kgOneActive)) (surgeExtraRaw * 0.5).roundToInt() else surgeExtraRaw
@@ -397,43 +397,13 @@ class KgTaxiViewModel(
         viewModelScope.launch {
             if (dao.getProfileOnce() == null) {
                 dao.upsertProfile(LocalProfileEntity())
-                dao.upsertSavedPlaces(
-                    listOf(
-                        LocalSavedPlaceEntity("home_1", "Дом", "пр. Чуй 155, Бишкек", "Бишкек", 42.8763, 74.6143, "HOME", 5.0),
-                        LocalSavedPlaceEntity("work_1", "Работа", "ТРЦ Asia Mall, пр. Ч. Айтматова 3", "Бишкек", 42.8559, 74.5855, "WORK", 4.9),
-                        LocalSavedPlaceEntity("fav_1", "Аэропорт Манас (FRU)", "Аэропорт Манас, терминал 1", "Бишкек", 43.0613, 74.4776, "ROUTE", 4.7)
-                    )
-                )
-                dao.upsertFamilyMember(
-                    LocalFamilyMemberEntity("fam_demo", "Айдана (Teen)", "Дочь", "+996 700 441 882", 12000, true)
-                )
-                dao.upsertMaintenance(
-                    LocalMaintenanceEntity("maint_1", "Toyota Camry 70", "Замена масла 5W-30 и фильтров", 95000, 93800, 8.5, false)
-                )
-                dao.upsertTrip(
-                    LocalTripEntity(
-                        id = "trip_seed_1",
-                        serviceType = "TAXI",
-                        tariffName = "Green EV",
-                        city = "Бишкек",
-                        pickupAddress = "Площадь Ала-Тоо",
-                        dropoffAddress = "ТРЦ Asia Mall",
-                        distanceKm = 4.6,
-                        durationMin = 12,
-                        totalPriceSom = 215,
-                        paymentMethod = "MBANK",
-                        status = "COMPLETED",
-                        driverName = "Бакыт К.",
-                        driverCar = "BYD Han EV • 01KG 808 EV",
-                        safetyPin = "4829",
-                        rating = 5,
-                        tipSom = 50,
-                        businessTrip = false,
-                        lostItemNote = "",
-                        createdAtMillis = System.currentTimeMillis() - 86_400_000L
-                    )
-                )
             }
+            // Older versions seeded made-up data on first launch (a fake family member would even
+            // receive SOS text messages). Remove those demo rows if they are still on the phone.
+            listOf("home_1", "work_1", "fav_1").forEach { dao.deleteSavedPlace(it) }
+            dao.deleteFamilyMember("fam_demo")
+            dao.deleteMaintenance("maint_1")
+            dao.deleteTrip("trip_seed_1")
         }
 
         viewModelScope.launch {
@@ -897,7 +867,7 @@ class KgTaxiViewModel(
     fun setSearchQuery(q: String) {
         _uiState.update { it.copy(searchQuery = q) }
         addressSearchJob?.cancel()
-        if (q.trim().length < 3 || _uiState.value.offlineMode) {
+        if (q.trim().length < 2 || _uiState.value.offlineMode) {
             _uiState.update { it.copy(liveSearchResults = emptyList()) }
             return
         }
@@ -906,7 +876,8 @@ class KgTaxiViewModel(
             val live = KyrgyzstanRoutingClient.searchKyrgyzstanAddresses(
                 query = q,
                 cityName = _uiState.value.selectedCity.name,
-                offlineMode = _uiState.value.offlineMode
+                offlineMode = _uiState.value.offlineMode,
+                cityCenter = _uiState.value.selectedCity.center
             )
             _uiState.update { it.copy(liveSearchResults = live) }
         }
@@ -985,6 +956,10 @@ class KgTaxiViewModel(
     }
 
     fun selectTariff(tariffId: String) {
+        if (tariffId !in FeatureFlags.ENABLED_TARIFF_IDS) {
+            showComingSoon("Этот тариф")
+            return
+        }
         _uiState.update { it.copy(selectedTariffId = tariffId) }
         // Adaptive UI learning: remember frequently used tariff
         val profile = _uiState.value.profile

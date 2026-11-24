@@ -433,8 +433,8 @@ private fun PassengerControlSheet(
                         Column {
                             Text(place.name, style = MaterialTheme.typography.labelLarge, maxLines = 1)
                             Text(
-                                "★ ${place.rating} (${place.reviewCount}) • ${"$".repeat(place.priceLevel)}",
-                                style = MaterialTheme.typography.labelSmall,
+                                place.address,
+                                style = MaterialTheme.typography.labelSmall, maxLines = 1,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant
                             )
                         }
@@ -491,7 +491,7 @@ private fun PassengerControlSheet(
         when (state.serviceType) {
             ServiceType.TAXI -> {
                 // Adaptive Learning Suggestion Banner
-                val topTariff = KgGeoCatalog.taxiTariffs.firstOrNull { it.id == state.profile.preferredTariffId }
+                val topTariff = KgGeoCatalog.taxiTariffs.firstOrNull { it.id == state.profile.preferredTariffId && it.id in FeatureFlags.ENABLED_TARIFF_IDS }
                 if (topTariff != null && topTariff.id != state.selectedTariffId) {
                     Surface(
                         onClick = { viewModel.selectTariff(topTariff.id) },
@@ -548,9 +548,9 @@ private fun PassengerControlSheet(
 
                 // Taxi Tariff List (6 Tariffs incl. Lady Taxi & Green EV)
                 Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                    KgGeoCatalog.taxiTariffs.forEach { tariff ->
+                    KgGeoCatalog.taxiTariffs.filter { it.id in FeatureFlags.ENABLED_TARIFF_IDS }.forEach { tariff ->
                         val selected = state.selectedTariffId == tariff.id
-                        val estPrice = ((tariff.baseSom + state.routeDistanceKm * tariff.perKmSom) * state.selectedCity.surgeMultiplier).roundToInt()
+                        val estPrice = ((tariff.baseSom + state.routeDistanceKm * tariff.perKmSom) * state.selectedCity.effectiveSurge).roundToInt()
                         val displayName = when (state.language) {
                             AppLanguage.RU -> tariff.nameRu
                             AppLanguage.KG -> tariff.nameKg
@@ -842,7 +842,7 @@ private fun PassengerControlSheet(
                         if (pb.distanceSom > 0) PriceRow("Километраж / доставка", "${pb.distanceSom} ${strings.currencySom}")
                         if (pb.waypointsSom > 0) PriceRow("Промежуточные остановки (${state.waypoints.size})", "+${pb.waypointsSom} ${strings.currencySom}", UberAmber)
                         if (pb.meetAndGreetSom > 0) PriceRow("Встреча с табличкой (Meet & Greet)", "+${pb.meetAndGreetSom} ${strings.currencySom}", UberBlue)
-                        if (pb.surgeSom > 0) PriceRow("Коэффициент спроса (x${state.selectedCity.surgeMultiplier})", "+${pb.surgeSom} ${strings.currencySom}", UberAmber)
+                        if (pb.surgeSom > 0) PriceRow("Коэффициент спроса (x${state.selectedCity.effectiveSurge})", "+${pb.surgeSom} ${strings.currencySom}", UberAmber)
                         if (pb.speedDeltaSom != 0) PriceRow("Скорость подачи", "${if (pb.speedDeltaSom > 0) "+" else ""}${pb.speedDeltaSom} ${strings.currencySom}")
                         if (pb.carpoolDiscountSom > 0) PriceRow("Попутчик «Вместе» (-30%)", "-${pb.carpoolDiscountSom} ${strings.currencySom}", UberGreen)
                         if (pb.kgOneDiscountSom > 0) PriceRow("Подписка KG Plus (-7% + защита спроса)", "-${pb.kgOneDiscountSom} ${strings.currencySom}", UberGreen)

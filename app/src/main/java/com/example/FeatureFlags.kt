@@ -37,6 +37,15 @@ object FeatureFlags {
     /** Driver shift passes (paid subscriptions). */
     const val DRIVER_SHIFT_PASSES = false
 
+    /**
+     * Surge pricing ("Спрос x1.15", busy zones). Off: there is no real demand data yet, so a fixed
+     * multiplier would just make every ride more expensive and show made-up busy districts.
+     */
+    const val SURGE_PRICING = false
+
+    /** Tariffs we can actually guarantee with the drivers we have. */
+    val ENABLED_TARIFF_IDS: Set<String> = setOf("econom", "economy", "comfort", "minivan")
+
     /** Services passengers can order now. */
     val ENABLED_SERVICES: Set<ServiceType> = setOf(ServiceType.TAXI, ServiceType.INTERCITY)
 

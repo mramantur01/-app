@@ -157,7 +157,7 @@ fun DriverLineMapCockpit(
                         )
                         Text("•", color = Color.White.copy(alpha = 0.45f))
                         Text(
-                            text = "★ 4.96",
+                            text = "★ новый",
                             fontFamily = JetBrainsMono,
                             fontWeight = FontWeight.Bold,
                             color = UberAmber,
@@ -322,7 +322,7 @@ fun DriverLineMapCockpit(
                     ) {
                         Icon(Icons.Default.LocalFireDepartment, contentDescription = null, tint = UberAmber, modifier = Modifier.size(14.dp))
                         Text(
-                            text = "${state.selectedCity.name} • x${state.selectedCity.surgeMultiplier}",
+                            text = if (com.example.FeatureFlags.SURGE_PRICING) "${state.selectedCity.name} • x${state.selectedCity.surgeMultiplier}" else state.selectedCity.name,
                             color = Color.White,
                             fontFamily = JetBrainsMono,
                             style = MaterialTheme.typography.labelSmall,
@@ -479,7 +479,7 @@ fun DriverLineMapCockpit(
                                         fontWeight = FontWeight.ExtraBold
                                     )
                                     Text(
-                                        text = "${state.selectedCity.name} • Спрос x${state.selectedCity.surgeMultiplier} • Тарифов: ${state.driverEnabledTariffs.size}",
+                                        text = "${state.selectedCity.name} • Тарифов: ${state.driverEnabledTariffs.size}",
                                         style = MaterialTheme.typography.bodySmall,
                                         color = MaterialTheme.colorScheme.onSurfaceVariant
                                     )
@@ -505,7 +505,7 @@ fun DriverLineMapCockpit(
                                 modifier = Modifier.fillMaxWidth(),
                                 horizontalArrangement = Arrangement.spacedBy(6.dp)
                             ) {
-                                state.selectedCity.surgeZones.forEach { z ->
+                                state.selectedCity.activeSurgeZones.forEach { z ->
                                     Surface(
                                         shape = RoundedCornerShape(10.dp),
                                         color = UberPurple.copy(alpha = 0.12f),
@@ -1028,7 +1028,7 @@ private fun DriverNavigationMapSurface(
             uiSettings = MapUiSettings(zoomControlsEnabled = false, compassEnabled = false)
         ) {
             if (showSurgeHeatmap) {
-                city.surgeZones.forEach { z ->
+                city.activeSurgeZones.forEach { z ->
                     Circle(
                         center = LatLng(z.center.lat, z.center.lng),
                         radius = z.radiusKm * 750.0,

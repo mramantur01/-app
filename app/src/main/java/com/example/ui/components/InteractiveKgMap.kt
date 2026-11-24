@@ -204,7 +204,7 @@ fun InteractiveKgMap(
                         )
                     }
                 }
-                if (city.surgeMultiplier > 1.0) {
+                if (city.effectiveSurge > 1.0) {
                     Surface(
                         shape = RoundedCornerShape(6.dp),
                         color = UberAmber
@@ -478,7 +478,7 @@ private fun RealGoogleMapsLayer(
             width = 11f
         )
         if (showSurgeHeatmap) {
-            city.surgeZones.forEach { zone ->
+            city.activeSurgeZones.forEach { zone ->
                 Circle(
                     center = LatLng(zone.center.lat, zone.center.lng),
                     radius = zone.radiusKm * 500.0,
@@ -640,7 +640,7 @@ private fun InteractiveVectorKgMapCanvas(
 
         // Surge Heatmap Overlay
         if (showSurgeHeatmap) {
-            city.surgeZones.forEach { zone ->
+            city.activeSurgeZones.forEach { zone ->
                 val c = toScreen(zone.center)
                 val r = (w * 0.16f) * zone.multiplier.toFloat()
                 drawCircle(
