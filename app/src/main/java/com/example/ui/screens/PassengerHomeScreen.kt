@@ -58,7 +58,7 @@ fun PassengerHomeScreen(
         val isWide = maxWidth >= 720.dp
         if (isWide) {
             Row(modifier = Modifier.fillMaxSize()) {
-                InteractiveKgMap(
+                if (state.activeRide != null) InteractiveKgMap(
                     strings = strings,
                     city = state.selectedCity,
                     pickupPoint = state.pickupPoint,
@@ -98,7 +98,7 @@ fun PassengerHomeScreen(
             }
         } else {
             Column(modifier = Modifier.fillMaxSize()) {
-                InteractiveKgMap(
+                if (state.activeRide != null) InteractiveKgMap(
                     strings = strings,
                     city = state.selectedCity,
                     pickupPoint = state.pickupPoint,
@@ -186,12 +186,35 @@ private fun PassengerControlSheet(
             return@Column
         }
 
-        // Back to the home menu.
-        Row(verticalAlignment = Alignment.CenterVertically) {
+        // Back to the home menu + city picker (the map with city buttons is gone from this screen).
+        var cityMenuOpen by remember { mutableStateOf(false) }
+        Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth()) {
             TextButton(onClick = viewModel::backToPassengerHome, modifier = Modifier.testTag("order_back_home")) {
                 Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = null, modifier = Modifier.size(18.dp))
                 Spacer(Modifier.width(6.dp))
                 Text("Главная")
+            }
+            Spacer(Modifier.weight(1f))
+            Box {
+                FilterChip(
+                    selected = true,
+                    onClick = { cityMenuOpen = true },
+                    label = { Text(state.selectedCity.name) },
+                    leadingIcon = { Icon(Icons.Default.LocationCity, contentDescription = null, modifier = Modifier.size(16.dp)) },
+                    trailingIcon = { Icon(Icons.Default.ArrowDropDown, contentDescription = null, modifier = Modifier.size(18.dp)) },
+                    modifier = Modifier.testTag("order_city_picker")
+                )
+                DropdownMenu(expanded = cityMenuOpen, onDismissRequest = { cityMenuOpen = false }) {
+                    KgGeoCatalog.cities.forEach { city ->
+                        DropdownMenuItem(
+                            text = { Text(city.name) },
+                            onClick = { cityMenuOpen = false; viewModel.selectCity(city) },
+                            leadingIcon = if (city.name == state.selectedCity.name) {
+                                { Icon(Icons.Default.Check, contentDescription = null) }
+                            } else null
+                        )
+                    }
+                }
             }
         }
 
@@ -312,6 +335,16 @@ private fun PassengerControlSheet(
                     }
                 }
             }
+        }
+
+        // Route length and time (was on the map).
+        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+            Icon(Icons.Default.Route, contentDescription = null, tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(16.dp))
+            Text(
+                "${String.format(java.util.Locale.US, "%.1f", state.routeDistanceKm)} км • ${state.routeDurationMin} мин в пути",
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
         }
 
         // Smart Pickup Spots (Uber US Hub Entrances — Airport, Asia Mall, TSUM, Ala-Too, etc.)
