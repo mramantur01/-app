@@ -425,7 +425,7 @@ private fun SafetyCard() {
     InfoCardFrame(Icons.Default.Shield, "Безопасность") {
         InfoLine(Icons.Default.VerifiedUser, "Водители проверены: паспорт, права и фото авто")
         InfoLine(Icons.Default.Share, "В поездке — «Поделиться» маршрутом с близкими")
-        InfoLine(Icons.Default.Pin, "PIN-код — проверка для обоих: пассажир называет 4 цифры, водитель сверяет со своим экраном. Спросить PIN — это нормально, никто не обижается")
+        InfoLine(Icons.Default.Pin, "PIN-код — для уточнения своего такси и пассажира")
         InfoLine(Icons.Default.Sos, "Кнопка SOS в поездке отправляет тревогу диспетчеру")
         OutlinedButton(
             onClick = {
