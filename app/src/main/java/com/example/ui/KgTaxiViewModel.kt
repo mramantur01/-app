@@ -120,6 +120,18 @@ data class KgTaxiUiState(
     val selectedIntercityRoute: IntercityRoute = KgGeoCatalog.intercityRoutes.first(),
     val selectedIntercitySeats: Set<Int> = setOf(2),
     val occupiedIntercitySeats: Set<Int> = emptySet(),
+    /** Owner settings: tariff prices, commission, promo (config/app). */
+    val appConfig: com.example.data.firebase.AppConfig = com.example.data.firebase.AppConfig(),
+    /** Passenger's real orders, newest first. */
+    val passengerRides: List<SharedRide> = emptyList(),
+    val supportSending: Boolean = false,
+    val supportTickets: List<com.example.data.firebase.SupportTicket> = emptyList(),
+    val accountDeleting: Boolean = false,
+    /** Driver documents: OSAGO and technical inspection valid until (millis), saved on the phone. */
+    val osagoUntilMillis: Long? = null,
+    val inspectionUntilMillis: Long? = null,
+    /** A newer version is on the website (for installs outside Google Play). */
+    val updateAvailable: com.example.util.UpdateInfo? = null,
     /** Registration of this account; null until loaded after sign-in. */
     val registration: com.example.data.firebase.RegistrationInfo? = null,
     /** Registration screen is open (first sign-in, or "Стать водителем"). */
@@ -274,8 +286,13 @@ data class KgTaxiUiState(
         }
 
     val selectedTariff: TaxiTariff
-        get() = KgGeoCatalog.taxiTariffs.firstOrNull { it.id == selectedTariffId }
-            ?: KgGeoCatalog.taxiTariffs[1]
+        get() = priced(
+            KgGeoCatalog.taxiTariffs.firstOrNull { it.id == selectedTariffId } ?: KgGeoCatalog.taxiTariffs[1]
+        )
+
+    /** Tariff with the owner's current prices (from the owner panel), if set. */
+    fun priced(t: TaxiTariff): TaxiTariff =
+        appConfig.tariffs[t.id]?.let { t.copy(baseSom = it.baseSom, perKmSom = it.perKmSom) } ?: t
 
     val priceBreakdown: PriceBreakdown
         get() {
@@ -400,6 +417,13 @@ class KgTaxiViewModel(
     private val registrationRepo by lazy { com.example.data.firebase.RegistrationRepository(appContext) }
     private val ownerRepo by lazy { com.example.data.firebase.OwnerRepository(appContext) }
     private val ownerJobs = mutableListOf<Job>()
+    private var configJob: Job? = null
+    private var applicationWatchJob: Job? = null
+    private val configRepo by lazy { com.example.data.firebase.AppConfigRepository(appContext) }
+    private val supportRepo by lazy { com.example.data.firebase.SupportRepository(appContext) }
+    private val deletionRepo by lazy { com.example.data.firebase.AccountDeletionRepository(appContext) }
+    private val appWatcher by lazy { com.example.data.firebase.DriverApplicationWatcher(appContext) }
+    private val docPrefs by lazy { appContext.getSharedPreferences("driver_docs", Context.MODE_PRIVATE) }
     private var driverPreordersJob: Job? = null
     private var verifiedDriverCar: String = ""
     private var verifiedDriverPlate: String = ""
@@ -413,6 +437,8 @@ class KgTaxiViewModel(
         SoundAndNotificationManager.ensureChannels(appContext)
         seedAndObserveLocalDatabase()
         observePreferences()
+        loadDriverDocs()
+        checkForUpdate()
         generateNearbyDrivers(_uiState.value.selectedCity)
         generateDriverIncomingOrders(_uiState.value.selectedCity)
         _uiState.update { it.copy(offlineMode = !LocationAndVoiceHelper.isNetworkAvailable(appContext)) }
@@ -503,6 +529,8 @@ class KgTaxiViewModel(
         syncPushToken()
         startPassengerPreorders()
         refreshRegistration()
+        startAppConfig()
+        watchDriverApplication()
 
         viewModelScope.launch {
             // Read the saved profile first: the screen state may still be the empty default at startup,
@@ -663,6 +691,9 @@ class KgTaxiViewModel(
 
     fun onUserSignedOut() {
         stopOwnerFeeds()
+        configJob?.cancel(); configJob = null
+        applicationWatchJob?.cancel(); applicationWatchJob = null
+        _uiState.update { it.copy(passengerRides = emptyList(), supportTickets = emptyList(), accountDeleting = false) }
         _uiState.update { it.copy(registration = null, registrationOpen = false, isAdmin = false, driverAllowedTariffs = emptySet()) }
         passengerPreordersJob?.cancel()
         passengerPreordersJob = null
@@ -793,6 +824,7 @@ class KgTaxiViewModel(
         passengerPreordersJob = viewModelScope.launch {
             var known = emptyMap<String, String>()
             rides.observeMyRides(asDriver = false, limit = 30).collect { list ->
+                _uiState.update { it.copy(passengerRides = list) }
                 val pre = list.filter { it.scheduledAtMillis != null }
                 pre.forEach { r ->
                     if (known[r.id] == RideStatus.SEARCHING && r.status == RideStatus.BOOKED) {
@@ -1026,6 +1058,9 @@ class KgTaxiViewModel(
             set(java.util.Calendar.SECOND, 0); set(java.util.Calendar.MILLISECOND, 0)
         }.timeInMillis
         ownerJobs += viewModelScope.launch {
+            supportRepo.observeAll().collect { list -> _uiState.update { it.copy(supportTickets = list) } }
+        }
+        ownerJobs += viewModelScope.launch {
             ownerRepo.observeApplications().collect { list -> _uiState.update { it.copy(ownerApplications = list) } }
         }
         ownerJobs += viewModelScope.launch {
@@ -1078,6 +1113,175 @@ class KgTaxiViewModel(
             }
         }
     }
+
+    // --- OWNER SETTINGS (prices, commission, promo) ---
+
+    private fun startAppConfig() {
+        configJob?.cancel()
+        configJob = viewModelScope.launch {
+            configRepo.observe().collect { cfg ->
+                _uiState.update {
+                    it.copy(
+                        appConfig = cfg,
+                        ownerBankConfig = cfg.commissionPercent?.let { pct -> it.ownerBankConfig.copy(commissionPercent = pct) } ?: it.ownerBankConfig
+                    )
+                }
+            }
+        }
+    }
+
+    fun saveAppConfig(config: com.example.data.firebase.AppConfig) {
+        viewModelScope.launch {
+            val res = configRepo.save(config)
+            _uiState.update { it.copy(statusBanner = if (res.isSuccess) "Цены и промокод сохранены — у всех обновятся сразу" else "Не удалось сохранить. Проверьте интернет.") }
+        }
+    }
+
+    // --- DRIVER APPLICATION STATUS (approved / rejected) ---
+
+    private fun watchDriverApplication() {
+        applicationWatchJob?.cancel()
+        applicationWatchJob = viewModelScope.launch {
+            var last: String? = null
+            appWatcher.observe().collect { (status, reason) ->
+                val prev = last
+                last = status
+                if (prev == null || status == prev) return@collect
+                if (status == "approved") {
+                    refreshAllowedRoles()
+                    _uiState.update {
+                        it.copy(
+                            registration = it.registration?.copy(driverStatus = "approved"),
+                            driverApplicationStatus = "approved",
+                            role = AppRole.DRIVER,
+                            statusBanner = "Вас одобрили! Вы водитель KG Taxi — нажмите GO"
+                        )
+                    }
+                    SoundAndNotificationManager.playCue(SoundCue.TRIP_COMPLETED, _uiState.value.soundEnabled)
+                    SoundAndNotificationManager.postNotification(appContext, "Вас одобрили в KG Taxi", "Откройте приложение и нажмите GO, чтобы выйти на линию.")
+                } else if (status == "rejected") {
+                    _uiState.update {
+                        it.copy(
+                            registration = it.registration?.copy(driverStatus = "rejected", rejectReason = reason),
+                            driverApplicationStatus = "rejected",
+                            statusBanner = "Заявка водителя отклонена: ${reason ?: "документы не прошли проверку"}"
+                        )
+                    }
+                    SoundAndNotificationManager.postNotification(appContext, "Заявка водителя отклонена", reason ?: "Документы не прошли проверку. Можно подать заново.")
+                }
+            }
+        }
+    }
+
+    // --- MY RIDES, SUPPORT, ACCOUNT DELETION ---
+
+    /** Puts the addresses of a past order back on the order screen. */
+    fun repeatRide(r: SharedRide) {
+        val city = KgGeoCatalog.cityByName(r.city)
+        _uiState.update {
+            it.copy(
+                role = AppRole.PASSENGER,
+                selectedCity = city,
+                serviceType = if (r.serviceType == "INTERCITY") ServiceType.INTERCITY else ServiceType.TAXI,
+                pickupAddress = r.pickupAddress,
+                pickupPoint = GeoPoint(r.pickupLat, r.pickupLng),
+                dropoffAddress = r.dropoffAddress,
+                dropoffPoint = GeoPoint(r.dropoffLat, r.dropoffLng),
+                statusBanner = "Маршрут повторён: ${r.pickupAddress} → ${r.dropoffAddress}"
+            )
+        }
+        refreshLiveRoadRoute()
+    }
+
+    fun sendSupportMessage(text: String, rideId: String?) {
+        if (text.isBlank()) return
+        _uiState.update { it.copy(supportSending = true) }
+        viewModelScope.launch {
+            val p = _uiState.value.profile
+            val res = supportRepo.send(p.displayName, p.phone, text, rideId)
+            _uiState.update {
+                it.copy(
+                    supportSending = false,
+                    statusBanner = if (res.isSuccess) "Сообщение отправлено. Мы свяжемся с вами." else "Не удалось отправить. Проверьте интернет."
+                )
+            }
+        }
+    }
+
+    fun resolveSupportTicket(id: String) {
+        viewModelScope.launch { supportRepo.resolve(id) }
+    }
+
+    fun deleteAccount() {
+        if (_uiState.value.accountDeleting) return
+        _uiState.update { it.copy(accountDeleting = true) }
+        viewModelScope.launch {
+            val res = deletionRepo.deleteEverything()
+            if (res.isSuccess) {
+                dao.upsertProfile(LocalProfileEntity())
+                docPrefs.edit().clear().apply()
+                _uiState.update {
+                    it.copy(
+                        accountDeleting = false,
+                        profile = LocalProfileEntity(),
+                        osagoUntilMillis = null,
+                        inspectionUntilMillis = null,
+                        statusBanner = "Аккаунт и данные удалены"
+                    )
+                }
+                onUserSignedOut()
+            } else {
+                _uiState.update {
+                    it.copy(accountDeleting = false, statusBanner = res.exceptionOrNull()?.message ?: "Не удалось удалить аккаунт")
+                }
+            }
+        }
+    }
+
+    // --- DRIVER DOCUMENTS: OSAGO / TECHNICAL INSPECTION ---
+
+    fun loadDriverDocs() {
+        val osago = docPrefs.getLong("osago", 0L).takeIf { it > 0 }
+        val insp = docPrefs.getLong("inspection", 0L).takeIf { it > 0 }
+        _uiState.update { it.copy(osagoUntilMillis = osago, inspectionUntilMillis = insp) }
+        remindExpiringDocs()
+    }
+
+    fun setDriverDocDate(kind: String, millis: Long?) {
+        docPrefs.edit().apply { if (millis == null) remove(kind) else putLong(kind, millis) }.apply()
+        _uiState.update {
+            if (kind == "osago") it.copy(osagoUntilMillis = millis) else it.copy(inspectionUntilMillis = millis)
+        }
+    }
+
+    /** Notifies once a day when OSAGO or inspection ends within 7 days (or already ended). */
+    private fun remindExpiringDocs() {
+        val s = _uiState.value
+        val now = System.currentTimeMillis()
+        val week = 7 * 24 * 60 * 60 * 1000L
+        val today = now / (24 * 60 * 60 * 1000L)
+        if (docPrefs.getLong("remindedDay", -1) == today) return
+        val soon = listOfNotNull(
+            s.osagoUntilMillis?.takeIf { it - now < week }?.let { "ОСАГО" },
+            s.inspectionUntilMillis?.takeIf { it - now < week }?.let { "техосмотр" }
+        )
+        if (soon.isEmpty()) return
+        docPrefs.edit().putLong("remindedDay", today).apply()
+        val text = "Скоро заканчивается: ${soon.joinToString(" и ")}. Продлите, чтобы работать без штрафов."
+        _uiState.update { it.copy(statusBanner = text) }
+        SoundAndNotificationManager.postNotification(appContext, "Документы водителя", text, isHighPriority = false)
+    }
+
+    // --- APP UPDATES FROM THE WEBSITE ---
+
+    fun checkForUpdate() {
+        viewModelScope.launch {
+            val info = com.example.util.UpdateChecker.check(appContext)
+            if (info != null) _uiState.update { it.copy(updateAvailable = info) }
+        }
+    }
+
+    fun dismissUpdate() = _uiState.update { it.copy(updateAvailable = null) }
 
     fun openDriverApplication() {
         if (FeatureFlags.REAL_RIDES) {
@@ -1455,17 +1659,25 @@ class KgTaxiViewModel(
     fun setPromoInput(code: String) = _uiState.update { it.copy(promoCodeInput = code) }
 
     fun applyPromoCode() {
-        val code = _uiState.value.promoCodeInput.trim().uppercase()
-        val pct = when (code) {
-            "KG10", "BISHKEK", "UBERKG" -> 10
-            "ECO15", "GREEN" -> 15
-            "OSH20" -> 20
-            else -> 0
+        val s0 = _uiState.value
+        val code = s0.promoCodeInput.trim().uppercase()
+        val cfg = s0.appConfig
+        val firstRide = s0.passengerRides.none { it.status == RideStatus.COMPLETED }
+        val pct = when {
+            code.isBlank() -> 0
+            !cfg.promoActive || cfg.promoCode.isBlank() || code != cfg.promoCode.uppercase() -> -1
+            !firstRide -> -2
+            else -> cfg.promoPercent
         }
         _uiState.update {
             it.copy(
-                appliedPromoPercent = pct,
-                statusBanner = if (pct > 0) "Промокод $code применён (-$pct%)" else "Попробуйте промокоды: KG10, ECO15 или OSH20"
+                appliedPromoPercent = pct.coerceAtLeast(0),
+                statusBanner = when (pct) {
+                    -1 -> "Такого промокода нет"
+                    -2 -> "Промокод действует только на первую поездку"
+                    0 -> "Введите промокод"
+                    else -> "Промокод $code применён: −$pct%"
+                }
             )
         }
     }

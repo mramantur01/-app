@@ -47,6 +47,8 @@ fun DispatcherDashboardScreen(
     onApproveApplication: (com.example.data.firebase.OwnerApplication) -> Unit = {},
     onRejectApplication: (String, String) -> Unit = { _, _ -> },
     onSetDriverBlocked: (String, Boolean) -> Unit = { _, _ -> },
+    onSaveAppConfig: (com.example.data.firebase.AppConfig) -> Unit = {},
+    onResolveTicket: (String) -> Unit = {},
     modifier: Modifier = Modifier
 ) {
     var activeTab by remember { mutableIntStateOf(0) } // 0 = Владелец & Банк, 1 = Мониторинг
@@ -70,7 +72,9 @@ fun DispatcherDashboardScreen(
                 onClosePhotos = onCloseApplicationPhotos,
                 onApprove = onApproveApplication,
                 onReject = onRejectApplication,
-                onSetBlocked = onSetDriverBlocked
+                onSetBlocked = onSetDriverBlocked,
+                onSaveConfig = onSaveAppConfig,
+                onResolveTicket = onResolveTicket
             )
         }
         // Header Actions

@@ -154,7 +154,7 @@ fun ProfileWalletOverlay(
                                 } else {
                                     Icon(Icons.Default.CloudSync, contentDescription = null, modifier = Modifier.size(18.dp))
                                     Spacer(Modifier.width(8.dp))
-                                    Text("Войти по номеру телефона", fontWeight = FontWeight.Bold)
+                                    Text("Войти через Google", fontWeight = FontWeight.Bold)
                                 }
                             }
                         } else {
@@ -170,6 +170,11 @@ fun ProfileWalletOverlay(
                             Text(authError, color = UberAmber, style = MaterialTheme.typography.bodySmall)
                         }
                     }
+                }
+
+                // My rides (real orders), support and account deletion.
+                if (state.isSignedIn) {
+                    AccountExtrasSection(state = state, viewModel = viewModel, onClose = onDismiss)
                 }
 
                 // Editable Profile & Home/Work Addresses (Auto-saved locally + synced to Firestore)

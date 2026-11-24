@@ -95,6 +95,27 @@ fun InteractiveKgMap(
                 mapLayerStyle = mapLayerStyle,
                 onTapMapPoint = onTapMapPoint
             )
+        } else if (!offlineMode) {
+            // Free real street map (OpenStreetMap) when there is no Google Maps key.
+            val route = if (routePolyline.size >= 2) routePolyline else listOf(pickupPoint, dropoffPoint)
+            val pins = buildList {
+                nearbyDrivers.forEach { d -> add(OsmPin(d.point, "", 0xFF3B82F6.toInt(), "KG Taxi", small = true)) }
+                waypoints.forEachIndexed { i, wp -> add(OsmPin(wp.point, "${i + 1}", 0xFFFF9500.toInt(), wp.name)) }
+                add(OsmPin(pickupPoint, "A", 0xFF0097A7.toInt(), "Подача"))
+                add(OsmPin(dropoffPoint, "B", 0xFF1F2D30.toInt(), "Куда"))
+                activeRide?.driverPoint?.let { add(OsmPin(it, "", 0xFF05944F.toInt(), activeRide.driverName, small = true)) }
+            }
+            OsmMapLayer(
+                center = city.center,
+                centerKey = city.name,
+                pins = pins,
+                route = route,
+                routeColor = 0xFF0097A7.toInt(),
+                darkTheme = darkTheme || mapLayerStyle == MapLayerStyle.NIGHT,
+                fitTo = remember(pickupPoint, dropoffPoint) { listOf(pickupPoint, dropoffPoint) },
+                onTap = onTapMapPoint,
+                modifier = Modifier.fillMaxSize()
+            )
         } else {
             InteractiveVectorKgMapCanvas(
                 city = city,

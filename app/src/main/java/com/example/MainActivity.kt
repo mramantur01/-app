@@ -266,7 +266,9 @@ fun KgTaxiAppRoot() {
                             onCloseApplicationPhotos = viewModel::closeApplicationPhotos,
                             onApproveApplication = viewModel::approveApplication,
                             onRejectApplication = viewModel::rejectApplication,
-                            onSetDriverBlocked = viewModel::setDriverBlocked
+                            onSetDriverBlocked = viewModel::setDriverBlocked,
+                            onSaveAppConfig = viewModel::saveAppConfig,
+                            onResolveTicket = viewModel::resolveSupportTicket
                         )
                     }
                 }
@@ -409,6 +411,24 @@ fun KgTaxiAppRoot() {
             // First-Launch Interactive Onboarding Guide
             if (state.showOnboarding) {
                 OnboardingOverlay(onComplete = viewModel::completeOnboarding)
+            }
+
+            // New version on the website (installs outside Google Play).
+            state.updateAvailable?.let { upd ->
+                AlertDialog(
+                    onDismissRequest = viewModel::dismissUpdate,
+                    title = { Text("Доступна новая версия ${upd.versionName}") },
+                    text = { Text(upd.notes.ifBlank { "Исправления и новые функции." } + " Скачайте и установите поверх текущей версии — ваши данные сохранятся.") },
+                    confirmButton = {
+                        Button(onClick = {
+                            runCatching {
+                                context.startActivity(android.content.Intent(android.content.Intent.ACTION_VIEW, android.net.Uri.parse(upd.url)))
+                            }
+                            viewModel.dismissUpdate()
+                        }) { Text("Скачать") }
+                    },
+                    dismissButton = { TextButton(onClick = viewModel::dismissUpdate) { Text("Позже") } }
+                )
             }
 
             // Registration: "Кто вы?" passenger / driver, documents, car and photo check.

@@ -546,14 +546,12 @@ private fun DriverVehicleAndDocsTabContent(
         }
 
         // Vehicle Documents & Insurance (ОСАГО / Техосмотр / Права)
-        Text("Документы и страховка (ОСАГО / ТО / Права)", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
-        if (state.driverDocuments.isEmpty()) {
-            Text(
-                "Документы проверяются при одобрении заявки водителя. Сроки ОСАГО и техосмотра появятся здесь позже.",
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant
-            )
-        }
+        Text("Документы и страховка", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
+        DriverDocDatesCard(
+            osagoUntil = state.osagoUntilMillis,
+            inspectionUntil = state.inspectionUntilMillis,
+            onSet = viewModel::setDriverDocDate
+        )
         state.driverDocuments.forEach { doc ->
             val urgent = doc.daysRemaining <= 30
             Surface(
@@ -880,6 +878,60 @@ private fun DriverProStatusTabContent(
                 Spacer(Modifier.width(6.dp))
                 Text("Табличка в аэропорту", maxLines = 1)
             }
+        }
+    }
+}
+
+
+/** OSAGO and technical inspection end dates; the app reminds 7 days before. */
+@Composable
+private fun DriverDocDatesCard(osagoUntil: Long?, inspectionUntil: Long?, onSet: (String, Long?) -> Unit) {
+    val context = androidx.compose.ui.platform.LocalContext.current
+    fun pick(kind: String, current: Long?) {
+        val cal = java.util.Calendar.getInstance().apply { if (current != null) timeInMillis = current }
+        android.app.DatePickerDialog(
+            context,
+            { _, y, m, d ->
+                val millis = java.util.Calendar.getInstance().apply { set(y, m, d, 23, 59, 0) }.timeInMillis
+                onSet(kind, millis)
+            },
+            cal.get(java.util.Calendar.YEAR), cal.get(java.util.Calendar.MONTH), cal.get(java.util.Calendar.DAY_OF_MONTH)
+        ).show()
+    }
+    Surface(shape = RoundedCornerShape(16.dp), color = MaterialTheme.colorScheme.surfaceVariant, modifier = Modifier.fillMaxWidth()) {
+        Column(modifier = Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+            listOf("osago" to "ОСАГО действует до", "inspection" to "Техосмотр действует до").forEach { (kind, label) ->
+                val until = if (kind == "osago") osagoUntil else inspectionUntil
+                val days = until?.let { ((it - System.currentTimeMillis()) / (24 * 60 * 60 * 1000L)).toInt() }
+                val color = when {
+                    days == null -> MaterialTheme.colorScheme.onSurfaceVariant
+                    days < 0 -> Color(0xFFC62828)
+                    days <= 7 -> Color(0xFFEF6C00)
+                    else -> MaterialTheme.colorScheme.primary
+                }
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Column(modifier = Modifier.weight(1f)) {
+                        Text(label, fontWeight = FontWeight.SemiBold)
+                        Text(
+                            when {
+                                until == null -> "Не указано"
+                                days!! < 0 -> java.text.SimpleDateFormat("dd.MM.yyyy", java.util.Locale.US).format(java.util.Date(until)) + " • истёк"
+                                else -> java.text.SimpleDateFormat("dd.MM.yyyy", java.util.Locale.US).format(java.util.Date(until)) + " • осталось $days дн."
+                            },
+                            color = color,
+                            style = MaterialTheme.typography.bodySmall
+                        )
+                    }
+                    TextButton(onClick = { pick(kind, until) }, modifier = Modifier.testTag("doc_date_$kind")) {
+                        Text(if (until == null) "Указать" else "Изменить")
+                    }
+                }
+            }
+            Text(
+                "Напомним за 7 дней до окончания.",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
         }
     }
 }

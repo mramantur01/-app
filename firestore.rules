@@ -321,6 +321,39 @@ service cloud.firestore {
       allow delete: if isAdmin() && request.auth.uid != uid;
     }
 
+    // App settings the owner changes from the owner panel: tariff prices, commission, promo code.
+    match /config/{docId} {
+      allow get: if isSignedIn();
+      allow list: if false;
+      allow write: if isAdmin() && docId == 'app' &&
+                      incoming().keys().hasOnly(['commissionPercent', 'tariffs', 'promoCode', 'promoPercent',
+                                                 'promoActive', 'updatedAt']) &&
+                      incoming().commissionPercent is int && incoming().commissionPercent >= 0 && incoming().commissionPercent <= 50 &&
+                      incoming().tariffs is map &&
+                      incoming().promoCode is string && incoming().promoCode.size() <= 20 &&
+                      incoming().promoPercent is int && incoming().promoPercent >= 0 && incoming().promoPercent <= 90 &&
+                      incoming().promoActive is bool;
+    }
+
+    // Messages to support and complaints about rides. The owner reads and resolves them.
+    match /support_tickets/{ticketId} {
+      allow get: if isAdmin() || (isSignedIn() && existing().userId == request.auth.uid);
+      allow list: if isAdmin();
+      allow create: if isSignedIn() &&
+                       incoming().keys().hasOnly(['userId', 'name', 'phone', 'text', 'rideId', 'status', 'createdAt']) &&
+                       incoming().userId == request.auth.uid &&
+                       incoming().name is string && incoming().name.size() <= 80 &&
+                       incoming().phone is string && incoming().phone.size() <= 20 &&
+                       incoming().text is string && incoming().text.size() >= 1 && incoming().text.size() <= 1000 &&
+                       (!('rideId' in incoming()) || (incoming().rideId is string && incoming().rideId.size() <= 60)) &&
+                       incoming().status == 'open' &&
+                       isValidTimestamp(incoming().createdAt);
+      allow update: if isAdmin() &&
+                       incoming().status == 'resolved' &&
+                       onlyChanged(['status', 'resolvedAt']);
+      allow delete: if false;
+    }
+
     // Registration: who the user is (passenger or driver) and their passport number.
     // Document photos live in the photos subcollection: only the user and the owner can see them.
     match /registrations/{uid} {
@@ -334,7 +367,8 @@ service cloud.firestore {
                                incoming().phone is string && incoming().phone.size() <= 20 &&
                                incoming().passportNumber is string && incoming().passportNumber.size() >= 4 && incoming().passportNumber.size() <= 20 &&
                                isValidTimestamp(incoming().createdAt);
-      allow delete: if false;
+      // The user may delete their registration (account deletion).
+      allow delete: if isOwner(uid);
 
       match /photos/{kind} {
         allow read: if isOwner(uid) || isAdmin();
@@ -391,7 +425,8 @@ service cloud.firestore {
                        incoming().status in ['approved', 'rejected'] &&
                        onlyChanged(['status', 'rejectReason', 'reviewedAt']) &&
                        (!('rejectReason' in incoming()) || (incoming().rejectReason is string && incoming().rejectReason.size() <= 200));
-      allow delete: if isOwner(uid) && existing().status == 'pending';
+      // The user may withdraw the application or delete it with the account.
+      allow delete: if isOwner(uid);
     }
 
     // SOS alerts: the sender creates, dispatchers read and resolve.

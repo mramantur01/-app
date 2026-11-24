@@ -41,7 +41,9 @@ fun OwnerPanel(
     onClosePhotos: () -> Unit,
     onApprove: (OwnerApplication) -> Unit,
     onReject: (String, String) -> Unit,
-    onSetBlocked: (String, Boolean) -> Unit
+    onSetBlocked: (String, Boolean) -> Unit,
+    onSaveConfig: (com.example.data.firebase.AppConfig) -> Unit = {},
+    onResolveTicket: (String) -> Unit = {}
 ) {
     var tab by remember { mutableIntStateOf(0) }
     val pending = state.ownerApplications.filter { it.status == "pending" }
@@ -69,9 +71,12 @@ fun OwnerPanel(
                 OwnerStat("Отмен", "${state.ownerStats.ridesCancelled}", Modifier.weight(1f))
             }
 
-            TabRow(selectedTabIndex = tab, containerColor = Color.White, contentColor = KgTurquoise) {
+            val openTickets = state.supportTickets.count { it.status == "open" }
+            ScrollableTabRow(selectedTabIndex = tab, containerColor = Color.White, contentColor = KgTurquoise, edgePadding = 0.dp) {
                 Tab(selected = tab == 0, onClick = { tab = 0 }, text = { Text("Заявки (${pending.size})") }, modifier = Modifier.testTag("owner_tab_apps"))
                 Tab(selected = tab == 1, onClick = { tab = 1 }, text = { Text("Водители") }, modifier = Modifier.testTag("owner_tab_drivers"))
+                Tab(selected = tab == 2, onClick = { tab = 2 }, text = { Text("Цены") }, modifier = Modifier.testTag("owner_tab_prices"))
+                Tab(selected = tab == 3, onClick = { tab = 3 }, text = { Text("Поддержка ($openTickets)") }, modifier = Modifier.testTag("owner_tab_support"))
             }
             when (tab) {
                 0 -> {
@@ -80,11 +85,16 @@ fun OwnerPanel(
                         ApplicationCard(app, onOpen = { onOpenPhotos(app.uid) })
                     }
                 }
-                else -> {
+                1 -> {
                     if (state.ownerDrivers.isEmpty() && state.ownerBlockedDrivers.isEmpty()) EmptyNote("Водителей пока нет")
                     (state.ownerDrivers + state.ownerBlockedDrivers).forEach { d ->
                         DriverRow(d, onSetBlocked)
                     }
+                }
+                2 -> PricesEditor(state, onSaveConfig)
+                else -> {
+                    if (state.supportTickets.isEmpty()) EmptyNote("Обращений пока нет")
+                    state.supportTickets.forEach { t -> TicketRow(t, onResolveTicket) }
                 }
             }
         }
@@ -100,6 +110,114 @@ fun OwnerPanel(
             onReject = { reason -> onReject(openApp.uid, reason); onClosePhotos() },
             onDismiss = onClosePhotos
         )
+    }
+}
+
+/** Tariff prices, commission and the first-ride promo. Saved to config/app, applied for everyone at once. */
+@Composable
+private fun PricesEditor(state: KgTaxiUiState, onSave: (com.example.data.firebase.AppConfig) -> Unit) {
+    val cfg = state.appConfig
+    val ids = listOf("econom", "comfort", "minivan")
+    val defaults = com.example.data.model.KgGeoCatalog.taxiTariffs.associateBy { it.id }
+    val base = remember(cfg) { mutableStateMapOf<String, String>().apply { ids.forEach { put(it, (cfg.tariffs[it]?.baseSom ?: defaults[it]?.baseSom ?: 0).toString()) } } }
+    val perKm = remember(cfg) { mutableStateMapOf<String, String>().apply { ids.forEach { put(it, (cfg.tariffs[it]?.perKmSom ?: defaults[it]?.perKmSom ?: 0).toString()) } } }
+    var commission by remember(cfg) { mutableStateOf((cfg.commissionPercent ?: state.ownerBankConfig.commissionPercent).toString()) }
+    var promoCode by remember(cfg) { mutableStateOf(cfg.promoCode) }
+    var promoPercent by remember(cfg) { mutableStateOf(cfg.promoPercent.takeIf { it > 0 }?.toString() ?: "20") }
+    var promoActive by remember(cfg) { mutableStateOf(cfg.promoActive) }
+
+    Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+        Text("Цены тарифов (сом)", fontWeight = FontWeight.Bold, color = KgInk)
+        ids.forEach { id ->
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
+                Text(CarCatalog.tariffLabel(id), modifier = Modifier.width(84.dp), color = KgInk)
+                NumField(base[id].orEmpty(), { base[id] = it }, "Посадка", Modifier.weight(1f))
+                NumField(perKm[id].orEmpty(), { perKm[id] = it }, "За км", Modifier.weight(1f))
+            }
+        }
+        NumField(commission, { commission = it }, "Комиссия сервиса, %", Modifier.fillMaxWidth())
+        HorizontalDivider()
+        Text("Промокод на первую поездку", fontWeight = FontWeight.Bold, color = KgInk)
+        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            OutlinedTextField(
+                value = promoCode,
+                onValueChange = { promoCode = it.uppercase().filter { c -> c.isLetterOrDigit() }.take(20) },
+                label = { Text("Код") },
+                singleLine = true,
+                modifier = Modifier.weight(1.4f)
+            )
+            NumField(promoPercent, { promoPercent = it }, "Скидка %", Modifier.weight(1f))
+        }
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Text("Промокод включён", modifier = Modifier.weight(1f), color = KgInk)
+            Switch(checked = promoActive, onCheckedChange = { promoActive = it })
+        }
+        Button(
+            onClick = {
+                onSave(
+                    com.example.data.firebase.AppConfig(
+                        commissionPercent = commission.toIntOrNull() ?: 14,
+                        tariffs = ids.associateWith { id ->
+                            com.example.data.firebase.TariffPrice(base[id]?.toIntOrNull() ?: 0, perKm[id]?.toIntOrNull() ?: 0)
+                        },
+                        promoCode = promoCode,
+                        promoPercent = promoPercent.toIntOrNull() ?: 0,
+                        promoActive = promoActive && promoCode.isNotBlank()
+                    )
+                )
+            },
+            colors = ButtonDefaults.buttonColors(containerColor = KgTurquoise),
+            modifier = Modifier.fillMaxWidth().testTag("owner_save_prices")
+        ) { Text("Сохранить для всех") }
+        Text(
+            "Новые цены сразу видят все пассажиры, обновлять приложение не нужно.",
+            style = MaterialTheme.typography.bodySmall,
+            color = KgInk.copy(alpha = 0.6f)
+        )
+    }
+}
+
+@Composable
+private fun NumField(value: String, onChange: (String) -> Unit, label: String, modifier: Modifier) {
+    OutlinedTextField(
+        value = value,
+        onValueChange = { onChange(it.filter { c -> c.isDigit() }.take(5)) },
+        label = { Text(label) },
+        singleLine = true,
+        keyboardOptions = androidx.compose.foundation.text.KeyboardOptions(keyboardType = androidx.compose.ui.text.input.KeyboardType.Number),
+        modifier = modifier
+    )
+}
+
+@Composable
+private fun TicketRow(t: com.example.data.firebase.SupportTicket, onResolve: (String) -> Unit) {
+    val context = LocalContext.current
+    val date = remember(t.createdAtMillis) {
+        if (t.createdAtMillis > 0) java.text.SimpleDateFormat("dd.MM HH:mm", java.util.Locale.US).format(java.util.Date(t.createdAtMillis)) else ""
+    }
+    Surface(shape = RoundedCornerShape(14.dp), color = if (t.status == "open") Color(0xFFFFF8E1) else Color(0xFFF7FAFA), modifier = Modifier.fillMaxWidth()) {
+        Column(modifier = Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+            Row {
+                Text(t.name, fontWeight = FontWeight.Bold, color = KgInk, modifier = Modifier.weight(1f))
+                Text(date, style = MaterialTheme.typography.labelMedium, color = KgInk.copy(alpha = 0.6f))
+            }
+            if (t.rideId != null) Text("Жалоба на поездку", style = MaterialTheme.typography.labelMedium, color = Color(0xFFC62828))
+            Text(t.text, color = KgInk)
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                if (t.phone.isNotBlank()) {
+                    TextButton(onClick = {
+                        runCatching {
+                            context.startActivity(android.content.Intent(android.content.Intent.ACTION_DIAL, android.net.Uri.parse("tel:${t.phone}")))
+                        }
+                    }) { Text("Позвонить ${t.phone}") }
+                }
+                if (t.status == "open") {
+                    TextButton(onClick = { onResolve(t.id) }) { Text("Решено") }
+                } else {
+                    Text("Решено", color = Color(0xFF2E7D32), modifier = Modifier.padding(top = 12.dp))
+                }
+            }
+        }
     }
 }
 

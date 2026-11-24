@@ -1036,6 +1036,26 @@ private fun DriverNavigationMapSurface(
                 )
             }
         }
+    } else if (!offlineMode) {
+        // Free real street map (OpenStreetMap) when there is no Google Maps key.
+        val targetOrder = activeOrder ?: currentOffer
+        val pins = buildList {
+            if (targetOrder != null) {
+                add(OsmPin(targetOrder.pickupPoint, "A", 0xFF0097A7.toInt(), "Подача: ${targetOrder.pickupAddress}"))
+                add(OsmPin(targetOrder.dropoffPoint, "B", 0xFF1F2D30.toInt(), "Куда: ${targetOrder.dropoffAddress}"))
+            }
+        }
+        OsmMapLayer(
+            center = city.center,
+            centerKey = city.name,
+            pins = pins,
+            route = if (targetOrder != null) listOf(targetOrder.pickupPoint, targetOrder.dropoffPoint) else emptyList(),
+            routeColor = if (orderStage == DriverOrderStage.IN_TRIP) 0xFF05944F.toInt() else 0xFF0097A7.toInt(),
+            darkTheme = darkTheme,
+            fitTo = remember(targetOrder?.id) { targetOrder?.let { listOf(it.pickupPoint, it.dropoffPoint) } ?: emptyList() },
+            onTap = null,
+            modifier = modifier
+        )
     } else {
         // High-Craft Uber Driver / Yandex Pro Vector Navigation Map Canvas
         val bgBase = if (darkTheme) Color(0xFF141820) else Color(0xFFEAF0F6)

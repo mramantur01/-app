@@ -565,7 +565,8 @@ private fun PassengerControlSheet(
                 ) {
                     KgGeoCatalog.taxiTariffs.filter { it.id in FeatureFlags.ENABLED_TARIFF_IDS }.forEach { tariff ->
                         val selected = state.selectedTariffId == tariff.id
-                        val estPrice = ((tariff.baseSom + state.routeDistanceKm * tariff.perKmSom) * state.selectedCity.effectiveSurge).roundToInt()
+                        val pricedTariff = state.priced(tariff)
+                        val estPrice = ((pricedTariff.baseSom + state.routeDistanceKm * pricedTariff.perKmSom) * state.selectedCity.effectiveSurge).roundToInt()
                         val displayName = when (state.language) {
                             AppLanguage.RU -> tariff.nameRu
                             AppLanguage.KG -> tariff.nameKg
@@ -835,7 +836,7 @@ private fun PassengerControlSheet(
                             OutlinedTextField(
                                 value = state.promoCodeInput,
                                 onValueChange = viewModel::setPromoInput,
-                                placeholder = { Text("KG10 / ECO15") },
+                                placeholder = { Text("Промокод") },
                                 singleLine = true,
                                 modifier = Modifier.weight(1f)
                             )
