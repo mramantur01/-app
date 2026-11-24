@@ -178,6 +178,17 @@ fun ActiveTripCard(
                 }
             }
 
+            // How the PIN check works, so both sides understand it the same way.
+            if (ride.status == TripStatus.ASSIGNED || ride.status == TripStatus.ARRIVED) {
+                Text(
+                    "При посадке назовите водителю PIN ${ride.safetyPin} — он сверит его со своим экраном. " +
+                        "Это обычная взаимная проверка: так вы оба уверены, что это ваш заказ.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.testTag("pin_hint_passenger")
+                )
+            }
+
             LinearProgressIndicator(
                 progress = { ride.progress.coerceIn(0.05f, 1f) },
                 modifier = Modifier

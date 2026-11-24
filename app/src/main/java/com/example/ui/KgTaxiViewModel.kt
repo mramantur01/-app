@@ -2269,7 +2269,7 @@ class KgTaxiViewModel(
             }
             RideStatus.ARRIVED -> {
                 SoundAndNotificationManager.playCue(SoundCue.DRIVER_ARRIVED, sound)
-                SoundAndNotificationManager.postNotification(appContext, "Машина подъехала!", "Назовите водителю PIN $pin")
+                SoundAndNotificationManager.postNotification(appContext, "Машина подъехала!", "При посадке назовите водителю PIN $pin — он сверит его со своим экраном.")
             }
             RideStatus.IN_PROGRESS -> _uiState.update { it.copy(statusBanner = "Поездка началась. Хорошей дороги!") }
         }
