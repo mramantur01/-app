@@ -48,7 +48,8 @@ fun OsmMapLayer(
     darkTheme: Boolean,
     fitTo: List<GeoPoint>,
     onTap: ((GeoPoint) -> Unit)?,
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
+    zoom: Double = 13.5
 ) {
     val context = LocalContext.current
     val lifecycle = LocalLifecycleOwner.current.lifecycle
@@ -66,7 +67,7 @@ fun OsmMapLayer(
             isTilesScaledToDpi = true
             minZoomLevel = 6.0
             maxZoomLevel = 19.0
-            controller.setZoom(13.5)
+            controller.setZoom(zoom)
             controller.setCenter(org.osmdroid.util.GeoPoint(center.lat, center.lng))
         }
     }
@@ -98,7 +99,7 @@ fun OsmMapLayer(
     }
 
     LaunchedEffect(centerKey) {
-        mapView.controller.animateTo(org.osmdroid.util.GeoPoint(center.lat, center.lng), 13.5, 600L)
+        mapView.controller.animateTo(org.osmdroid.util.GeoPoint(center.lat, center.lng), zoom, 600L)
     }
     LaunchedEffect(fitTo) {
         if (fitTo.size >= 2) {

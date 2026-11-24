@@ -1,5 +1,6 @@
 package com.example.ui.screens
 
+import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -11,6 +12,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.testTag
@@ -35,8 +37,11 @@ fun PassengerHomeMenu(
     state: KgTaxiUiState,
     viewModel: KgTaxiViewModel,
     onOpenMyRides: () -> Unit,
+    onRequestGps: () -> Unit = {},
     modifier: Modifier = Modifier
 ) {
+    // Ask for the location once when the home opens (silent if already allowed).
+    androidx.compose.runtime.LaunchedEffect(Unit) { onRequestGps() }
     val firstName = state.profile.displayName.substringBefore(' ').takeIf { it.isNotBlank() && it != "Пассажир" && it != "Гость" }
     val hour = remember { java.util.Calendar.getInstance().get(java.util.Calendar.HOUR_OF_DAY) }
     val greeting = when (hour) {
@@ -137,6 +142,60 @@ fun PassengerHomeMenu(
                     onClick = { viewModel.openPassengerOrder(ServiceType.INTERCITY) }
                 )
             }
+        }
+
+        // Open map with "where I am" (instead of the recent list at the top).
+        Text("Вы здесь", fontWeight = FontWeight.Bold, color = KgInk)
+        Box(
+            modifier = Modifier
+                .fillMaxWidth()
+                .height(300.dp)
+                .clip(RoundedCornerShape(18.dp))
+                .testTag("home_location_map")
+        ) {
+            if (!state.offlineMode) {
+                val me = state.pickupPoint
+                com.example.ui.components.OsmMapLayer(
+                    center = me,
+                    centerKey = "${me.lat},${me.lng}",
+                    pins = buildList {
+                        state.nearbyDrivers.forEach { d ->
+                            add(com.example.ui.components.OsmPin(d.point, "", 0xFF3B82F6.toInt(), "KG Taxi", small = true))
+                        }
+                        add(com.example.ui.components.OsmPin(me, "Я", 0xFF0097A7.toInt(), state.pickupAddress))
+                    },
+                    route = emptyList(),
+                    routeColor = 0xFF0097A7.toInt(),
+                    darkTheme = false,
+                    fitTo = emptyList(),
+                    onTap = { viewModel.openPassengerOrder(ServiceType.TAXI) },
+                    zoom = 15.5,
+                    modifier = Modifier.fillMaxSize()
+                )
+            } else {
+                Box(Modifier.fillMaxSize().background(KgTurquoiseLight), contentAlignment = Alignment.Center) {
+                    Text("Нет интернета — карта недоступна", color = KgInk)
+                }
+            }
+            // Address of the current place and "my location" button.
+            Surface(
+                shape = RoundedCornerShape(12.dp),
+                color = Color.White,
+                shadowElevation = 4.dp,
+                modifier = Modifier.align(Alignment.TopStart).padding(10.dp).fillMaxWidth(0.78f)
+            ) {
+                Row(modifier = Modifier.padding(horizontal = 10.dp, vertical = 8.dp), verticalAlignment = Alignment.CenterVertically) {
+                    Icon(Icons.Default.MyLocation, contentDescription = null, tint = KgTurquoise, modifier = Modifier.size(16.dp))
+                    Spacer(Modifier.width(6.dp))
+                    Text(state.pickupAddress, style = MaterialTheme.typography.bodySmall, color = KgInk, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                }
+            }
+            SmallFloatingActionButton(
+                onClick = onRequestGps,
+                containerColor = KgTurquoise,
+                contentColor = Color.White,
+                modifier = Modifier.align(Alignment.BottomEnd).padding(12.dp).testTag("home_locate_me")
+            ) { Icon(Icons.Default.GpsFixed, contentDescription = "Моё местоположение") }
         }
 
         Text("Недавние", fontWeight = FontWeight.Bold, color = KgInk)

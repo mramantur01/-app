@@ -50,7 +50,7 @@ fun PassengerHomeScreen(
 ) {
     // Home menu first (search, tiles, recent); the map and tariffs open after a choice.
     if (state.passengerHome && state.activeRide == null) {
-        PassengerHomeMenu(state = state, viewModel = viewModel, onOpenMyRides = onOpenMyRides, modifier = modifier)
+        PassengerHomeMenu(state = state, viewModel = viewModel, onOpenMyRides = onOpenMyRides, onRequestGps = onRequestGps, modifier = modifier)
         return
     }
     androidx.activity.compose.BackHandler(enabled = state.activeRide == null) { viewModel.backToPassengerHome() }
