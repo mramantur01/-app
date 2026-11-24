@@ -816,8 +816,8 @@ private fun PassengerControlSheet(
             )
         }
 
-        // Popular Landmarks / Live Search Results Carousel
-        Row(
+        // Address suggestions: only while typing in "Куда".
+        if (state.searchQuery.isNotBlank()) Row(
             modifier = Modifier.horizontalScroll(rememberScrollState()),
             horizontalArrangement = Arrangement.spacedBy(8.dp)
         ) {
@@ -942,7 +942,7 @@ private fun PassengerControlSheet(
                         if (pb.kgOneDiscountSom > 0) PriceRow("Подписка KG Plus (-7% + защита спроса)", "-${pb.kgOneDiscountSom} ${strings.currencySom}", UberGreen)
                         if (pb.promoDiscountSom > 0) PriceRow("Промокод (-${state.appliedPromoPercent}%)", "-${pb.promoDiscountSom} ${strings.currencySom}", UberGreen)
                         if (pb.bonusUsedSom > 0) PriceRow("Списано бонусов", "-${pb.bonusUsedSom} ${strings.currencySom}", UberGreen)
-                        if (pb.kgPlusCashbackSom > 0) PriceRow(if (state.profile.kgOneActive) "Кэшбэк KG Plus (10%)" else "Кэшбэк баллами (5%)", "+${pb.kgPlusCashbackSom} б.", UberBlue)
+                        if (FeatureFlags.WALLET && pb.kgPlusCashbackSom > 0) PriceRow(if (state.profile.kgOneActive) "Кэшбэк KG Plus (10%)" else "Кэшбэк баллами (5%)", "+${pb.kgPlusCashbackSom} б.", UberBlue)
                         if (pb.splitCount > 1) PriceRow("Split Fare (÷${pb.splitCount})", "${pb.perPersonSom} ${strings.currencySom}/чел", UberBlue)
 
                         // Promo code + Bonus toggle
@@ -961,7 +961,8 @@ private fun PassengerControlSheet(
                                 Text(strings.apply)
                             }
                         }
-                        Row(
+                        // Bonus points are off with the wallet.
+                        if (FeatureFlags.WALLET) Row(
                             modifier = Modifier.fillMaxWidth(),
                             horizontalArrangement = Arrangement.SpaceBetween,
                             verticalAlignment = Alignment.CenterVertically
