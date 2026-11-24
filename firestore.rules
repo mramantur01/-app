@@ -388,6 +388,11 @@ service cloud.firestore {
              data.dropoffLng is number && data.dropoffLng >= -180 && data.dropoffLng <= 180 &&
              data.priceSom is int && data.priceSom > 0 && data.priceSom <= 100000 &&
              data.paymentMethod == 'CASH' &&
+             // Intercity pre-order: departure from now up to 14 days ahead, 1..6 seats.
+             (!('scheduledAt' in data) ||
+              (data.serviceType == 'INTERCITY' && data.scheduledAt is timestamp &&
+               data.scheduledAt > request.time && data.scheduledAt < request.time + duration.value(14, 'd'))) &&
+             (!('seats' in data) || (data.seats is int && data.seats >= 1 && data.seats <= 6)) &&
              isValidTimestamp(data.createdAt) &&
              isValidTimestamp(data.updatedAt);
     }
@@ -402,7 +407,7 @@ service cloud.firestore {
                        incoming().keys().hasOnly(['passengerId', 'passengerName', 'passengerPhone', 'status', 'driverId', 'serviceType',
                                                   'city', 'pickupAddress', 'dropoffAddress', 'pickupLat', 'pickupLng',
                                                   'dropoffLat', 'dropoffLng', 'priceSom', 'paymentMethod', 'comment',
-                                                  'createdAt', 'updatedAt']) &&
+                                                  'scheduledAt', 'seats', 'createdAt', 'updatedAt']) &&
                        isValidRideCreate(incoming());
 
       allow get: if isSignedIn() && (
@@ -420,7 +425,7 @@ service cloud.firestore {
       allow update: if isSignedIn() && isValidTimestamp(incoming().updatedAt) && (
         // The passenger cancels before the trip starts.
         (existing().passengerId == request.auth.uid &&
-         existing().status in ['SEARCHING', 'ASSIGNED', 'ARRIVED'] &&
+         existing().status in ['SEARCHING', 'BOOKED', 'ASSIGNED', 'ARRIVED'] &&
          incoming().status == 'CANCELLED' &&
          onlyChanged(['status', 'updatedAt', 'cancelReason']) &&
          (!('cancelReason' in incoming()) || (incoming().cancelReason is string && incoming().cancelReason.size() <= 100))) ||
@@ -445,6 +450,28 @@ service cloud.firestore {
          incoming().driverId == request.auth.uid &&
          onlyChanged(['status', 'driverId', 'driverName', 'driverCar', 'driverPlate', 'driverPayPhone', 'driverRatingAvg', 'updatedAt']) &&
          (!('driverRatingAvg' in incoming()) || (incoming().driverRatingAvg is number && incoming().driverRatingAvg >= 0 && incoming().driverRatingAvg <= 5))) ||
+        // A driver books an intercity pre-order for later.
+        (isDriver() &&
+         existing().status == 'SEARCHING' &&
+         existing().driverId == null &&
+         'scheduledAt' in existing() &&
+         incoming().status == 'BOOKED' &&
+         incoming().driverId == request.auth.uid &&
+         onlyChanged(['status', 'driverId', 'driverName', 'driverCar', 'driverPlate', 'driverPayPhone', 'driverRatingAvg', 'updatedAt']) &&
+         (!('driverRatingAvg' in incoming()) || (incoming().driverRatingAvg is number && incoming().driverRatingAvg >= 0 && incoming().driverRatingAvg <= 5))) ||
+        // The booked driver starts the pre-order trip.
+        (isDriver() &&
+         existing().driverId == request.auth.uid &&
+         existing().status == 'BOOKED' &&
+         incoming().status == 'ASSIGNED' &&
+         onlyChanged(['status', 'updatedAt'])) ||
+        // The booked driver gives the pre-order back to other drivers.
+        (isDriver() &&
+         existing().driverId == request.auth.uid &&
+         existing().status == 'BOOKED' &&
+         incoming().status == 'SEARCHING' &&
+         incoming().driverId == null &&
+         onlyChanged(['status', 'driverId', 'driverName', 'driverCar', 'driverPlate', 'driverPayPhone', 'driverRatingAvg', 'updatedAt'])) ||
         // The assigned driver moves the trip forward or cancels it.
         (isDriver() &&
          existing().driverId == request.auth.uid &&

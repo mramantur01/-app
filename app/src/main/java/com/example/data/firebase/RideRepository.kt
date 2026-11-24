@@ -25,6 +25,8 @@ object RideStatus {
     const val IN_PROGRESS = "IN_PROGRESS"
     const val COMPLETED = "COMPLETED"
     const val CANCELLED = "CANCELLED"
+    /** Intercity pre-order taken by a driver; the trip starts later (BOOKED -> ASSIGNED). */
+    const val BOOKED = "BOOKED"
 
     val ACTIVE = setOf(SEARCHING, ASSIGNED, ARRIVED, IN_PROGRESS)
 }
@@ -61,9 +63,16 @@ data class SharedRide(
     val passengerRating: Int? = null,
     /** Driver's average rating at the moment of accepting. */
     val driverRatingAvg: Double? = null,
-    val cancelReason: String? = null
+    val cancelReason: String? = null,
+    /** Departure time of an intercity pre-order, null for "right now" orders. */
+    val scheduledAtMillis: Long? = null,
+    val seats: Int? = null
 ) {
     val isActive: Boolean get() = status in RideStatus.ACTIVE
+
+    /** A pre-order that leaves more than 30 minutes from now (not for the "now" order feed). */
+    val isFuturePreorder: Boolean
+        get() = scheduledAtMillis != null && scheduledAtMillis > System.currentTimeMillis() + 30 * 60_000L
 
     companion object {
         fun from(snap: DocumentSnapshot): SharedRide? {
@@ -95,7 +104,9 @@ data class SharedRide(
                 driverRating = snap.getLong("driverRating")?.toInt(),
                 passengerRating = snap.getLong("passengerRating")?.toInt(),
                 driverRatingAvg = snap.getDouble("driverRatingAvg"),
-                cancelReason = snap.getString("cancelReason")
+                cancelReason = snap.getString("cancelReason"),
+                scheduledAtMillis = snap.getTimestamp("scheduledAt")?.toDate()?.time,
+                seats = snap.getLong("seats")?.toInt()
             )
         }
     }
@@ -132,7 +143,9 @@ class RideRepository(
         dropoffLng: Double,
         priceSom: Int,
         comment: String?,
-        passengerPhone: String = ""
+        passengerPhone: String = "",
+        scheduledAtMillis: Long? = null,
+        seats: Int? = null
     ): Result<String> {
         val uid = currentUid ?: return Result.failure(IllegalStateException("Войдите в аккаунт, чтобы заказать"))
         val doc = rides.document()
@@ -156,6 +169,10 @@ class RideRepository(
         )
         if (!comment.isNullOrBlank()) payload["comment"] = comment.take(200)
         if (passengerPhone.isNotBlank()) payload["passengerPhone"] = passengerPhone.take(20)
+        if (scheduledAtMillis != null) {
+            payload["scheduledAt"] = com.google.firebase.Timestamp(java.util.Date(scheduledAtMillis))
+        }
+        if (seats != null) payload["seats"] = seats.coerceIn(1, 6)
         return runWrite(OperationType.CREATE, "rides/${doc.id}") {
             doc.set(payload).await()
             doc.id
@@ -193,7 +210,7 @@ class RideRepository(
     fun observeActiveRides(): Flow<List<SharedRide>> {
         if (currentUid == null) return emptyFlow()
         return rides
-            .whereIn("status", RideStatus.ACTIVE.toList())
+            .whereIn("status", (RideStatus.ACTIVE + RideStatus.BOOKED).toList())
             .orderBy("createdAt", Query.Direction.DESCENDING)
             .limit(100)
             .snapshots()
@@ -286,6 +303,58 @@ class RideRepository(
             Unit
         }
     }
+
+    /** A driver books an intercity pre-order for later. Same race protection as [acceptAsDriver]. */
+    suspend fun bookPreorder(
+        rideId: String,
+        driverName: String,
+        driverCar: String,
+        driverPlate: String,
+        driverPayPhone: String = "",
+        driverRatingAvg: Double? = null
+    ): Result<Unit> {
+        val uid = currentUid ?: return Result.failure(IllegalStateException("Войдите в аккаунт"))
+        val ref = rides.document(rideId)
+        return runWrite(OperationType.UPDATE, "rides/$rideId") {
+            db.runTransaction { tx ->
+                val snap = tx.get(ref)
+                if (snap.getString("status") != RideStatus.SEARCHING || snap.getString("driverId") != null) {
+                    throw IllegalStateException("Предзаказ уже взял другой водитель")
+                }
+                tx.update(
+                    ref,
+                    mapOf(
+                        "status" to RideStatus.BOOKED,
+                        "driverId" to uid,
+                        "driverName" to driverName.ifBlank { "Водитель" }.take(80),
+                        "driverCar" to driverCar.take(80),
+                        "driverPlate" to driverPlate.take(20),
+                        "driverPayPhone" to driverPayPhone.take(20),
+                        "driverRatingAvg" to (driverRatingAvg ?: 0.0),
+                        "updatedAt" to FieldValue.serverTimestamp()
+                    )
+                )
+            }.await()
+            Unit
+        }
+    }
+
+    /** The booked driver gives the pre-order back to other drivers. */
+    suspend fun releasePreorder(rideId: String): Result<Unit> =
+        runWrite(OperationType.UPDATE, "rides/$rideId") {
+            rides.document(rideId).update(
+                mapOf(
+                    "status" to RideStatus.SEARCHING,
+                    "driverId" to null,
+                    "driverName" to null,
+                    "driverCar" to null,
+                    "driverPlate" to null,
+                    "driverPayPhone" to null,
+                    "driverRatingAvg" to null,
+                    "updatedAt" to FieldValue.serverTimestamp()
+                )
+            ).await()
+        }
 
     /** The assigned driver moves the trip: ARRIVED, IN_PROGRESS, COMPLETED or CANCELLED. */
     suspend fun setStatusAsDriver(rideId: String, newStatus: String): Result<Unit> =

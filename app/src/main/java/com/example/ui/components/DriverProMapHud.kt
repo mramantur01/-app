@@ -69,10 +69,14 @@ fun DriverLineMapCockpit(
     onOpenMeetGreetPlacard: () -> Unit,
     onTriggerSos: () -> Unit,
     onToggleTariff: (String) -> Unit = {},
+    onBookPreorder: (String) -> Unit = {},
+    onReleasePreorder: (String) -> Unit = {},
+    onStartPreorder: (com.example.data.firebase.SharedRide) -> Unit = {},
     modifier: Modifier = Modifier
 ) {
     val context = LocalContext.current
     var showLineSettings by remember { mutableStateOf(false) }
+    var showPreorders by remember { mutableStateOf(false) }
 
     // Sort incoming offers so home-bound orders appear first when Destination Filter is active
     val targetKey = state.driverHomeTargetDistrict.substringBefore(" /").trim()
@@ -458,24 +462,43 @@ fun DriverLineMapCockpit(
 
                 // STATE A2: ONLINE — waiting for orders. Clean screen, one big button to leave the line.
                 state.driverOnline -> {
-                    DriverWaitingForOrdersCard(
-                        city = state.selectedCity.name,
-                        todayEarningsSom = state.driverTodayEarningsSom,
-                        tripsToday = state.driverQuestTripsDone,
-                        onGoOffline = onToggleOnline
-                    )
+                    Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                        DriverPreordersButton(state = state, onClick = { showPreorders = true })
+                        DriverWaitingForOrdersCard(
+                            city = state.selectedCity.name,
+                            todayEarningsSom = state.driverTodayEarningsSom,
+                            tripsToday = state.driverQuestTripsDone,
+                            onGoOffline = onToggleOnline
+                        )
+                    }
                 }
 
                 // STATE A: OFFLINE — ICONIC BIG ROUND UBER "НА ЛИНИЮ" (GO) BUTTON + DEMAND CARD
                 else -> {
-                    DriverOfflineCard(
-                        state = state,
-                        onOpenSettings = { showLineSettings = true },
-                        onGoOnline = onToggleOnline
-                    )
+                    Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                        DriverPreordersButton(state = state, onClick = { showPreorders = true })
+                        DriverOfflineCard(
+                            state = state,
+                            onOpenSettings = { showLineSettings = true },
+                            onGoOnline = onToggleOnline
+                        )
+                    }
                 }
             }
         }
+    }
+
+    if (showPreorders) {
+        DriverPreordersSheet(
+            state = state,
+            onBook = onBookPreorder,
+            onRelease = onReleasePreorder,
+            onStart = { ride ->
+                showPreorders = false
+                onStartPreorder(ride)
+            },
+            onDismiss = { showPreorders = false }
+        )
     }
 
     if (showLineSettings) {
@@ -1120,6 +1143,136 @@ private fun DriverNavigationMapSurface(
 
 
 /** Driver is on the line and waiting: nothing else on screen, so it is easy to use while driving. */
+/** Small button above the line card: intercity pre-orders (free ones and mine). */
+@Composable
+private fun DriverPreordersButton(state: KgTaxiUiState, onClick: () -> Unit) {
+    if (!com.example.FeatureFlags.REAL_RIDES) return
+    val free = state.driverOpenPreorders.size
+    val mine = state.driverBookedPreorders.size
+    Surface(
+        onClick = onClick,
+        shape = RoundedCornerShape(16.dp),
+        color = MaterialTheme.colorScheme.surface,
+        shadowElevation = 8.dp,
+        modifier = Modifier.fillMaxWidth().testTag("driver_preorders_button")
+    ) {
+        Row(
+            modifier = Modifier.padding(horizontal = 16.dp, vertical = 12.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(10.dp)
+        ) {
+            Icon(Icons.Default.Event, contentDescription = null, tint = UberBlue)
+            Column(modifier = Modifier.weight(1f)) {
+                Text("Предзаказы межгорода", fontWeight = FontWeight.Bold)
+                Text(
+                    "Свободных: $free • Моих: $mine",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
+            Icon(Icons.Default.ChevronRight, contentDescription = null)
+        }
+    }
+}
+
+/** List of my booked pre-orders and free ones in the city. */
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun DriverPreordersSheet(
+    state: KgTaxiUiState,
+    onBook: (String) -> Unit,
+    onRelease: (String) -> Unit,
+    onStart: (com.example.data.firebase.SharedRide) -> Unit,
+    onDismiss: () -> Unit
+) {
+    val context = LocalContext.current
+    ModalBottomSheet(onDismissRequest = onDismiss) {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .verticalScroll(rememberScrollState())
+                .padding(horizontal = 18.dp)
+                .padding(bottom = 24.dp),
+            verticalArrangement = Arrangement.spacedBy(12.dp)
+        ) {
+            Text("Мои предзаказы", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
+            if (state.driverBookedPreorders.isEmpty()) {
+                Text(
+                    "Пока нет. Возьмите заказ из списка ниже.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
+            state.driverBookedPreorders.forEach { r ->
+                PreorderRow(r) {
+                    Button(onClick = { onStart(r) }, modifier = Modifier.testTag("preorder_start_${r.id}")) {
+                        Text("Начать поездку")
+                    }
+                    if (r.passengerPhone.isNotBlank()) {
+                        OutlinedButton(onClick = {
+                            runCatching {
+                                context.startActivity(
+                                    android.content.Intent(
+                                        android.content.Intent.ACTION_DIAL,
+                                        android.net.Uri.parse("tel:${r.passengerPhone}")
+                                    )
+                                )
+                            }
+                        }) { Icon(Icons.Default.Call, contentDescription = "Позвонить пассажиру") }
+                    }
+                    TextButton(onClick = { onRelease(r.id) }) { Text("Отказаться") }
+                }
+            }
+            HorizontalDivider()
+            Text("Свободные • ${state.selectedCity.name}", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
+            if (state.driverOpenPreorders.isEmpty()) {
+                Text(
+                    "Сейчас свободных предзаказов нет.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
+            state.driverOpenPreorders.forEach { r ->
+                PreorderRow(r) {
+                    Button(onClick = { onBook(r.id) }, modifier = Modifier.testTag("preorder_book_${r.id}")) {
+                        Text("Взять предзаказ")
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun PreorderRow(r: com.example.data.firebase.SharedRide, actions: @Composable RowScope.() -> Unit) {
+    Surface(shape = RoundedCornerShape(16.dp), color = MaterialTheme.colorScheme.surfaceVariant, modifier = Modifier.fillMaxWidth()) {
+        Column(modifier = Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+            Text(
+                r.scheduledAtMillis?.let { com.example.util.formatDeparture(it) }.orEmpty(),
+                style = MaterialTheme.typography.titleMedium,
+                fontWeight = FontWeight.ExtraBold,
+                color = UberBlue
+            )
+            Text("${r.city} → ${r.dropoffAddress}", fontWeight = FontWeight.SemiBold)
+            Text(
+                "Откуда: ${r.pickupAddress}",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+            Text(
+                "${r.passengerName} • ${r.seats ?: 1} мест. • ${r.priceSom} сом наличными",
+                style = MaterialTheme.typography.bodyMedium
+            )
+            Row(
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                verticalAlignment = Alignment.CenterVertically,
+                modifier = Modifier.padding(top = 4.dp),
+                content = actions
+            )
+        }
+    }
+}
+
 @Composable
 private fun DriverWaitingForOrdersCard(
     city: String,

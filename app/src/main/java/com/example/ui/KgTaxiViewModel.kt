@@ -12,6 +12,7 @@ import com.example.data.firebase.FirestoreSyncRepository
 import com.example.data.firebase.RideRepository
 import com.example.data.firebase.PushTokenRegistry
 import com.example.data.firebase.RideStatus
+import com.example.util.formatDeparture
 import com.example.data.firebase.SharedRide
 import com.example.data.local.AppPreferencesStore
 import com.example.data.local.KgTaxiDao
@@ -118,7 +119,15 @@ data class KgTaxiUiState(
     val cargoLoaders: Int = 1,
     val selectedIntercityRoute: IntercityRoute = KgGeoCatalog.intercityRoutes.first(),
     val selectedIntercitySeats: Set<Int> = setOf(2),
-    val occupiedIntercitySeats: Set<Int> = setOf(1, 4),
+    val occupiedIntercitySeats: Set<Int> = emptySet(),
+    /** Departure of an intercity pre-order; null = "right now". */
+    val intercityDepartureMillis: Long? = null,
+    /** Passenger's intercity pre-orders that haven't started yet (searching or booked). */
+    val passengerPreorders: List<SharedRide> = emptyList(),
+    /** Open intercity pre-orders in the driver's city. */
+    val driverOpenPreorders: List<SharedRide> = emptyList(),
+    /** Pre-orders this driver has booked. */
+    val driverBookedPreorders: List<SharedRide> = emptyList(),
     val selectedVenueId: String = KgGeoCatalog.foodVenues.first().id,
     val foodCart: List<FoodCartEntry> = emptyList(),
     // Active Trip, Driver Chat & Post-Trip
@@ -370,6 +379,8 @@ class KgTaxiViewModel(
     private var passengerChatJob: Job? = null
     private var driverChatJob: Job? = null
     private var driverHistoryJob: Job? = null
+    private var passengerPreordersJob: Job? = null
+    private var driverPreordersJob: Job? = null
     private var verifiedDriverCar: String = ""
     private var verifiedDriverPlate: String = ""
     private var verifiedDriverPayPhone: String = ""
@@ -470,6 +481,7 @@ class KgTaxiViewModel(
         }
         refreshAllowedRoles()
         syncPushToken()
+        startPassengerPreorders()
 
         viewModelScope.launch {
             val current = _uiState.value.profile
@@ -626,6 +638,11 @@ class KgTaxiViewModel(
     }
 
     fun onUserSignedOut() {
+        passengerPreordersJob?.cancel()
+        passengerPreordersJob = null
+        driverPreordersJob?.cancel()
+        driverPreordersJob = null
+        _uiState.update { it.copy(passengerPreorders = emptyList(), driverOpenPreorders = emptyList(), driverBookedPreorders = emptyList()) }
         stopDispatcherFeed()
         stopDriverOrderFeed()
         stopCloudObservers()
@@ -647,7 +664,10 @@ class KgTaxiViewModel(
             verifiedDriverPlate = info.plate
             verifiedDriverPayPhone = info.payPhone
             _uiState.update { it.copy(driverCar = info.car, driverPlate = info.plate) }
-            if (info.role == "driver") startDriverHistory() else stopDriverHistory()
+            if (info.role == "driver") {
+                startDriverHistory()
+                startDriverPreorders(_uiState.value.selectedCity.name)
+            } else stopDriverHistory()
             // Matches firestore.rules: only "driver" may take orders; dispatchers see the panel.
             val allowed = when (info.role) {
                 "driver" -> setOf(AppRole.PASSENGER, AppRole.DRIVER)
@@ -709,6 +729,8 @@ class KgTaxiViewModel(
                         driverRatingAvg = if (rated.isEmpty()) null else rated.average(),
                         driverRatingCount = rated.size,
                         driverHistory = list,
+                        driverBookedPreorders = list.filter { r -> r.status == RideStatus.BOOKED }
+                            .sortedBy { r -> r.scheduledAtMillis ?: 0L },
                         driverTodayEarningsSom = today.sumOf { r -> net(r) },
                         driverQuestTripsDone = today.size,
                         driverWeeklyEarnings = week
@@ -721,7 +743,150 @@ class KgTaxiViewModel(
     private fun stopDriverHistory() {
         driverHistoryJob?.cancel()
         driverHistoryJob = null
-        _uiState.update { it.copy(driverHistory = emptyList()) }
+        driverPreordersJob?.cancel()
+        driverPreordersJob = null
+        _uiState.update { it.copy(driverHistory = emptyList(), driverOpenPreorders = emptyList(), driverBookedPreorders = emptyList()) }
+    }
+
+    // --- INTERCITY PRE-ORDERS ---
+
+    /** Passenger: watches own pre-orders; when the driver starts one, it opens like a normal trip. */
+    private fun startPassengerPreorders() {
+        if (!FeatureFlags.REAL_RIDES) return
+        passengerPreordersJob?.cancel()
+        passengerPreordersJob = viewModelScope.launch {
+            var known = emptyMap<String, String>()
+            rides.observeMyRides(asDriver = false, limit = 30).collect { list ->
+                val pre = list.filter { it.scheduledAtMillis != null }
+                pre.forEach { r ->
+                    if (known[r.id] == RideStatus.SEARCHING && r.status == RideStatus.BOOKED) {
+                        val text = "${r.driverName ?: "Водитель"} • ${r.driverCar.orEmpty()} ${r.driverPlate.orEmpty()}".trim()
+                        SoundAndNotificationManager.playCue(SoundCue.DRIVER_ASSIGNED, _uiState.value.soundEnabled)
+                        SoundAndNotificationManager.postNotification(appContext, "Водитель взял ваш предзаказ", text)
+                        _uiState.update { it.copy(statusBanner = "Водитель взял ваш предзаказ: $text") }
+                    }
+                }
+                known = pre.associate { it.id to it.status }
+                val waiting = pre.filter { it.status == RideStatus.SEARCHING || it.status == RideStatus.BOOKED }
+                    .sortedBy { it.scheduledAtMillis ?: 0L }
+                _uiState.update { it.copy(passengerPreorders = waiting) }
+                val started = pre.firstOrNull {
+                    it.status in setOf(RideStatus.ASSIGNED, RideStatus.ARRIVED, RideStatus.IN_PROGRESS)
+                }
+                if (started != null && _uiState.value.activeRide == null && passengerRideId == null) {
+                    attachPassengerRide(started)
+                }
+            }
+        }
+    }
+
+    private fun attachPassengerRide(shared: SharedRide) {
+        val pickup = GeoPoint(shared.pickupLat, shared.pickupLng)
+        val dropoff = GeoPoint(shared.dropoffLat, shared.dropoffLng)
+        val km = KgGeoCatalog.haversineKm(pickup, dropoff)
+        val ride = ActiveRideState(
+            tripId = shared.id,
+            serviceType = if (shared.serviceType == "INTERCITY") ServiceType.INTERCITY else ServiceType.TAXI,
+            tariffName = if (shared.serviceType == "INTERCITY") "Межгород" else "Такси",
+            city = shared.city,
+            pickupAddress = shared.pickupAddress,
+            dropoffAddress = shared.dropoffAddress,
+            pickupPoint = pickup,
+            dropoffPoint = dropoff,
+            distanceKm = (km * 10).roundToInt() / 10.0,
+            durationMin = max(3, (km / 0.45).roundToInt()),
+            totalPriceSom = shared.priceSom,
+            paymentMethod = PaymentMethod.CASH,
+            status = TripStatus.SEARCHING,
+            driverName = shared.driverName ?: "Водитель",
+            driverCar = shared.driverCar.orEmpty(),
+            driverRating = shared.driverRatingAvg ?: 0.0,
+            driverEtaMin = 0,
+            safetyPin = shared.comment?.substringAfter("PIN ", "")?.take(4).orEmpty(),
+            progress = 0f,
+            scheduledLabel = shared.scheduledAtMillis?.let { formatDeparture(it) }
+        )
+        passengerRideId = shared.id
+        _uiState.update { it.copy(activeRide = ride, driverChatMessages = emptyList()) }
+        startPassengerChat(shared.id)
+        observePassengerRide(shared.id)
+    }
+
+    fun setIntercityDeparture(millis: Long?) =
+        _uiState.update { it.copy(intercityDepartureMillis = millis) }
+
+    fun cancelPreorder(rideId: String) {
+        viewModelScope.launch {
+            val res = rides.cancelAsPassenger(rideId, "Отменил предзаказ")
+            _uiState.update {
+                it.copy(statusBanner = if (res.isSuccess) "Предзаказ отменён" else "Не удалось отменить. Проверьте интернет.")
+            }
+        }
+    }
+
+    /** Driver: open pre-orders in the city (visible even when not on the line). */
+    private fun startDriverPreorders(city: String) {
+        if (!FeatureFlags.REAL_RIDES) return
+        driverPreordersJob?.cancel()
+        driverPreordersJob = viewModelScope.launch {
+            rides.observeOpenRides(city).collect { open ->
+                _uiState.update {
+                    it.copy(driverOpenPreorders = open.filter { r -> r.scheduledAtMillis != null }
+                        .sortedBy { r -> r.scheduledAtMillis ?: 0L })
+                }
+            }
+        }
+    }
+
+    fun bookDriverPreorder(rideId: String) {
+        viewModelScope.launch {
+            val res = rides.bookPreorder(
+                rideId = rideId,
+                driverName = _uiState.value.profile.displayName,
+                driverCar = verifiedDriverCar,
+                driverPlate = verifiedDriverPlate,
+                driverPayPhone = verifiedDriverPayPhone,
+                driverRatingAvg = _uiState.value.driverRatingAvg
+            )
+            _uiState.update {
+                it.copy(
+                    statusBanner = res.fold(
+                        { "Предзаказ ваш. Пассажир получил уведомление." },
+                        { e -> e.message ?: "Не удалось взять предзаказ" }
+                    )
+                )
+            }
+        }
+    }
+
+    fun releaseDriverPreorder(rideId: String) {
+        viewModelScope.launch {
+            val res = rides.releasePreorder(rideId)
+            _uiState.update {
+                it.copy(statusBanner = if (res.isSuccess) "Вы отказались от предзаказа. Он снова доступен другим водителям." else "Не удалось. Проверьте интернет.")
+            }
+        }
+    }
+
+    /** Driver starts the booked pre-order: from here it is a normal trip. */
+    fun startDriverPreorder(ride: SharedRide) {
+        if (driverRideId != null || _uiState.value.driverAcceptedOrder != null) {
+            _uiState.update { it.copy(statusBanner = "Сначала завершите текущий заказ.") }
+            return
+        }
+        viewModelScope.launch {
+            val res = rides.setStatusAsDriver(ride.id, RideStatus.ASSIGNED)
+            res.onSuccess {
+                if (!_uiState.value.driverOnline) toggleDriverOnline()
+                driverRideId = ride.id
+                applyAcceptedDriverOrder(ride.toDriverOrder(_uiState.value.pickupPoint))
+                startDriverLocationSharing(ride.id)
+                watchDriverRide(ride.id)
+                startDriverChat(ride.id)
+            }.onFailure {
+                _uiState.update { it.copy(statusBanner = "Не удалось начать поездку. Проверьте интернет.") }
+            }
+        }
     }
 
     // --- DRIVER APPLICATION ---
@@ -1174,15 +1339,12 @@ class KgTaxiViewModel(
         _uiState.update { it.copy(cargoVehicle = vehicle, cargoLoaders = loaders.coerceIn(0, 4)) }
 
     fun selectIntercityRoute(route: IntercityRoute) {
-        val firstScheduled = KgGeoCatalog.intercityScheduleForRoute(route.id).firstOrNull()
-        val occ = firstScheduled?.occupiedSeats ?: setOf(1, 4)
-        val firstFree = (1..6).firstOrNull { it !in occ } ?: 2
         _uiState.update {
             it.copy(
                 selectedIntercityRoute = route,
-                selectedIntercityTripId = firstScheduled?.id,
-                occupiedIntercitySeats = occ,
-                selectedIntercitySeats = setOf(firstFree)
+                selectedIntercityTripId = null,
+                occupiedIntercitySeats = emptySet(),
+                selectedIntercitySeats = it.selectedIntercitySeats.ifEmpty { setOf(2) }
             )
         }
     }
@@ -1485,6 +1647,36 @@ class KgTaxiViewModel(
             "PIN $pin"
         ).joinToString(" • ")
 
+        val departure = s.intercityDepartureMillis
+        if (isIntercity && departure != null && departure > System.currentTimeMillis() + 30 * 60_000L) {
+            _uiState.update { it.copy(statusBanner = "Отправляем предзаказ водителям…") }
+            viewModelScope.launch {
+                val created = rides.createRide(
+                    passengerName = s.profile.displayName,
+                    serviceType = s.serviceType.name,
+                    city = s.selectedCity.name,
+                    pickupAddress = s.pickupAddress,
+                    dropoffAddress = dropLabel,
+                    pickupLat = s.pickupPoint.lat,
+                    pickupLng = s.pickupPoint.lng,
+                    dropoffLat = s.dropoffPoint.lat,
+                    dropoffLng = s.dropoffPoint.lng,
+                    priceSom = price,
+                    comment = comment,
+                    passengerPhone = s.profile.phone,
+                    scheduledAtMillis = departure,
+                    seats = s.selectedIntercitySeats.size.coerceIn(1, 6)
+                )
+                _uiState.update {
+                    created.fold(
+                        { _ -> it.copy(intercityDepartureMillis = null, statusBanner = "Предзаказ на ${formatDeparture(departure)} создан. Сообщим, когда водитель его возьмёт.") },
+                        { e -> it.copy(statusBanner = "Не удалось создать предзаказ: ${e.message ?: "нет интернета"}") }
+                    )
+                }
+            }
+            return
+        }
+
         val pending = ActiveRideState(
             tripId = "pending_${System.currentTimeMillis()}",
             serviceType = s.serviceType,
@@ -1522,7 +1714,8 @@ class KgTaxiViewModel(
                 dropoffLng = s.dropoffPoint.lng,
                 priceSom = price,
                 comment = comment,
-                passengerPhone = s.profile.phone
+                passengerPhone = s.profile.phone,
+                seats = if (isIntercity) s.selectedIntercitySeats.size.coerceIn(1, 6) else null
             )
             created.onSuccess { id ->
                 passengerRideId = id
@@ -1836,7 +2029,8 @@ class KgTaxiViewModel(
                     r.toDriverOrder(myPoint).copy(
                         assignedDriverName = r.driverName,
                         tariffName = when (r.status) {
-                            RideStatus.SEARCHING -> "Ищет водителя"
+                            RideStatus.SEARCHING -> r.scheduledAtMillis?.let { "Предзаказ ${formatDeparture(it)}" } ?: "Ищет водителя"
+                            RideStatus.BOOKED -> "Предзаказ принят ${r.scheduledAtMillis?.let { formatDeparture(it) }.orEmpty()}"
                             RideStatus.ASSIGNED -> "Водитель едет"
                             RideStatus.ARRIVED -> "Водитель на месте"
                             else -> "В поездке"
@@ -1859,7 +2053,9 @@ class KgTaxiViewModel(
         driverOpenRidesJob?.cancel()
         var knownIds = emptySet<String>()
         driverOpenRidesJob = viewModelScope.launch {
-            rides.observeOpenRides(city.name).collect { open ->
+            startDriverPreorders(city.name)
+            rides.observeOpenRides(city.name).collect { all ->
+                val open = all.filterNot { it.isFuturePreorder }
                 val myPoint = _uiState.value.pickupPoint
                 val orders = open.map { it.toDriverOrder(myPoint) }
                 val fresh = open.map { it.id }.toSet() - knownIds

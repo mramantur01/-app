@@ -89,7 +89,10 @@ fun DriverCabinScreen(
                     onOpenElqrDialog = { showDriverQrDialog = true },
                     onOpenMeetGreetPlacard = { showMeetGreetPlacard = true },
                     onTriggerSos = { viewModel.triggerEmergencySos(fromActiveRide = false) },
-                    onToggleTariff = viewModel::toggleDriverTariff
+                    onToggleTariff = viewModel::toggleDriverTariff,
+                    onBookPreorder = viewModel::bookDriverPreorder,
+                    onReleasePreorder = viewModel::releaseDriverPreorder,
+                    onStartPreorder = viewModel::startDriverPreorder
                 )
 
                 DriverCabinTab.EARNINGS -> DriverEarningsTabContent(

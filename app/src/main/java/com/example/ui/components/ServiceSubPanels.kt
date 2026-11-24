@@ -322,13 +322,10 @@ fun IntercitySeatPickerPanel(
     strings: KgStrings,
     state: KgTaxiUiState,
     onSelectRoute: (IntercityRoute) -> Unit,
-    onSelectScheduledTrip: (IntercityScheduledTrip) -> Unit,
+    onSetDeparture: (Long?) -> Unit,
     onToggleSeat: (Int) -> Unit,
     onRequestTourGuide: (String) -> Unit
 ) {
-    val scheduledTrips = remember(state.selectedIntercityRoute.id) {
-        KgGeoCatalog.intercityScheduleForRoute(state.selectedIntercityRoute.id)
-    }
     Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
         Text("Направление межгород", style = MaterialTheme.typography.titleSmall)
         Row(
@@ -345,16 +342,13 @@ fun IntercitySeatPickerPanel(
             }
         }
 
-        // Live Scheduled Departures with real-time free seat badges
-        IntercityLiveScheduleCard(
-            route = state.selectedIntercityRoute,
-            trips = scheduledTrips,
-            selectedTripId = state.selectedIntercityTripId,
-            onSelectTrip = onSelectScheduledTrip
+        IntercityDeparturePicker(
+            departureMillis = state.intercityDepartureMillis,
+            onSetDeparture = onSetDeparture
         )
 
-        // Interactive 6-Seat Cabin Visual Picker
-        Text(strings.seatSelectionTitle, style = MaterialTheme.typography.titleSmall)
+        // Seat picker: how many seats and which ones.
+        Text("Выберите места (${state.selectedIntercitySeats.size})", style = MaterialTheme.typography.titleSmall)
         Surface(
             shape = RoundedCornerShape(20.dp),
             color = MaterialTheme.colorScheme.surfaceVariant,
@@ -368,7 +362,7 @@ fun IntercitySeatPickerPanel(
                 horizontalAlignment = Alignment.CenterHorizontally
             ) {
                 Text(
-                    text = "ПЕРЕДНЯЯ ЧАСТЬ САЛОНА (HONDA STEPWGN / ALPHARD)",
+                    text = "ПЕРЕДНЯЯ ЧАСТЬ САЛОНА",
                     style = MaterialTheme.typography.labelSmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
@@ -443,8 +437,10 @@ fun IntercitySeatPickerPanel(
             }
         }
 
-        // Live Kyrgyzstan Mountain Passes Status (Too-Ashuu, Boom Gorge, Ala-Bel, Otmok)
-        MountainPassesStatusCard(passes = state.mountainPasses)
+        // Mountain pass statuses are sample data for now: shown only in demo builds.
+        if (com.example.FeatureFlags.DEMO_EXTRAS) {
+            MountainPassesStatusCard(passes = state.mountainPasses)
+        }
 
         // AI Audio Tour Guide along the intercity highway
         AiTourGuideCard(
@@ -454,6 +450,83 @@ fun IntercitySeatPickerPanel(
             isLoading = state.tourGuideLoading,
             onRequestStory = onRequestTourGuide
         )
+    }
+}
+
+/** "Когда ехать": now, or a day (today / tomorrow / day after) and an hour. */
+@Composable
+private fun IntercityDeparturePicker(
+    departureMillis: Long?,
+    onSetDeparture: (Long?) -> Unit
+) {
+    val now = System.currentTimeMillis()
+    val dayNames = listOf("Сегодня", "Завтра", "Послезавтра")
+    // Which day is selected: -1 = now.
+    val selectedDay = departureMillis?.let { d ->
+        (0..2).firstOrNull { day ->
+            d >= com.example.util.departureMillis(day, 0, now) && d < com.example.util.departureMillis(day + 1, 0, now)
+        }
+    } ?: -1
+    val selectedHour = departureMillis?.let {
+        java.util.Calendar.getInstance().apply { timeInMillis = it }.get(java.util.Calendar.HOUR_OF_DAY)
+    }
+    // First hour bookable today: at least an hour from now.
+    fun hoursFor(day: Int): List<Int> = (5..23).filter { h ->
+        com.example.util.departureMillis(day, h, now) > now + 60 * 60_000L
+    }
+
+    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        Text("Когда ехать", style = MaterialTheme.typography.titleSmall)
+        Row(
+            modifier = Modifier.horizontalScroll(rememberScrollState()),
+            horizontalArrangement = Arrangement.spacedBy(8.dp)
+        ) {
+            FilterChip(
+                selected = selectedDay == -1,
+                onClick = { onSetDeparture(null) },
+                label = { Text("Сейчас") },
+                modifier = Modifier.testTag("intercity_when_now")
+            )
+            dayNames.forEachIndexed { day, name ->
+                val hours = hoursFor(day)
+                FilterChip(
+                    selected = selectedDay == day,
+                    enabled = hours.isNotEmpty(),
+                    onClick = {
+                        val keepHour = selectedHour?.takeIf { it in hours } ?: hours.firstOrNull { it >= 8 } ?: hours.first()
+                        onSetDeparture(com.example.util.departureMillis(day, keepHour, now))
+                    },
+                    label = { Text(name) },
+                    modifier = Modifier.testTag("intercity_when_day_$day")
+                )
+            }
+        }
+        if (selectedDay >= 0) {
+            Row(
+                modifier = Modifier.horizontalScroll(rememberScrollState()),
+                horizontalArrangement = Arrangement.spacedBy(6.dp)
+            ) {
+                hoursFor(selectedDay).forEach { h ->
+                    FilterChip(
+                        selected = selectedHour == h,
+                        onClick = { onSetDeparture(com.example.util.departureMillis(selectedDay, h, now)) },
+                        label = { Text(String.format(java.util.Locale.US, "%02d:00", h)) }
+                    )
+                }
+            }
+            Text(
+                "Предзаказ на ${departureMillis?.let { com.example.util.formatDeparture(it) }.orEmpty()}. " +
+                    "Водители увидят его заранее, вы получите уведомление, когда кто-то возьмёт заказ.",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+        } else {
+            Text(
+                "Ищем водителя прямо сейчас.",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+        }
     }
 }
 

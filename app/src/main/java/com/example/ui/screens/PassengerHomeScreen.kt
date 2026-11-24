@@ -491,6 +491,14 @@ private fun PassengerControlSheet(
             }
         }
 
+        // Intercity pre-orders waiting for their departure.
+        if (state.passengerPreorders.isNotEmpty()) {
+            PassengerPreordersCard(
+                preorders = state.passengerPreorders,
+                onCancel = viewModel::cancelPreorder
+            )
+        }
+
         // Dynamic Body Based on Selected Service
         when (state.serviceType) {
             ServiceType.TAXI -> {
@@ -717,7 +725,7 @@ private fun PassengerControlSheet(
             ServiceType.HOURLY -> HourlyRentalPanel(strings, state, viewModel::setHourlyHours, viewModel::selectExcursion, viewModel::requestAiTourGuide)
             ServiceType.COURIER -> CourierPanel(state, viewModel::setCourierDetails, viewModel::setCourierParcelPhotoUri)
             ServiceType.CARGO -> CargoPanel(strings, state, viewModel::setCargoOptions)
-            ServiceType.INTERCITY -> IntercitySeatPickerPanel(strings, state, viewModel::selectIntercityRoute, viewModel::selectIntercityScheduledTrip, viewModel::toggleIntercitySeat, viewModel::requestAiTourGuide)
+            ServiceType.INTERCITY -> IntercitySeatPickerPanel(strings, state, viewModel::selectIntercityRoute, viewModel::setIntercityDeparture, viewModel::toggleIntercitySeat, viewModel::requestAiTourGuide)
             ServiceType.FOOD -> FoodDeliveryPanel(strings, state, viewModel::selectFoodVenue, viewModel::addFoodToCart, viewModel::removeFoodFromCart)
         }
 
@@ -891,7 +899,8 @@ private fun PassengerControlSheet(
                     .testTag("primary_order_ride_button")
             ) {
                 Text(
-                    text = "${strings.orderRide} • ${state.displayCurrency.formatSom(pb.finalTotalSom)}",
+                    text = (if (state.serviceType == ServiceType.INTERCITY && state.intercityDepartureMillis != null) "Предзаказать" else strings.orderRide) +
+                        " • ${state.displayCurrency.formatSom(pb.finalTotalSom)}",
                     style = MaterialTheme.typography.titleMedium,
                     fontWeight = FontWeight.ExtraBold,
                     maxLines = 1,
@@ -1130,5 +1139,75 @@ private fun PriceRow(label: String, value: String, valueColor: Color = MaterialT
     ) {
         Text(label, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
         Text(value, style = MaterialTheme.typography.labelLarge, fontFamily = JetBrainsMono, color = valueColor)
+    }
+}
+
+/** "Мои предзаказы": departure, status, driver and a call / cancel button. */
+@Composable
+private fun PassengerPreordersCard(
+    preorders: List<com.example.data.firebase.SharedRide>,
+    onCancel: (String) -> Unit
+) {
+    val context = androidx.compose.ui.platform.LocalContext.current
+    var confirmId by remember { mutableStateOf<String?>(null) }
+    Surface(
+        shape = RoundedCornerShape(18.dp),
+        color = MaterialTheme.colorScheme.surfaceVariant,
+        modifier = Modifier.fillMaxWidth().testTag("passenger_preorders_card")
+    ) {
+        Column(modifier = Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+            Text("Мои предзаказы", style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.Bold)
+            preorders.forEach { r ->
+                val booked = r.status == com.example.data.firebase.RideStatus.BOOKED
+                Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                    Text(
+                        "${r.city} → ${r.dropoffAddress}",
+                        style = MaterialTheme.typography.bodyLarge,
+                        fontWeight = FontWeight.SemiBold
+                    )
+                    Text(
+                        "${r.scheduledAtMillis?.let { com.example.util.formatDeparture(it) }.orEmpty()} • " +
+                            "${r.seats ?: 1} мест. • ${r.priceSom} сом",
+                        style = MaterialTheme.typography.bodyMedium
+                    )
+                    Text(
+                        if (booked) "Водитель: ${r.driverName.orEmpty()} • ${r.driverCar.orEmpty()} ${r.driverPlate.orEmpty()}".trim()
+                        else "Ищем водителя…",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = if (booked) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        if (booked && !r.driverPayPhone.isNullOrBlank()) {
+                            OutlinedButton(onClick = {
+                                runCatching {
+                                    context.startActivity(
+                                        android.content.Intent(
+                                            android.content.Intent.ACTION_DIAL,
+                                            android.net.Uri.parse("tel:${r.driverPayPhone}")
+                                        )
+                                    )
+                                }
+                            }) {
+                                Icon(Icons.Default.Call, contentDescription = null, modifier = Modifier.size(16.dp))
+                                Spacer(Modifier.width(4.dp))
+                                Text("Позвонить")
+                            }
+                        }
+                        TextButton(onClick = { confirmId = r.id }) { Text("Отменить") }
+                    }
+                }
+            }
+        }
+    }
+    confirmId?.let { id ->
+        AlertDialog(
+            onDismissRequest = { confirmId = null },
+            title = { Text("Отменить предзаказ?") },
+            text = { Text("Заказ пропадёт у водителя, поездки не будет.") },
+            confirmButton = {
+                TextButton(onClick = { onCancel(id); confirmId = null }) { Text("Отменить предзаказ") }
+            },
+            dismissButton = { TextButton(onClick = { confirmId = null }) { Text("Оставить") } }
+        )
     }
 }
