@@ -113,6 +113,8 @@ fun DriverCabinScreen(
         }
 
         // Authentic Uber Driver / Yandex Pro 4-Tab Bottom Navigation Bar
+        // Hidden while on the line so the driver sees only the map and the order.
+        if (!state.driverOnline && state.driverAcceptedOrder == null) {
         NavigationBar(
             containerColor = MaterialTheme.colorScheme.surface,
             tonalElevation = 6.dp,
@@ -146,6 +148,7 @@ fun DriverCabinScreen(
                 label = { Text(DriverCabinTab.PRO.label) },
                 modifier = Modifier.testTag("driver_tab_pro")
             )
+        }
         }
     }
 

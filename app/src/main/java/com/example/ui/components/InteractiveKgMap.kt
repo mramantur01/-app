@@ -229,7 +229,8 @@ fun InteractiveKgMap(
             verticalArrangement = Arrangement.spacedBy(6.dp),
             horizontalAlignment = Alignment.End
         ) {
-            Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+            // Traffic and demand layers are drawn, not real data yet: hidden with the demo extras.
+            if (com.example.FeatureFlags.DEMO_EXTRAS) Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                 // Live Traffic Layer Toggle
                 Surface(
                     onClick = onToggleTraffic,
@@ -288,7 +289,7 @@ fun InteractiveKgMap(
             }
 
             // AI Route Assistant Floating Pill
-            Surface(
+            if (com.example.FeatureFlags.AI_ASSISTANT) Surface(
                 onClick = onOpenAiAssistant,
                 shape = RoundedCornerShape(14.dp),
                 color = UberBlue,
@@ -317,7 +318,7 @@ fun InteractiveKgMap(
 
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 // Voice Search Button
-                SmallFloatingActionButton(
+                if (com.example.FeatureFlags.VOICE_COMMANDS) SmallFloatingActionButton(
                     onClick = onVoiceSearch,
                     containerColor = MaterialTheme.colorScheme.surface,
                     contentColor = MaterialTheme.colorScheme.onSurface,

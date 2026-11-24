@@ -202,6 +202,9 @@ fun KgTaxiAppRoot() {
     KgTaxiTheme(darkTheme = effectiveDarkTheme) {
         Box(modifier = Modifier.fillMaxSize()) {
             Column(modifier = Modifier.fillMaxSize()) {
+                // While the driver is on the line the screen is for driving only: no role tabs or settings.
+                val driverOnLine = state.role == AppRole.DRIVER && (state.driverOnline || state.driverAcceptedOrder != null)
+                if (!driverOnLine) {
                 TopHeaderBar(
                     strings = strings,
                     role = state.role,
@@ -220,6 +223,7 @@ fun KgTaxiAppRoot() {
                     onOpenProfile = { showProfile = true },
                     onClickSignIn = { showSignInDialog = true }
                 )
+                }
 
                 Box(modifier = Modifier.weight(1f).fillMaxWidth()) {
                     when (state.role) {

@@ -110,7 +110,7 @@ fun DriverLineMapCockpit(
             activeOrder = state.driverAcceptedOrder,
             orderStage = state.driverOrderStage,
             currentOffer = if (state.driverOnline && state.driverAcceptedOrder == null) currentOffer else null,
-            showSurgeHeatmap = state.showSurgeHeatmap || state.driverOnline,
+            showSurgeHeatmap = com.example.FeatureFlags.SURGE_PRICING && (state.showSurgeHeatmap || state.driverOnline),
             darkTheme = state.darkTheme,
             offlineMode = state.offlineMode,
             modifier = Modifier.fillMaxSize()
@@ -121,6 +121,7 @@ fun DriverLineMapCockpit(
             modifier = Modifier
                 .align(Alignment.TopCenter)
                 .fillMaxWidth()
+                .then(if (state.driverOnline || state.driverAcceptedOrder != null) Modifier.statusBarsPadding() else Modifier)
                 .padding(horizontal = 12.dp, vertical = 10.dp),
             verticalArrangement = Arrangement.spacedBy(8.dp)
         ) {
@@ -197,8 +198,8 @@ fun DriverLineMapCockpit(
                     }
                 }
 
-                // Right: Hands-Free Voice Control Button
-                Surface(
+                // Right: Hands-Free Voice Control Button (only when voice commands are switched on)
+                if (com.example.FeatureFlags.VOICE_COMMANDS) Surface(
                     onClick = onOpenVoiceControl,
                     shape = CircleShape,
                     color = Color(0xFF121212).copy(alpha = 0.92f),
@@ -211,8 +212,8 @@ fun DriverLineMapCockpit(
                 }
             }
 
-            // Secondary HUD strip: Quick City Switcher + Home Filter + Auto-Accept
-            Row(
+            // Secondary HUD strip: city switch — only before going on the line.
+            if (!state.driverOnline && state.driverAcceptedOrder == null) Row(
                 modifier = Modifier
                     .fillMaxWidth()
                     .horizontalScroll(rememberScrollState()),
@@ -448,6 +449,16 @@ fun DriverLineMapCockpit(
                         autoAcceptOn = state.driverAutoAccept,
                         onAccept = { onAcceptOrder(currentOffer) },
                         onSkip = { onSkipOrder(currentOffer) },
+                        onGoOffline = onToggleOnline
+                    )
+                }
+
+                // STATE A2: ONLINE — waiting for orders. Clean screen, one big button to leave the line.
+                state.driverOnline -> {
+                    DriverWaitingForOrdersCard(
+                        city = state.selectedCity.name,
+                        todayEarningsSom = state.driverTodayEarningsSom,
+                        tripsToday = state.driverQuestTripsDone,
                         onGoOffline = onToggleOnline
                     )
                 }
@@ -1154,6 +1165,78 @@ private fun DriverNavigationMapSurface(
                     close()
                 }
                 drawPath(arrow, color = Color.White)
+            }
+        }
+    }
+}
+
+
+/** Driver is on the line and waiting: nothing else on screen, so it is easy to use while driving. */
+@Composable
+private fun DriverWaitingForOrdersCard(
+    city: String,
+    todayEarningsSom: Int,
+    tripsToday: Int,
+    onGoOffline: () -> Unit
+) {
+    Surface(
+        shape = RoundedCornerShape(22.dp),
+        color = MaterialTheme.colorScheme.surface,
+        shadowElevation = 12.dp,
+        modifier = Modifier.fillMaxWidth().testTag("driver_waiting_card")
+    ) {
+        Column(
+            modifier = Modifier.padding(horizontal = 18.dp, vertical = 16.dp),
+            verticalArrangement = Arrangement.spacedBy(12.dp)
+        ) {
+            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                Box(
+                    modifier = Modifier
+                        .size(12.dp)
+                        .clip(CircleShape)
+                        .background(UberGreen)
+                )
+                Column(modifier = Modifier.weight(1f)) {
+                    Text("Вы на линии", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.ExtraBold)
+                    Text(
+                        "$city • ищем заказы рядом с вами",
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
+                CircularProgressIndicator(modifier = Modifier.size(22.dp), strokeWidth = 2.5.dp, color = UberGreen)
+            }
+            Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                Surface(
+                    shape = RoundedCornerShape(14.dp),
+                    color = MaterialTheme.colorScheme.surfaceVariant,
+                    modifier = Modifier.weight(1f)
+                ) {
+                    Column(modifier = Modifier.padding(12.dp)) {
+                        Text("Сегодня", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        Text("$todayEarningsSom сом", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
+                    }
+                }
+                Surface(
+                    shape = RoundedCornerShape(14.dp),
+                    color = MaterialTheme.colorScheme.surfaceVariant,
+                    modifier = Modifier.weight(1f)
+                ) {
+                    Column(modifier = Modifier.padding(12.dp)) {
+                        Text("Поездок", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        Text("$tripsToday", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
+                    }
+                }
+            }
+            Button(
+                onClick = onGoOffline,
+                colors = ButtonDefaults.buttonColors(containerColor = UberRed, contentColor = Color.White),
+                shape = RoundedCornerShape(16.dp),
+                modifier = Modifier.fillMaxWidth().height(56.dp).testTag("driver_waiting_go_offline")
+            ) {
+                Icon(Icons.Default.PowerSettingsNew, contentDescription = null, modifier = Modifier.size(20.dp))
+                Spacer(Modifier.width(8.dp))
+                Text("Уйти с линии", fontWeight = FontWeight.Bold, fontSize = 16.sp)
             }
         }
     }

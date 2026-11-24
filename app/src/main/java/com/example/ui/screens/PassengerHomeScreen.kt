@@ -268,7 +268,7 @@ private fun PassengerControlSheet(
                             tint = UberBlue
                         )
                     }
-                    IconButton(
+                    if (FeatureFlags.VOICE_COMMANDS) IconButton(
                         onClick = { showVoiceDialog = true },
                         modifier = Modifier.testTag("open_ai_voice_order_button")
                     ) {
@@ -392,18 +392,20 @@ private fun PassengerControlSheet(
                 leadingIcon = { Icon(Icons.Default.PersonAdd, contentDescription = null, modifier = Modifier.size(16.dp)) },
                 modifier = Modifier.testTag("book_for_other_chip")
             )
-            FilterChip(
+            // Rating / budget filters used made-up place data; scheduled rides are not supported by
+            // real orders yet (they would go out immediately). Hidden with the demo extras.
+            if (FeatureFlags.DEMO_EXTRAS) FilterChip(
                 selected = state.filterMinRating >= 4.5,
                 onClick = { viewModel.setRatingFilter(if (state.filterMinRating >= 4.5) 0.0 else 4.5) },
                 label = { Text(strings.filterRating) },
                 leadingIcon = { Icon(Icons.Default.Star, contentDescription = null, tint = UberAmber, modifier = Modifier.size(16.dp)) }
             )
-            FilterChip(
+            if (FeatureFlags.DEMO_EXTRAS) FilterChip(
                 selected = state.filterMaxPriceLevel == 1,
                 onClick = { viewModel.setPriceLevelFilter(if (state.filterMaxPriceLevel == 1) 3 else 1) },
                 label = { Text("$ Бюджет") }
             )
-            FilterChip(
+            if (FeatureFlags.DEMO_EXTRAS) FilterChip(
                 selected = state.reserveTimeLabel != null,
                 onClick = { showReserveDialog = true },
                 label = { Text(state.reserveTimeLabel ?: strings.reserveTrip) },
