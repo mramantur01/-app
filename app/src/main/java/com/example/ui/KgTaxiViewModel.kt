@@ -1245,7 +1245,7 @@ class KgTaxiViewModel(
             _uiState.update {
                 it.copy(
                     supportSending = false,
-                    statusBanner = if (res.isSuccess) "Сообщение отправлено. Мы свяжемся с вами." else "Не удалось отправить. Проверьте интернет."
+                    statusBanner = if (res.isSuccess) "Сообщение отправлено. Ответим в ближайшее время." else "Не удалось отправить. Проверьте интернет."
                 )
             }
         }

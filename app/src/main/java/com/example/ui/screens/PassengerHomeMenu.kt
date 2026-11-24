@@ -522,7 +522,7 @@ private fun SupportCard(sending: Boolean, onSend: (String) -> Unit) {
     var text by remember { mutableStateOf("") }
     InfoCardFrame(Icons.Default.SupportAgent, "Поддержка", collapseKey = "support_expanded") {
         Text(
-            "Есть вопрос или что-то пошло не так? Напишите нам: поможем с поездкой, оплатой или забытыми вещами и перезвоним по номеру из вашего профиля.",
+            "Есть вопрос или что-то пошло не так? Напишите нам: поможем с поездкой, оплатой или забытыми вещами. Ответим в ближайшее время.",
             style = MaterialTheme.typography.bodyMedium,
             color = KgInk
         )

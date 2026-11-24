@@ -174,7 +174,7 @@ private fun SupportDialog(ride: SharedRide?, sending: Boolean, onSend: (String) 
                     modifier = Modifier.fillMaxWidth().testTag("support_text")
                 )
                 Text(
-                    "Ответим по телефону из профиля. Если опасно — звоните 112.",
+                    "Ответим в ближайшее время. Если опасно — звоните 112.",
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
