@@ -52,3 +52,26 @@ firebase functions:secrets:set PAYMENT_GATEWAY_API_KEY
 
 Чтобы работали вход и база, добавьте секрет репозитория `GOOGLE_SERVICES_JSON`
 (Settings → Secrets and variables → Actions) с содержимым `google-services.json` из консоли Firebase.
+
+## Заявки водителей
+
+Пассажир, который нажимает вкладку «Водитель» без роли, заполняет анкету. Она сохраняется в
+коллекции `driver_applications` (документ = UID). Чтобы одобрить:
+
+1. Проверьте документы человека (права, техпаспорт) лично или по мессенджеру.
+2. Создайте `roles/{UID}` с полями `role: "driver"`, `car`, `plate`, `payPhone` (возьмите из анкеты).
+3. В анкете поменяйте `status` на `approved` (или `rejected`).
+
+## Push-уведомления (нужен тариф Blaze)
+
+Код сервера — в папке `functions/`. Он присылает:
+- водителям на линии в этом городе — «Новый заказ»;
+- пассажиру — «Водитель едет», «Машина подъехала», «Поездка завершена», «Заказ отменён»;
+- обеим сторонам — новые сообщения чата.
+
+Как включить:
+1. Firebase Console → Upgrade → тариф **Blaze** (нужна карта; на старте расходы почти нулевые).
+2. На компьютере: `npm install -g firebase-tools`, `firebase login`, затем в папке проекта
+   `cd functions && npm install && cd .. && firebase deploy --only functions --project gen-lang-client-0409944414`.
+
+Приложение уже сохраняет push-токен каждого телефона в `device_tokens/{UID}`.
