@@ -112,6 +112,9 @@ fun AiTourGuideCard(
     onRequestStory: (String) -> Unit
 ) {
     val context = LocalContext.current
+    // Collapsed / expanded is remembered on the phone.
+    val guidePrefs = remember(context) { context.getSharedPreferences("home_ui", android.content.Context.MODE_PRIVATE) }
+    var expanded by remember { mutableStateOf(guidePrefs.getBoolean("guide_expanded", true)) }
     var ttsReady by remember { mutableStateOf(false) }
     var isSpeaking by remember { mutableStateOf(false) }
     val tts = remember(context) {
@@ -170,9 +173,26 @@ fun AiTourGuideCard(
                     Icon(Icons.Default.RecordVoiceOver, contentDescription = null, tint = UberBlue, modifier = Modifier.size(18.dp))
                     Text("AI-аудиогид по Кыргызстану", style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.Bold, color = UberBlue)
                 }
-                Text(language.code, style = MaterialTheme.typography.labelSmall, fontFamily = JetBrainsMono, color = UberBlue)
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Text(language.code, style = MaterialTheme.typography.labelSmall, fontFamily = JetBrainsMono, color = UberBlue)
+                    IconButton(
+                        onClick = {
+                            expanded = !expanded
+                            guidePrefs.edit().putBoolean("guide_expanded", expanded).apply()
+                            if (!expanded) { tts?.stop(); isSpeaking = false }
+                        },
+                        modifier = Modifier.size(36.dp).testTag("tour_guide_toggle")
+                    ) {
+                        Icon(
+                            if (expanded) Icons.Default.ExpandLess else Icons.Default.ExpandMore,
+                            contentDescription = if (expanded) "Скрыть места" else "Показать места",
+                            tint = UberBlue
+                        )
+                    }
+                }
             }
 
+            if (expanded) {
             // All places visible at once, wrapping onto new lines.
             @OptIn(ExperimentalLayoutApi::class)
             FlowRow(
@@ -231,6 +251,7 @@ fun AiTourGuideCard(
                         Text(if (isSpeaking) "Стоп аудио" else "Озвучить гид")
                     }
                 }
+            }
             }
         }
     }
