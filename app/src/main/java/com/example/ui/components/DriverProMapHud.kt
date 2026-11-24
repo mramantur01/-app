@@ -10,6 +10,7 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
@@ -67,9 +68,11 @@ fun DriverLineMapCockpit(
     onOpenElqrDialog: () -> Unit,
     onOpenMeetGreetPlacard: () -> Unit,
     onTriggerSos: () -> Unit,
+    onToggleTariff: (String) -> Unit = {},
     modifier: Modifier = Modifier
 ) {
     val context = LocalContext.current
+    var showLineSettings by remember { mutableStateOf(false) }
 
     // Sort incoming offers so home-bound orders appear first when Destination Filter is active
     val targetKey = state.driverHomeTargetDistrict.substringBefore(" /").trim()
@@ -213,7 +216,7 @@ fun DriverLineMapCockpit(
             }
 
             // Secondary HUD strip: city switch — only before going on the line.
-            if (!state.driverOnline && state.driverAcceptedOrder == null) Row(
+            if (com.example.FeatureFlags.DEMO_EXTRAS && !state.driverOnline && state.driverAcceptedOrder == null) Row(
                 modifier = Modifier
                     .fillMaxWidth()
                     .horizontalScroll(rememberScrollState()),
@@ -465,95 +468,23 @@ fun DriverLineMapCockpit(
 
                 // STATE A: OFFLINE — ICONIC BIG ROUND UBER "НА ЛИНИЮ" (GO) BUTTON + DEMAND CARD
                 else -> {
-                    PulsingGoOnlineButton(
-                        onClick = onToggleOnline,
-                        modifier = Modifier.testTag("driver_online_toggle_button")
+                    DriverOfflineCard(
+                        state = state,
+                        onOpenSettings = { showLineSettings = true },
+                        onGoOnline = onToggleOnline
                     )
-
-                    Surface(
-                        shape = RoundedCornerShape(22.dp),
-                        color = MaterialTheme.colorScheme.surface,
-                        shadowElevation = 10.dp,
-                        modifier = Modifier.fillMaxWidth()
-                    ) {
-                        Column(
-                            modifier = Modifier.padding(horizontal = 16.dp, vertical = 14.dp),
-                            verticalArrangement = Arrangement.spacedBy(8.dp)
-                        ) {
-                            Row(
-                                modifier = Modifier.fillMaxWidth(),
-                                horizontalArrangement = Arrangement.SpaceBetween,
-                                verticalAlignment = Alignment.CenterVertically
-                            ) {
-                                Column {
-                                    Text(
-                                        text = "Вы не на линии",
-                                        style = MaterialTheme.typography.titleMedium,
-                                        fontWeight = FontWeight.ExtraBold
-                                    )
-                                    Text(
-                                        text = "${state.selectedCity.name} • Тарифов: ${state.driverEnabledTariffs.size}",
-                                        style = MaterialTheme.typography.bodySmall,
-                                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                                    )
-                                }
-                                if (com.example.FeatureFlags.DEMO_EXTRAS) {
-                                Surface(
-                                    shape = RoundedCornerShape(10.dp),
-                                    color = UberGreen.copy(alpha = 0.14f),
-                                    modifier = Modifier.clickable(onClick = onOpenEarningsTab)
-                                ) {
-                                    Text(
-                                        text = "Квест ${state.driverQuestTripsDone}/${state.driverQuestTarget}",
-                                        fontFamily = JetBrainsMono,
-                                        color = UberGreen,
-                                        fontWeight = FontWeight.Bold,
-                                        style = MaterialTheme.typography.labelMedium,
-                                        modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp)
-                                    )
-                                }
-                                }
-                            }
-
-                            // Hot Surge Zones Strip right on Offline Sheet (like Yandex Pro)
-                            Row(
-                                modifier = Modifier.fillMaxWidth(),
-                                horizontalArrangement = Arrangement.spacedBy(6.dp)
-                            ) {
-                                state.selectedCity.activeSurgeZones.forEach { z ->
-                                    Surface(
-                                        shape = RoundedCornerShape(10.dp),
-                                        color = UberPurple.copy(alpha = 0.12f),
-                                        modifier = Modifier.weight(1f)
-                                    ) {
-                                        Row(
-                                            modifier = Modifier.padding(horizontal = 8.dp, vertical = 6.dp),
-                                            verticalAlignment = Alignment.CenterVertically,
-                                            horizontalArrangement = Arrangement.SpaceBetween
-                                        ) {
-                                            Text(
-                                                text = z.name.substringBefore(" "),
-                                                style = MaterialTheme.typography.labelSmall,
-                                                maxLines = 1,
-                                                overflow = TextOverflow.Ellipsis,
-                                                modifier = Modifier.weight(1f)
-                                            )
-                                            Text(
-                                                text = "x${z.multiplier}",
-                                                fontFamily = JetBrainsMono,
-                                                fontWeight = FontWeight.ExtraBold,
-                                                color = UberPurple,
-                                                style = MaterialTheme.typography.labelSmall
-                                            )
-                                        }
-                                    }
-                                }
-                            }
-                        }
-                    }
                 }
             }
         }
+    }
+
+    if (showLineSettings) {
+        DriverLineSettingsSheet(
+            state = state,
+            onToggleTariff = onToggleTariff,
+            onSelectCity = onSelectCity,
+            onDismiss = { showLineSettings = false }
+        )
     }
 }
 
@@ -1238,6 +1169,134 @@ private fun DriverWaitingForOrdersCard(
                 Spacer(Modifier.width(8.dp))
                 Text("Уйти с линии", fontWeight = FontWeight.Bold, fontSize = 16.sp)
             }
+        }
+    }
+}
+
+
+/** Offline: who/where, today's result, a settings button and a swipe to go on the line. */
+@Composable
+private fun DriverOfflineCard(
+    state: KgTaxiUiState,
+    onOpenSettings: () -> Unit,
+    onGoOnline: () -> Unit
+) {
+    Surface(
+        shape = RoundedCornerShape(22.dp),
+        color = MaterialTheme.colorScheme.surface,
+        shadowElevation = 12.dp,
+        modifier = Modifier.fillMaxWidth().testTag("driver_offline_card")
+    ) {
+        Column(
+            modifier = Modifier.padding(horizontal = 16.dp, vertical = 14.dp),
+            verticalArrangement = Arrangement.spacedBy(12.dp)
+        ) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Column(modifier = Modifier.weight(1f)) {
+                    Text("Не на линии", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.ExtraBold)
+                    Text(
+                        "Поиск заказов выключен • ${state.selectedCity.name}",
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
+                FilledTonalIconButton(
+                    onClick = onOpenSettings,
+                    modifier = Modifier.size(48.dp).testTag("driver_line_settings_button")
+                ) {
+                    Icon(Icons.Default.Tune, contentDescription = "Тарифы и город")
+                }
+            }
+            Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                StatTile("Сегодня", "${state.driverTodayEarningsSom} сом", Modifier.weight(1f))
+                StatTile("Поездок", "${state.driverQuestTripsDone}", Modifier.weight(1f))
+                StatTile("Тарифов", "${state.driverEnabledTariffs.size}", Modifier.weight(1f))
+            }
+            SwipeToConfirmSlider(
+                text = "Выйти на линию",
+                containerColor = UberBlue,
+                onConfirmed = onGoOnline,
+                modifier = Modifier.fillMaxWidth().testTag("driver_online_toggle_button")
+            )
+        }
+    }
+}
+
+@Composable
+private fun StatTile(label: String, value: String, modifier: Modifier = Modifier) {
+    Surface(shape = RoundedCornerShape(14.dp), color = MaterialTheme.colorScheme.surfaceVariant, modifier = modifier) {
+        Column(modifier = Modifier.padding(horizontal = 12.dp, vertical = 10.dp)) {
+            Text(label, style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            Text(value, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold, maxLines = 1)
+        }
+    }
+}
+
+/** Before going on the line: which tariffs to take and which city to work in. */
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun DriverLineSettingsSheet(
+    state: KgTaxiUiState,
+    onToggleTariff: (String) -> Unit,
+    onSelectCity: (KgCity) -> Unit,
+    onDismiss: () -> Unit
+) {
+    ModalBottomSheet(onDismissRequest = onDismiss) {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .verticalScroll(rememberScrollState())
+                .padding(horizontal = 18.dp)
+                .padding(bottom = 24.dp),
+            verticalArrangement = Arrangement.spacedBy(14.dp)
+        ) {
+            Text("Тарифы", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
+            Text(
+                "Включите классы, по которым хотите получать заказы",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+            KgGeoCatalog.taxiTariffs.filter { it.id in com.example.FeatureFlags.ENABLED_TARIFF_IDS }.chunked(2).forEach { pair ->
+                Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                    pair.forEach { t ->
+                        val on = t.id in state.driverEnabledTariffs
+                        Surface(
+                            onClick = { onToggleTariff(t.id) },
+                            shape = RoundedCornerShape(16.dp),
+                            color = if (on) UberBlue else MaterialTheme.colorScheme.surfaceVariant,
+                            modifier = Modifier.weight(1f).height(56.dp).testTag("line_tariff_${t.id}")
+                        ) {
+                            Box(contentAlignment = Alignment.Center) {
+                                Text(
+                                    t.nameRu,
+                                    color = if (on) Color.White else MaterialTheme.colorScheme.onSurface,
+                                    fontWeight = FontWeight.Bold
+                                )
+                            }
+                        }
+                    }
+                    if (pair.size == 1) Spacer(Modifier.weight(1f))
+                }
+            }
+            HorizontalDivider()
+            Text("Город", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
+            Row(
+                modifier = Modifier.horizontalScroll(rememberScrollState()),
+                horizontalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                KgGeoCatalog.cities.forEach { c ->
+                    FilterChip(
+                        selected = c.name == state.selectedCity.name,
+                        onClick = { onSelectCity(c) },
+                        label = { Text(c.name) }
+                    )
+                }
+            }
+            Button(
+                onClick = onDismiss,
+                shape = RoundedCornerShape(16.dp),
+                modifier = Modifier.fillMaxWidth().height(52.dp)
+            ) { Text("Готово", fontWeight = FontWeight.Bold) }
         }
     }
 }

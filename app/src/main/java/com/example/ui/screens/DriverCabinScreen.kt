@@ -40,10 +40,10 @@ import com.example.ui.theme.*
 import java.util.Locale
 
 private enum class DriverCabinTab(val label: String) {
-    LINE("Линия"),
-    EARNINGS("Доход"),
+    LINE("Заказы"),
+    EARNINGS("Деньги"),
     VEHICLE("Авто"),
-    PRO("Про")
+    PRO("Профиль")
 }
 
 @Composable
@@ -87,7 +87,8 @@ fun DriverCabinScreen(
                     onOpenVoiceControl = onRequestVoiceCommand,
                     onOpenElqrDialog = { showDriverQrDialog = true },
                     onOpenMeetGreetPlacard = { showMeetGreetPlacard = true },
-                    onTriggerSos = { viewModel.triggerEmergencySos(fromActiveRide = false) }
+                    onTriggerSos = { viewModel.triggerEmergencySos(fromActiveRide = false) },
+                    onToggleTariff = viewModel::toggleDriverTariff
                 )
 
                 DriverCabinTab.EARNINGS -> DriverEarningsTabContent(
@@ -123,14 +124,14 @@ fun DriverCabinScreen(
             NavigationBarItem(
                 selected = activeTab == DriverCabinTab.LINE,
                 onClick = { activeTab = DriverCabinTab.LINE },
-                icon = { Icon(Icons.Default.Navigation, contentDescription = "Линия") },
+                icon = { Icon(Icons.Default.Navigation, contentDescription = "Заказы") },
                 label = { Text(DriverCabinTab.LINE.label) },
                 modifier = Modifier.testTag("driver_tab_line")
             )
             NavigationBarItem(
                 selected = activeTab == DriverCabinTab.EARNINGS,
                 onClick = { activeTab = DriverCabinTab.EARNINGS },
-                icon = { Icon(Icons.Default.Payments, contentDescription = "Доход") },
+                icon = { Icon(Icons.Default.Payments, contentDescription = "Деньги") },
                 label = { Text(DriverCabinTab.EARNINGS.label) },
                 modifier = Modifier.testTag("driver_tab_earnings")
             )
@@ -144,7 +145,7 @@ fun DriverCabinScreen(
             NavigationBarItem(
                 selected = activeTab == DriverCabinTab.PRO,
                 onClick = { activeTab = DriverCabinTab.PRO },
-                icon = { Icon(Icons.Default.VerifiedUser, contentDescription = "Про") },
+                icon = { Icon(Icons.Default.Person, contentDescription = "Профиль") },
                 label = { Text(DriverCabinTab.PRO.label) },
                 modifier = Modifier.testTag("driver_tab_pro")
             )
@@ -601,6 +602,75 @@ private fun DriverProStatusTabContent(
             .padding(14.dp),
         verticalArrangement = Arrangement.spacedBy(14.dp)
     ) {
+        // Driver card: name, rating, verified car with its number plate.
+        Surface(
+            shape = RoundedCornerShape(22.dp),
+            color = MaterialTheme.colorScheme.primary,
+            modifier = Modifier.fillMaxWidth().testTag("driver_profile_card")
+        ) {
+            Column(modifier = Modifier.padding(18.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Column(modifier = Modifier.weight(1f)) {
+                        Text(
+                            state.profile.displayName.ifBlank { "Водитель KG Taxi" },
+                            style = MaterialTheme.typography.titleLarge,
+                            fontWeight = FontWeight.ExtraBold,
+                            color = MaterialTheme.colorScheme.onPrimary
+                        )
+                        Text(
+                            "Водитель • ${state.selectedCity.name}",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onPrimary.copy(alpha = 0.75f)
+                        )
+                    }
+                    Surface(shape = RoundedCornerShape(12.dp), color = UberAmber) {
+                        Text(
+                            "★ новый",
+                            fontWeight = FontWeight.Bold,
+                            color = Color.Black,
+                            modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp)
+                        )
+                    }
+                }
+                Surface(
+                    shape = RoundedCornerShape(16.dp),
+                    color = MaterialTheme.colorScheme.onPrimary.copy(alpha = 0.10f),
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Row(
+                        modifier = Modifier.padding(14.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(12.dp)
+                    ) {
+                        Icon(Icons.Default.DirectionsCar, contentDescription = null, tint = MaterialTheme.colorScheme.onPrimary, modifier = Modifier.size(34.dp))
+                        Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                            Text(
+                                state.driverCar.ifBlank { "Машина не указана" },
+                                fontWeight = FontWeight.Bold,
+                                color = MaterialTheme.colorScheme.onPrimary
+                            )
+                            if (state.driverPlate.isNotBlank()) {
+                                // Number plate styled like a real plate: white with a black border.
+                                Surface(
+                                    shape = RoundedCornerShape(6.dp),
+                                    color = Color.White,
+                                    border = androidx.compose.foundation.BorderStroke(2.dp, Color.Black)
+                                ) {
+                                    Text(
+                                        state.driverPlate,
+                                        fontFamily = JetBrainsMono,
+                                        fontWeight = FontWeight.Black,
+                                        color = Color.Black,
+                                        modifier = Modifier.padding(horizontal = 10.dp, vertical = 4.dp)
+                                    )
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
         // Status card (tier, priority, photo control) was invented data: demo only.
         if (com.example.FeatureFlags.DEMO_EXTRAS) Surface(
             shape = RoundedCornerShape(22.dp),

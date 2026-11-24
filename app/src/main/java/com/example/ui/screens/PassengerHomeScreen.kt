@@ -151,11 +151,13 @@ private fun PassengerControlSheet(
 
     val scrollState = rememberScrollState()
 
+    Column(modifier = modifier.navigationBarsPadding()) {
     Column(
-        modifier = modifier
+        modifier = Modifier
+            .weight(1f)
+            .fillMaxWidth()
             .verticalScroll(scrollState)
-            .padding(horizontal = 14.dp, vertical = 12.dp)
-            .navigationBarsPadding(),
+            .padding(start = 14.dp, end = 14.dp, top = 12.dp, bottom = 8.dp),
         verticalArrangement = Arrangement.spacedBy(12.dp)
     ) {
         // If an Active Ride is running, show live ActiveTripCard prominently!
@@ -548,8 +550,11 @@ private fun PassengerControlSheet(
                     }
                 }
 
-                // Taxi Tariff List (6 Tariffs incl. Lady Taxi & Green EV)
-                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                // Tariffs in one row of compact cards: name, price, car icon (like modern taxi apps).
+                Row(
+                    modifier = Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
                     KgGeoCatalog.taxiTariffs.filter { it.id in FeatureFlags.ENABLED_TARIFF_IDS }.forEach { tariff ->
                         val selected = state.selectedTariffId == tariff.id
                         val estPrice = ((tariff.baseSom + state.routeDistanceKm * tariff.perKmSom) * state.selectedCity.effectiveSurge).roundToInt()
@@ -562,82 +567,38 @@ private fun PassengerControlSheet(
                             onClick = { viewModel.selectTariff(tariff.id) },
                             shape = RoundedCornerShape(16.dp),
                             color = if (selected) MaterialTheme.colorScheme.surface else MaterialTheme.colorScheme.surfaceVariant,
+                            shadowElevation = if (selected) 4.dp else 0.dp,
                             modifier = Modifier
-                                .fillMaxWidth()
+                                .width(112.dp)
                                 .border(
                                     width = if (selected) 2.dp else 0.dp,
-                                    color = if (selected) {
-                                        if (tariff.ecoGreen) UberGreen else MaterialTheme.colorScheme.primary
-                                    } else Color.Transparent,
+                                    color = if (selected) MaterialTheme.colorScheme.primary else Color.Transparent,
                                     shape = RoundedCornerShape(16.dp)
                                 )
                                 .testTag("tariff_${tariff.id}")
                         ) {
-                            Row(
-                                modifier = Modifier.padding(12.dp),
-                                verticalAlignment = Alignment.CenterVertically,
-                                horizontalArrangement = Arrangement.SpaceBetween
+                            Column(
+                                modifier = Modifier.padding(horizontal = 10.dp, vertical = 10.dp),
+                                verticalArrangement = Arrangement.spacedBy(4.dp)
                             ) {
-                                Row(
-                                    verticalAlignment = Alignment.CenterVertically,
-                                    horizontalArrangement = Arrangement.spacedBy(10.dp),
-                                    modifier = Modifier.weight(1f)
-                                ) {
-                                    Box(
-                                        modifier = Modifier
-                                            .size(42.dp)
-                                            .clip(RoundedCornerShape(12.dp))
-                                            .background(
-                                                when {
-                                                    tariff.ecoGreen -> UberGreen.copy(alpha = 0.16f)
-                                                    tariff.ladyOnly -> UberPurple.copy(alpha = 0.16f)
-                                                    else -> MaterialTheme.colorScheme.primary.copy(alpha = 0.08f)
-                                                }
-                                            ),
-                                        contentAlignment = Alignment.Center
-                                    ) {
-                                        Icon(
-                                            imageVector = when {
-                                                tariff.ecoGreen -> Icons.Default.ElectricCar
-                                                tariff.ladyOnly -> Icons.Default.Face3
-                                                tariff.soberDriver -> Icons.Default.Key
-                                                tariff.id == "minivan" -> Icons.Default.AirportShuttle
-                                                else -> Icons.Default.DirectionsCar
-                                            },
-                                            contentDescription = displayName,
-                                            tint = when {
-                                                tariff.ecoGreen -> UberGreen
-                                                tariff.ladyOnly -> UberPurple
-                                                tariff.soberDriver -> UberAmber
-                                                else -> MaterialTheme.colorScheme.primary
-                                            }
-                                        )
-                                    }
-                                    Column {
-                                        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                                            Text(displayName, style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.Bold)
-                                            Text("• ${tariff.etaMin} ${strings.minUnit}", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                                            if (tariff.ecoGreen) {
-                                                Surface(shape = RoundedCornerShape(4.dp), color = UberGreen) {
-                                                    Text("ECO", color = Color.White, style = MaterialTheme.typography.labelSmall, modifier = Modifier.padding(horizontal = 4.dp, vertical = 1.dp))
-                                                }
-                                            }
-                                        }
-                                        Text(
-                                            text = tariff.subtitle,
-                                            style = MaterialTheme.typography.bodySmall,
-                                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                            maxLines = 1,
-                                            overflow = TextOverflow.Ellipsis
-                                        )
-                                    }
-                                }
+                                Icon(
+                                    imageVector = if (tariff.id == "minivan") Icons.Default.AirportShuttle else Icons.Default.DirectionsCar,
+                                    contentDescription = displayName,
+                                    tint = if (selected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
+                                    modifier = Modifier.size(30.dp)
+                                )
+                                Text(displayName, style = MaterialTheme.typography.labelLarge, fontWeight = FontWeight.Bold, maxLines = 1)
                                 Text(
                                     text = state.displayCurrency.formatShort(estPrice),
-                                    fontFamily = JetBrainsMono,
                                     fontWeight = FontWeight.ExtraBold,
-                                    style = MaterialTheme.typography.titleSmall,
-                                    color = if (tariff.ecoGreen) UberGreen else MaterialTheme.colorScheme.onSurface
+                                    style = MaterialTheme.typography.titleMedium
+                                )
+                                Text(
+                                    text = tariff.subtitle,
+                                    style = MaterialTheme.typography.labelSmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                    maxLines = 2,
+                                    overflow = TextOverflow.Ellipsis
                                 )
                             }
                         }
@@ -887,6 +848,13 @@ private fun PassengerControlSheet(
             }
         }
 
+    }
+
+    // Order bar: always visible at the bottom of the screen.
+    val pb = state.priceBreakdown
+    if (state.activeRide == null) {
+        Surface(color = MaterialTheme.colorScheme.surface, shadowElevation = 10.dp) {
+            Box(modifier = Modifier.fillMaxWidth().padding(horizontal = 14.dp, vertical = 10.dp)) {
         // Bottom CTA Row: Bidding ("Предложить цену") + Primary Uber Black Order CTA
         Row(
             modifier = Modifier.fillMaxWidth(),
@@ -905,7 +873,7 @@ private fun PassengerControlSheet(
                 ) {
                     Icon(Icons.Default.Gavel, contentDescription = null, modifier = Modifier.size(18.dp))
                     Spacer(Modifier.width(4.dp))
-                    Text("Торг", fontWeight = FontWeight.Bold)
+                    Text("Своя цена", fontWeight = FontWeight.Bold)
                 }
             }
 
@@ -931,6 +899,9 @@ private fun PassengerControlSheet(
                 )
             }
         }
+            }
+        }
+    }
     }
 
     // Bidding Dialog

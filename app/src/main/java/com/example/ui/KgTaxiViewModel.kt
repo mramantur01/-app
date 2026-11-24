@@ -52,6 +52,9 @@ data class KgTaxiUiState(
     /** "pending" / "approved" / "rejected" / null — the signed-in user's driver application. */
     val driverApplicationStatus: String? = null,
     val driverApplicationSending: Boolean = false,
+    /** Verified car and plate of this driver (from roles/{uid}). */
+    val driverCar: String = "",
+    val driverPlate: String = "",
     val profile: LocalProfileEntity = LocalProfileEntity(),
     val language: AppLanguage = AppLanguage.RU,
     val darkTheme: Boolean = false,
@@ -637,6 +640,7 @@ class KgTaxiViewModel(
             verifiedDriverCar = info.car
             verifiedDriverPlate = info.plate
             verifiedDriverPayPhone = info.payPhone
+            _uiState.update { it.copy(driverCar = info.car, driverPlate = info.plate) }
             // Matches firestore.rules: only "driver" may take orders; dispatchers see the panel.
             val allowed = when (info.role) {
                 "driver" -> setOf(AppRole.PASSENGER, AppRole.DRIVER)
