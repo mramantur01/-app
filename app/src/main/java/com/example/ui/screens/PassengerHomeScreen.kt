@@ -981,7 +981,11 @@ private fun PassengerControlSheet(
     val pb = state.priceBreakdown
     if (state.activeRide == null) {
         Surface(color = MaterialTheme.colorScheme.surface, shadowElevation = 10.dp) {
-            Box(modifier = Modifier.fillMaxWidth().padding(horizontal = 14.dp, vertical = 10.dp)) {
+            Column(
+                modifier = Modifier.fillMaxWidth().padding(horizontal = 14.dp, vertical = 10.dp),
+                verticalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+        PaymentMethodRow(selected = state.ridePayment, onSelect = viewModel::setRidePayment)
         // Bottom CTA Row: Bidding ("Предложить цену") + Primary Uber Black Order CTA
         Row(
             modifier = Modifier.fillMaxWidth(),
@@ -1390,4 +1394,91 @@ private fun PickupPointDialog(
         confirmButton = {},
         dismissButton = { TextButton(onClick = onDismiss) { Text("Закрыть") } }
     )
+}
+
+
+/** "Оплата: Наличные или QR — Изменить" above the order button. */
+@Composable
+private fun PaymentMethodRow(selected: String, onSelect: (String) -> Unit) {
+    var open by remember { mutableStateOf(false) }
+    val isCard = selected == "CARD"
+    Surface(
+        onClick = { open = true },
+        shape = RoundedCornerShape(14.dp),
+        color = MaterialTheme.colorScheme.surfaceVariant,
+        modifier = Modifier.fillMaxWidth().testTag("payment_row")
+    ) {
+        Row(
+            modifier = Modifier.padding(horizontal = 12.dp, vertical = 10.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(8.dp)
+        ) {
+            Icon(if (isCard) Icons.Default.CreditCard else Icons.Default.Payments, contentDescription = null, tint = MaterialTheme.colorScheme.primary)
+            Text(
+                "Оплата: " + if (isCard) "банковская карта" else "наличные или QR",
+                style = MaterialTheme.typography.bodyMedium,
+                fontWeight = FontWeight.Medium,
+                modifier = Modifier.weight(1f)
+            )
+            Text("Изменить", color = MaterialTheme.colorScheme.primary, style = MaterialTheme.typography.labelLarge)
+        }
+    }
+    if (open) {
+        AlertDialog(
+            onDismissRequest = { open = false },
+            title = { Text("Способ оплаты") },
+            text = {
+                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    PaymentOption(
+                        icon = Icons.Default.Payments,
+                        title = "Наличные или QR",
+                        subtitle = "Наличными водителю или по QR / переводом на его номер",
+                        selected = !isCard,
+                        enabled = true,
+                        tag = "payment_cash"
+                    ) { onSelect("CASH"); open = false }
+                    PaymentOption(
+                        icon = Icons.Default.CreditCard,
+                        title = "Банковская карта",
+                        subtitle = if (FeatureFlags.ONLINE_PAYMENTS) "Спишем с привязанной карты после поездки"
+                        else "Привязка карты появится после подключения платёжной системы",
+                        selected = isCard,
+                        enabled = FeatureFlags.ONLINE_PAYMENTS,
+                        tag = "payment_card"
+                    ) { onSelect("CARD"); open = false }
+                }
+            },
+            confirmButton = {},
+            dismissButton = { TextButton(onClick = { open = false }) { Text("Закрыть") } }
+        )
+    }
+}
+
+@Composable
+private fun PaymentOption(
+    icon: androidx.compose.ui.graphics.vector.ImageVector,
+    title: String,
+    subtitle: String,
+    selected: Boolean,
+    enabled: Boolean,
+    tag: String,
+    onClick: () -> Unit
+) {
+    Surface(
+        onClick = onClick,
+        enabled = enabled,
+        shape = RoundedCornerShape(12.dp),
+        color = if (selected) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.surfaceVariant,
+        border = if (selected) androidx.compose.foundation.BorderStroke(2.dp, MaterialTheme.colorScheme.primary) else null,
+        modifier = Modifier.fillMaxWidth().testTag(tag)
+    ) {
+        Row(modifier = Modifier.padding(12.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+            Icon(icon, contentDescription = null, tint = if (enabled) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f))
+            Column(modifier = Modifier.weight(1f)) {
+                Text(title, fontWeight = FontWeight.Bold, color = if (enabled) MaterialTheme.colorScheme.onSurface else MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f))
+                Text(subtitle, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            }
+            if (selected) Icon(Icons.Default.CheckCircle, contentDescription = null, tint = MaterialTheme.colorScheme.primary)
+        }
+    }
 }

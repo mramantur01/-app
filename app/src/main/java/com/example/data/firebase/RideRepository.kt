@@ -68,7 +68,9 @@ data class SharedRide(
     val scheduledAtMillis: Long? = null,
     val seats: Int? = null,
     val tariffId: String? = null,
-    val tariffName: String? = null
+    val tariffName: String? = null,
+    /** "CASH" = cash or QR / transfer to the driver, "CARD" = card linked in the app. */
+    val paymentMethod: String = "CASH"
 ) {
     val isActive: Boolean get() = status in RideStatus.ACTIVE
 
@@ -110,7 +112,8 @@ data class SharedRide(
                 scheduledAtMillis = snap.getTimestamp("scheduledAt")?.toDate()?.time,
                 seats = snap.getLong("seats")?.toInt(),
                 tariffId = snap.getString("tariffId"),
-                tariffName = snap.getString("tariffName")
+                tariffName = snap.getString("tariffName"),
+                paymentMethod = snap.getString("paymentMethod") ?: "CASH"
             )
         }
     }
@@ -151,7 +154,8 @@ class RideRepository(
         scheduledAtMillis: Long? = null,
         seats: Int? = null,
         tariffId: String? = null,
-        tariffName: String? = null
+        tariffName: String? = null,
+        paymentMethod: String = "CASH"
     ): Result<String> {
         val uid = currentUid ?: return Result.failure(IllegalStateException("Войдите в аккаунт, чтобы заказать"))
         val doc = rides.document()
@@ -169,7 +173,7 @@ class RideRepository(
             "dropoffLat" to dropoffLat,
             "dropoffLng" to dropoffLng,
             "priceSom" to priceSom.coerceIn(1, 100000),
-            "paymentMethod" to "CASH",
+            "paymentMethod" to if (paymentMethod == "CARD") "CARD" else "CASH",
             "createdAt" to FieldValue.serverTimestamp(),
             "updatedAt" to FieldValue.serverTimestamp()
         )

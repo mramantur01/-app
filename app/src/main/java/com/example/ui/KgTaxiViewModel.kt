@@ -122,6 +122,8 @@ data class KgTaxiUiState(
     val occupiedIntercitySeats: Set<Int> = emptySet(),
     /** Pickup point is known (GPS, map or chosen address). An order can't go without it. */
     val pickupConfirmed: Boolean = false,
+    /** Payment for the order: "CASH" (cash or QR) or "CARD" (linked card, when payments are connected). */
+    val ridePayment: String = "CASH",
     val pickupDialogOpen: Boolean = false,
     val pickupSearchQuery: String = "",
     val pickupSearchResults: List<KgPlace> = emptyList(),
@@ -1200,6 +1202,14 @@ class KgTaxiViewModel(
 
     fun backToPassengerHome() = _uiState.update { it.copy(passengerHome = true) }
 
+    fun setRidePayment(method: String) {
+        if (method == "CARD" && !FeatureFlags.ONLINE_PAYMENTS) {
+            _uiState.update { it.copy(statusBanner = "Оплата картой появится после подключения платёжной системы") }
+            return
+        }
+        _uiState.update { it.copy(ridePayment = method) }
+    }
+
     // --- PICKUP POINT (point A) ---
 
     fun openPickupDialog(open: Boolean) =
@@ -2228,7 +2238,8 @@ class KgTaxiViewModel(
                 passengerPhone = s.profile.phone,
                 seats = if (isIntercity) s.selectedIntercitySeats.size.coerceIn(1, 6) else null,
                 tariffId = if (isIntercity) null else s.selectedTariff.id,
-                tariffName = if (isIntercity) "Межгород" else s.selectedTariff.nameRu
+                tariffName = if (isIntercity) "Межгород" else s.selectedTariff.nameRu,
+                paymentMethod = s.ridePayment
             )
             created.onSuccess { id ->
                 passengerRideId = id
@@ -2635,7 +2646,7 @@ class KgTaxiViewModel(
             dropoffPoint = dropoff,
             pickupEtaMin = max(1, (toPickupKm / 0.4).roundToInt()),
             pickupDistanceKm = (toPickupKm * 10).roundToInt() / 10.0,
-            paymentMethodLabel = "Наличные",
+            paymentMethodLabel = if (paymentMethod == "CARD") "Оплата по карте" else "Наличные или QR",
             passengerPin = pin.ifBlank { "—" },
             passengerPhone = passengerPhone,
             meetAndGreetSign = comment?.substringBefore(" • PIN")?.takeIf { it.isNotBlank() && !it.startsWith("PIN") }

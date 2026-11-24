@@ -467,7 +467,7 @@ service cloud.firestore {
              data.dropoffLat is number && data.dropoffLat >= -90 && data.dropoffLat <= 90 &&
              data.dropoffLng is number && data.dropoffLng >= -180 && data.dropoffLng <= 180 &&
              data.priceSom is int && data.priceSom > 0 && data.priceSom <= 100000 &&
-             data.paymentMethod == 'CASH' &&
+             data.paymentMethod in ['CASH', 'CARD'] &&
              // Intercity pre-order: departure from now up to 14 days ahead, 1..6 seats.
              (!('scheduledAt' in data) ||
               (data.serviceType == 'INTERCITY' && data.scheduledAt is timestamp &&
