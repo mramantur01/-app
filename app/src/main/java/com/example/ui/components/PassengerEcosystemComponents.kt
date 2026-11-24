@@ -132,11 +132,25 @@ fun AiTourGuideCard(
     }
 
     val topics = listOf(
-        "Боомское ущелье",
-        "Перевал Тоо-Ашуу",
-        "Башня Бурана",
+        "Озеро Иссык-Куль",
+        "Озеро Сон-Куль",
+        "Каньон Сказка",
+        "Джети-Огуз",
         "Ущелье Ала-Арча",
-        "Озеро Иссык-Куль"
+        "Боомское ущелье",
+        "Башня Бурана",
+        "Перевал Тоо-Ашуу",
+        "Сулайман-Тоо",
+        "Арсланбоб",
+        "Сары-Челек",
+        "Таш-Рабат",
+        "Озеро Ала-Куль",
+        "Алтын-Арашан",
+        "Каракол",
+        "Барскоон",
+        "Чолпон-Ата: петроглифы",
+        "Чон-Кемин",
+        "Озеро Кель-Суу"
     )
 
     Surface(
@@ -159,8 +173,10 @@ fun AiTourGuideCard(
                 Text(language.code, style = MaterialTheme.typography.labelSmall, fontFamily = JetBrainsMono, color = UberBlue)
             }
 
-            Row(
-                modifier = Modifier.horizontalScroll(rememberScrollState()),
+            // All places visible at once, wrapping onto new lines.
+            @OptIn(ExperimentalLayoutApi::class)
+            FlowRow(
+                modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.spacedBy(6.dp)
             ) {
                 topics.forEach { topic ->

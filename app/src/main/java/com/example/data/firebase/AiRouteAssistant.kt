@@ -323,6 +323,34 @@ class AiRouteAssistant {
                 isKg -> "Боом капчыгайы — Чүй дарыясы жарып өткөн 30 чакырымдык кооз капчыгай, Ысык-Көлгө кеткен башкы дарбаза. Жол боюнда кызыл аскалар жана Көк-Мойноктун өзгөчө каньондору жайгашкан."
                 else -> "Боомское ущелье — величественный 30-километровый каньон реки Чу, главные ворота из Бишкека на озеро Иссык-Куль. Его скалы меняют оттенок от охристо-красного до изумрудного, а в районе Кок-Мойнока скрыты живописные эоловые замки."
             }
+            "сон-куль" in lower -> if (isEn) "Song-Kul is a high alpine lake at about 3,000 meters in Naryn region. In summer herders bring horses and sheep to its jailoo pastures, and travelers sleep in yurts under a sky full of stars." else
+                "Сон-Куль — высокогорное озеро на высоте около 3000 метров в Нарынской области, длиной почти 30 километров. Летом сюда приходят чабаны с лошадьми и отарами, а путешественники ночуют в юртах под невероятно звёздным небом и пробуют свежий кымыз."
+            "сказка" in lower -> if (isEn) "Skazka (Fairy Tale) Canyon on the south shore of Issyk-Kul is a maze of red and orange sandstone shaped by wind and rain into castles, dragons and walls." else
+                "Каньон Сказка на южном берегу Иссык-Куля, рядом с селом Тосор, — лабиринт красных и оранжевых скал, которые ветер и дожди превратили в «замки», «драконов» и «китайскую стену». Лучше всего приезжать на закате, когда камни светятся."
+            "джети-огуз" in lower || "жети-өгүз" in lower -> if (isEn) "Jeti-Oguz near Karakol means Seven Bulls: a row of red sandstone cliffs. Nearby is the Broken Heart rock and a green valley with a sanatorium and hot springs." else
+                "Джети-Огуз недалеко от Каракола переводится как «Семь быков» — так называют ряд красных скал у входа в ущелье. Рядом скала «Разбитое сердце» с красивой легендой, зелёная долина с елями и курорт с минеральными источниками."
+            "сулайман" in lower -> if (isEn) "Sulaiman-Too, the sacred mountain in the middle of Osh, is a UNESCO World Heritage site. Its slopes hold ancient petroglyphs, cave shrines and a museum inside the rock." else
+                "Сулайман-Тоо — священная гора в самом центре Оша, первый в Кыргызстане объект Всемирного наследия ЮНЕСКО. На склонах — древние петроглифы и пещеры, к которым веками шли паломники, а внутри скалы устроен музей. С вершины виден весь город."
+            "арсланбоб" in lower -> if (isEn) "Arslanbob in Jalal-Abad region has one of the largest natural walnut forests in the world, plus two beautiful waterfalls." else
+                "Арсланбоб в Джалал-Абадской области — один из крупнейших в мире природных орехоплодных лесов. Осенью местные жители собирают грецкие орехи, а к большому и малому водопадам ведут тропы через тенистый лес."
+            "сары-челек" in lower -> if (isEn) "Sary-Chelek is a nature reserve and UNESCO biosphere reserve with a deep mountain lake framed by spruce forests." else
+                "Сары-Челек — заповедник и биосферный резерват ЮНЕСКО в Джалал-Абадской области. Главная жемчужина — глубокое горное озеро цвета изумруда среди еловых лесов, а вокруг ещё несколько маленьких озёр."
+            "таш-рабат" in lower -> if (isEn) "Tash-Rabat is a stone caravanserai high in the mountains of Naryn region, a resting place on the Silk Road towards China." else
+                "Таш-Рабат — каменный караван-сарай в горах Нарынской области на высоте около 3200 метров, стоянка путников Великого Шёлкового пути по дороге в Китай. Внутри три десятка комнат под куполом, а рядом можно переночевать в юрте."
+            "ала-куль" in lower -> if (isEn) "Ala-Kul is a turquoise lake at about 3,500 meters above Karakol, reached by a two-day hike over a high pass." else
+                "Ала-Куль — бирюзовое озеро на высоте около 3500 метров над Караколом. До него идут пешком через перевал, обычно за два дня, а по пути можно остановиться у горячих источников Алтын-Арашана."
+            "алтын-арашан" in lower -> if (isEn) "Altyn-Arashan is a mountain valley near Karakol with natural hot springs at about 2,600 meters and views of Palatka peak." else
+                "Алтын-Арашан — «Золотой источник», горная долина недалеко от Каракола на высоте около 2600 метров. Здесь купаются в горячих минеральных источниках прямо среди елей и снежных вершин."
+            "каракол" in lower -> if (isEn) "Karakol has a wooden Holy Trinity Cathedral and the Dungan mosque built without a single nail, plus a famous ashlyamfu street food." else
+                "Каракол — город у восточного берега Иссык-Куля. Здесь стоят деревянный Свято-Троицкий собор и Дунганская мечеть, построенная без единого гвоздя, а местное блюдо — холодный ашлямфу. Отсюда начинаются походы к Ала-Кулю и Алтын-Арашану."
+            "барскоон" in lower -> if (isEn) "Barskoon gorge on the south shore of Issyk-Kul has several waterfalls and a monument to Yuri Gagarin, who rested here." else
+                "Барскоон — ущелье на южном берегу Иссык-Куля с несколькими водопадами, самые известные — «Слёзы барса» и «Чаша Гагарина». У дороги стоит памятник Юрию Гагарину, который отдыхал в этих местах."
+            "петроглиф" in lower || "чолпон-ата" in lower -> if (isEn) "Near Cholpon-Ata there is an open-air museum of rock carvings: ibex, deer and hunters drawn on boulders thousands of years ago." else
+                "Рядом с Чолпон-Атой — музей петроглифов под открытым небом. На валунах выбиты горные козлы, олени и сцены охоты, которым тысячи лет. Лучше приходить утром или вечером, когда рисунки хорошо видны."
+            "чон-кемин" in lower -> if (isEn) "Chon-Kemin is a national park in a long green valley between Bishkek and Issyk-Kul, known for horse riding and rafting." else
+                "Чон-Кемин — национальный парк в длинной зелёной долине между Бишкеком и Иссык-Кулём. Здесь катаются на лошадях, сплавляются по реке Чон-Кемин и живут в гостевых домах у подножия гор."
+            "кель-суу" in lower -> if (isEn) "Kel-Suu is a long mountain lake near the Chinese border in Naryn region, squeezed between cliffs like a fjord, with caves along the shore." else
+                "Кель-Суу — длинное горное озеро у границы с Китаем в Нарынской области, зажатое между скал, как фьорд. Вода бирюзовая, по берегам пещеры. Добраться можно только на внедорожнике и с пропуском в пограничную зону."
             "тоо-ашуу" in lower || "too-ashuu" in lower || "ош" in lower -> when {
                 isEn -> "The Too-Ashuu Pass rises over 3,100 meters along the scenic Bishkek–Osh highway. After crossing the mountain tunnel, travelers emerge into the breathtaking high-altitude Suusamyr Valley, famous for summer jailoo pastures and fresh kymyz."
                 isKg -> "Төө-Ашуу ашуусу Бишкек–Ош унаа жолунда 3100 метрден ашуун бийиктикте жайгашкан. Туннелден өткөндөн кийин Суусамырдын кең жайлоосу ачылат."
