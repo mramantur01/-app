@@ -62,7 +62,7 @@ fun DriverCabinScreen(
 
     Column(modifier = modifier.fillMaxSize()) {
         // Main Tab Content Area
-        Box(modifier = Modifier.weight(1f).fillMaxWidth()) {
+        Box(modifier = Modifier.weight(1f).fillMaxWidth().background(MaterialTheme.colorScheme.background)) {
             when (activeTab) {
                 DriverCabinTab.LINE -> DriverLineMapCockpit(
                     strings = strings,
@@ -321,8 +321,8 @@ private fun DriverEarningsTabContent(
             }
         }
 
-        // Quests & Bonuses Progress Card
-        Surface(
+        // Quests & Bonuses Progress Card (made-up bonus; hidden until real quests exist)
+        if (com.example.FeatureFlags.DEMO_EXTRAS) Surface(
             shape = RoundedCornerShape(18.dp),
             color = MaterialTheme.colorScheme.surfaceVariant,
             modifier = Modifier.fillMaxWidth()
@@ -376,8 +376,8 @@ private fun DriverEarningsTabContent(
             }
         }
 
-        // Commission-Free Shift Purchase (Yandex Pro)
-        DriverShiftPassCard(
+        // Commission-free shift purchase (needs real payments)
+        if (com.example.FeatureFlags.DRIVER_SHIFT_PASSES) DriverShiftPassCard(
             activePass = state.driverShiftPass,
             onSelectPass = onSelectShiftPass
         )
@@ -386,13 +386,15 @@ private fun DriverEarningsTabContent(
         val hourlyForecast = remember(state.selectedCity.name) {
             KgGeoCatalog.hourlyDemandForecast(state.selectedCity)
         }
-        DriverHourlyDemandChartCard(
+        // Demand forecast is invented data until there is real order history.
+        if (com.example.FeatureFlags.SURGE_PRICING) DriverHourlyDemandChartCard(
             city = state.selectedCity,
             forecast = hourlyForecast
         )
 
         // Instant Payouts (MBank / Элкарт / O!Деньги) + Ratings & Tips
-        DriverRatingsTipsAndPayoutSection(
+        // Passengers pay the driver directly (cash / transfer), so there is nothing to withdraw yet.
+        if (com.example.FeatureFlags.ONLINE_PAYMENTS) DriverRatingsTipsAndPayoutSection(
             availableBalanceSom = state.driverTodayEarningsSom,
             tips = state.driverTips,
             payouts = state.driverPayouts,
@@ -497,6 +499,13 @@ private fun DriverVehicleAndDocsTabContent(
 
         // Vehicle Documents & Insurance (ОСАГО / Техосмотр / Права)
         Text("Документы и страховка (ОСАГО / ТО / Права)", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
+        if (state.driverDocuments.isEmpty()) {
+            Text(
+                "Документы проверяются при одобрении заявки водителя. Сроки ОСАГО и техосмотра появятся здесь позже.",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+        }
         state.driverDocuments.forEach { doc ->
             val urgent = doc.daysRemaining <= 30
             Surface(
@@ -592,8 +601,8 @@ private fun DriverProStatusTabContent(
             .padding(14.dp),
         verticalArrangement = Arrangement.spacedBy(14.dp)
     ) {
-        // Yandex Pro / Uber Pro Status Card (Activity, Rating, Priority)
-        Surface(
+        // Status card (tier, priority, photo control) was invented data: demo only.
+        if (com.example.FeatureFlags.DEMO_EXTRAS) Surface(
             shape = RoundedCornerShape(22.dp),
             color = MaterialTheme.colorScheme.primary,
             modifier = Modifier.fillMaxWidth()
@@ -678,7 +687,7 @@ private fun DriverProStatusTabContent(
                             modifier = Modifier.testTag("driver_tariff_toggle_${t.id}")
                         )
                     }
-                    FilterChip(
+                    if (com.example.FeatureFlags.isServiceEnabled(com.example.data.model.ServiceType.COURIER)) FilterChip(
                         selected = "courier" in state.driverEnabledTariffs,
                         onClick = { viewModel.toggleDriverTariff("courier") },
                         label = { Text("Курьер") }
@@ -688,7 +697,7 @@ private fun DriverProStatusTabContent(
         }
 
         // Auto-Accept Toggle Card
-        Surface(
+        if (com.example.FeatureFlags.DEMO_EXTRAS) Surface(
             shape = RoundedCornerShape(16.dp),
             color = MaterialTheme.colorScheme.surfaceVariant,
             modifier = Modifier.fillMaxWidth()
@@ -711,15 +720,15 @@ private fun DriverProStatusTabContent(
         }
 
         // Destination Filter ("По пути домой")
-        DriverDestinationFilterCard(
+        if (com.example.FeatureFlags.DEMO_EXTRAS) DriverDestinationFilterCard(
             enabled = state.driverHomeFilterEnabled,
             targetDistrict = state.driverHomeTargetDistrict,
             onToggleEnabled = { viewModel.setDriverHomeFilter(it, state.driverHomeTargetDistrict) },
             onSelectDistrict = { viewModel.setDriverHomeFilter(true, it) }
         )
 
-        // Uber Coffee Break & 12h Driving Fatigue Monitor + Gas/EV/Cafe chips
-        DriverFatigueAndCoffeeBreakCard(
+        // Coffee break & fatigue monitor
+        if (com.example.FeatureFlags.DEMO_EXTRAS) DriverFatigueAndCoffeeBreakCard(
             city = state.selectedCity,
             drivingMinutesToday = state.driverDrivingMinutesToday,
             coffeeBreakActive = state.driverCoffeeBreakActive,
@@ -728,7 +737,7 @@ private fun DriverProStatusTabContent(
 
         // Photo Control & Airport VIP Meet & Greet Placard
         Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            FilledTonalButton(
+            if (com.example.FeatureFlags.DEMO_EXTRAS) FilledTonalButton(
                 onClick = viewModel::passDriverPhotoControl,
                 modifier = Modifier.weight(1f).height(48.dp).testTag("driver_photo_control_button")
             ) {
@@ -742,7 +751,7 @@ private fun DriverProStatusTabContent(
             ) {
                 Icon(Icons.Default.FlightLand, contentDescription = null, tint = UberBlue, modifier = Modifier.size(18.dp))
                 Spacer(Modifier.width(6.dp))
-                Text("VIP Табличка", maxLines = 1)
+                Text("Табличка в аэропорту", maxLines = 1)
             }
         }
     }
