@@ -244,15 +244,30 @@ private fun PassengerControlSheet(
                     verticalAlignment = Alignment.CenterVertically,
                     horizontalArrangement = Arrangement.spacedBy(8.dp)
                 ) {
-                    Icon(Icons.Default.TripOrigin, contentDescription = null, tint = UberBlue, modifier = Modifier.size(16.dp))
-                    Text(
-                        text = state.pickupAddress,
-                        style = MaterialTheme.typography.bodyMedium,
-                        fontWeight = FontWeight.Medium,
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis,
-                        modifier = Modifier.weight(1f)
-                    )
+                    Icon(Icons.Default.TripOrigin, contentDescription = null, tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(16.dp))
+                    // Point A: detected automatically, tap to change (another address, map, someone else).
+                    Column(
+                        modifier = Modifier
+                            .weight(1f)
+                            .clickable { viewModel.openPickupDialog(true) }
+                            .testTag("pickup_row")
+                    ) {
+                        Text(
+                            if (state.pickupConfirmed) "Точка подачи" else "Укажите точку подачи",
+                            style = MaterialTheme.typography.labelSmall,
+                            color = if (state.pickupConfirmed) MaterialTheme.colorScheme.onSurfaceVariant else Color(0xFFC62828)
+                        )
+                        Text(
+                            text = state.pickupAddress,
+                            style = MaterialTheme.typography.bodyMedium,
+                            fontWeight = FontWeight.Medium,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis
+                        )
+                    }
+                    TextButton(onClick = { viewModel.openPickupDialog(true) }, contentPadding = PaddingValues(horizontal = 6.dp)) {
+                        Text("Изменить")
+                    }
                     if (state.profile.businessProfileActive) {
                         Surface(shape = RoundedCornerShape(6.dp), color = UberBlue.copy(alpha = 0.16f)) {
                             Text(
@@ -335,6 +350,40 @@ private fun PassengerControlSheet(
                     }
                 }
             }
+        }
+
+        // Pick "from" / "to" on a full-screen map.
+        var pickOnMap by remember { mutableStateOf<Boolean?>(null) } // true = dropoff, false = pickup
+        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            OutlinedButton(onClick = { pickOnMap = false }, modifier = Modifier.weight(1f).testTag("pick_pickup_on_map")) {
+                Icon(Icons.Default.Map, contentDescription = null, modifier = Modifier.size(16.dp))
+                Spacer(Modifier.width(4.dp))
+                Text("Откуда на карте", maxLines = 1)
+            }
+            OutlinedButton(onClick = { pickOnMap = true }, modifier = Modifier.weight(1f).testTag("pick_dropoff_on_map")) {
+                Icon(Icons.Default.Map, contentDescription = null, modifier = Modifier.size(16.dp))
+                Spacer(Modifier.width(4.dp))
+                Text("Куда на карте", maxLines = 1)
+            }
+        }
+        if (state.pickupDialogOpen) {
+            PickupPointDialog(
+                state = state,
+                onQuery = viewModel::setPickupSearchQuery,
+                onPickPlace = viewModel::setPickupFromPlace,
+                onMyLocation = viewModel::usePickupMyLocation,
+                onPickOnMap = { viewModel.openPickupDialog(false); pickOnMap = false },
+                onDismiss = { viewModel.openPickupDialog(false) }
+            )
+        }
+        pickOnMap?.let { isDropoff ->
+            com.example.ui.components.MapPointPickerDialog(
+                title = if (isDropoff) "Куда поедем?" else "Откуда вас забрать?",
+                start = if (isDropoff) state.dropoffPoint else state.pickupPoint,
+                pinColor = if (isDropoff) Color(0xFF1F2D30) else MaterialTheme.colorScheme.primary,
+                onPicked = { p -> viewModel.onMapTapPickPoint(p, isDropoff); pickOnMap = null },
+                onDismiss = { pickOnMap = null }
+            )
         }
 
         // Route length and time (was on the map).
@@ -724,7 +773,7 @@ private fun PassengerControlSheet(
             FilterChip(
                 selected = state.bookingForOther,
                 onClick = { showForOtherDialog = true },
-                label = { Text(if (state.bookingForOther && state.recipientName.isNotBlank()) "Для: ${state.recipientName}" else "Другому") },
+                label = { Text(if (state.bookingForOther && state.recipientName.isNotBlank()) "Для: ${state.recipientName}" else "Заказать другому человеку") },
                 leadingIcon = { Icon(Icons.Default.PersonAdd, contentDescription = null, modifier = Modifier.size(16.dp)) },
                 modifier = Modifier.testTag("book_for_other_chip")
             )
@@ -1262,4 +1311,64 @@ private fun PassengerPreordersCard(
             dismissButton = { TextButton(onClick = { confirmId = null }) { Text("Оставить") } }
         )
     }
+}
+
+
+/** Point A: where the driver should come. My location, a typed address, or a point on the map. */
+@Composable
+private fun PickupPointDialog(
+    state: KgTaxiUiState,
+    onQuery: (String) -> Unit,
+    onPickPlace: (com.example.data.model.KgPlace) -> Unit,
+    onMyLocation: () -> Unit,
+    onPickOnMap: () -> Unit,
+    onDismiss: () -> Unit
+) {
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("Точка подачи") },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(10.dp), modifier = Modifier.verticalScroll(rememberScrollState())) {
+                Text(
+                    "Где вас будет ждать водитель? Можно указать другой адрес, если заказываете для другого человека.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+                OutlinedButton(onClick = onMyLocation, modifier = Modifier.fillMaxWidth().testTag("pickup_my_location")) {
+                    Icon(Icons.Default.MyLocation, contentDescription = null, modifier = Modifier.size(18.dp))
+                    Spacer(Modifier.width(6.dp))
+                    Text("Моё местоположение")
+                }
+                OutlinedButton(onClick = onPickOnMap, modifier = Modifier.fillMaxWidth().testTag("pickup_on_map")) {
+                    Icon(Icons.Default.Map, contentDescription = null, modifier = Modifier.size(18.dp))
+                    Spacer(Modifier.width(6.dp))
+                    Text("Указать точку на карте")
+                }
+                OutlinedTextField(
+                    value = state.pickupSearchQuery,
+                    onValueChange = onQuery,
+                    label = { Text("Или введите адрес") },
+                    singleLine = true,
+                    modifier = Modifier.fillMaxWidth().testTag("pickup_search")
+                )
+                state.pickupSearchResults.forEach { place ->
+                    Surface(
+                        onClick = { onPickPlace(place) },
+                        shape = RoundedCornerShape(10.dp),
+                        color = MaterialTheme.colorScheme.surfaceVariant,
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Column(modifier = Modifier.padding(10.dp)) {
+                            Text(place.name, fontWeight = FontWeight.SemiBold, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                            if (place.address.isNotBlank()) {
+                                Text(place.address, style = MaterialTheme.typography.bodySmall, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        confirmButton = {},
+        dismissButton = { TextButton(onClick = onDismiss) { Text("Закрыть") } }
+    )
 }

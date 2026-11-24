@@ -1,7 +1,7 @@
 package com.example.data.model
 
 /** Class of a car model: decides which tariffs it can work in. */
-enum class CarClass { ECONOMY, COMFORT, MINIVAN }
+enum class CarClass { ECONOMY, COMFORT, BUSINESS, MINIVAN }
 
 data class CarModel(val name: String, val carClass: CarClass, val seats: Int = 4)
 
@@ -15,23 +15,24 @@ object CarCatalog {
     private fun e(n: String) = CarModel(n, CarClass.ECONOMY)
     private fun c(n: String) = CarModel(n, CarClass.COMFORT)
     private fun m(n: String, seats: Int = 7) = CarModel(n, CarClass.MINIVAN, seats)
+    private fun b(n: String) = CarModel(n, CarClass.BUSINESS)
 
     val makes: List<CarMake> = listOf(
-        CarMake("Toyota", listOf(e("Corolla"), e("Prius"), e("Yaris"), e("Vitz"), c("Camry"), c("Avalon"), c("RAV4"), c("Highlander"), c("Land Cruiser Prado"), m("Alphard"), m("Estima"), m("Sienna"), m("Noah"), m("Voxy"))),
+        CarMake("Toyota", listOf(e("Corolla"), e("Prius"), e("Yaris"), e("Vitz"), c("Camry"), c("Avalon"), c("RAV4"), c("Highlander"), b("Land Cruiser Prado"), b("Land Cruiser"), m("Alphard"), m("Estima"), m("Sienna"), m("Noah"), m("Voxy"))),
         CarMake("Honda", listOf(e("Fit"), e("Civic"), c("Accord"), c("CR-V"), m("Odyssey"), m("Stepwgn"), m("Freed", 6))),
-        CarMake("Lexus", listOf(c("ES"), c("GS"), c("RX"), c("GX"), c("NX"))),
+        CarMake("Lexus", listOf(b("ES"), b("GS"), b("LS"), b("RX"), b("GX"), c("NX"))),
         CarMake("Hyundai", listOf(e("Solaris"), e("Accent"), e("Elantra"), e("Avante"), c("Sonata"), c("Grandeur"), c("Tucson"), c("Santa Fe"), m("Starex"), m("Staria"))),
         CarMake("Kia", listOf(e("Rio"), e("Cerato"), c("K5"), c("Optima"), c("K7"), c("Sportage"), c("Sorento"), m("Carnival"))),
         CarMake("Chevrolet", listOf(e("Cobalt"), e("Nexia"), e("Lacetti"), e("Spark"), e("Gentra"), c("Malibu"), c("Captiva"))),
         CarMake("Daewoo", listOf(e("Matiz"), e("Nexia"), e("Gentra"), e("Lacetti"))),
-        CarMake("Mercedes-Benz", listOf(c("C-Class"), c("E-Class"), c("S-Class"), m("Vito", 8), m("V-Class"), m("Sprinter", 8))),
+        CarMake("Mercedes-Benz", listOf(c("C-Class"), b("E-Class"), b("S-Class"), m("Vito", 8), m("V-Class"), m("Sprinter", 8))),
         CarMake("Volkswagen", listOf(e("Polo"), e("Jetta"), c("Passat"), c("Tiguan"), m("Multivan"), m("Caravelle", 8))),
         CarMake("Nissan", listOf(e("Almera"), e("Sunny"), e("Note"), e("Tiida"), c("Teana"), c("X-Trail"), m("Serena"), m("Elgrand"))),
         CarMake("Mitsubishi", listOf(e("Lancer"), c("Outlander"), c("Pajero"), m("Delica"))),
         CarMake("Subaru", listOf(e("Impreza"), c("Legacy"), c("Outback"), c("Forester"))),
         CarMake("Mazda", listOf(e("Mazda 3"), e("Demio"), c("Mazda 6"), c("CX-5"), m("MPV"))),
-        CarMake("BMW", listOf(c("3 Series"), c("5 Series"), c("X3"), c("X5"))),
-        CarMake("Audi", listOf(c("A4"), c("A6"), c("Q5"), c("Q7"))),
+        CarMake("BMW", listOf(c("3 Series"), b("5 Series"), b("7 Series"), c("X3"), b("X5"))),
+        CarMake("Audi", listOf(c("A4"), b("A6"), b("A8"), c("Q5"), b("Q7"))),
         CarMake("Lada", listOf(e("Granta"), e("Vesta"), e("Priora"), e("Largus"))),
         CarMake("Skoda", listOf(e("Rapid"), c("Octavia"), c("Superb"))),
         CarMake("BYD", listOf(e("Dolphin"), c("Song Plus"), c("Han"), c("Qin Plus"))),
@@ -46,6 +47,9 @@ object CarCatalog {
     const val MIN_YEAR = 2005
     /** Comfort needs a fresher car. */
     const val COMFORT_MIN_YEAR = 2012
+    /** Comfort+ and Business need newer cars. */
+    const val COMFORT_PLUS_MIN_YEAR = 2016
+    const val BUSINESS_MIN_YEAR = 2018
 
     val years: List<Int> = (java.util.Calendar.getInstance().get(java.util.Calendar.YEAR) downTo MIN_YEAR).toList()
 
@@ -62,7 +66,9 @@ object CarCatalog {
         val cls = modelsOf(make).firstOrNull { it.name == model }?.carClass ?: CarClass.ECONOMY
         return when {
             cls == CarClass.MINIVAN -> listOf("minivan", "econom")
-            cls == CarClass.COMFORT && year >= COMFORT_MIN_YEAR -> listOf("comfort", "econom")
+            cls == CarClass.BUSINESS && year >= BUSINESS_MIN_YEAR -> listOf("business", "comfort_plus", "comfort", "econom")
+            (cls == CarClass.BUSINESS || cls == CarClass.COMFORT) && year >= COMFORT_PLUS_MIN_YEAR -> listOf("comfort_plus", "comfort", "econom")
+            (cls == CarClass.BUSINESS || cls == CarClass.COMFORT) && year >= COMFORT_MIN_YEAR -> listOf("comfort", "econom")
             else -> listOf("econom")
         }
     }
@@ -70,6 +76,8 @@ object CarCatalog {
     fun tariffLabel(id: String): String = when (id) {
         "econom" -> "Эконом"
         "comfort" -> "Комфорт"
+        "comfort_plus" -> "Комфорт+"
+        "business" -> "Бизнес"
         "minivan" -> "Минивэн"
         else -> id
     }

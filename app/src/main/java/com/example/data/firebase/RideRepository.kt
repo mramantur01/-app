@@ -66,7 +66,9 @@ data class SharedRide(
     val cancelReason: String? = null,
     /** Departure time of an intercity pre-order, null for "right now" orders. */
     val scheduledAtMillis: Long? = null,
-    val seats: Int? = null
+    val seats: Int? = null,
+    val tariffId: String? = null,
+    val tariffName: String? = null
 ) {
     val isActive: Boolean get() = status in RideStatus.ACTIVE
 
@@ -106,7 +108,9 @@ data class SharedRide(
                 driverRatingAvg = snap.getDouble("driverRatingAvg"),
                 cancelReason = snap.getString("cancelReason"),
                 scheduledAtMillis = snap.getTimestamp("scheduledAt")?.toDate()?.time,
-                seats = snap.getLong("seats")?.toInt()
+                seats = snap.getLong("seats")?.toInt(),
+                tariffId = snap.getString("tariffId"),
+                tariffName = snap.getString("tariffName")
             )
         }
     }
@@ -145,7 +149,9 @@ class RideRepository(
         comment: String?,
         passengerPhone: String = "",
         scheduledAtMillis: Long? = null,
-        seats: Int? = null
+        seats: Int? = null,
+        tariffId: String? = null,
+        tariffName: String? = null
     ): Result<String> {
         val uid = currentUid ?: return Result.failure(IllegalStateException("Войдите в аккаунт, чтобы заказать"))
         val doc = rides.document()
@@ -173,6 +179,8 @@ class RideRepository(
             payload["scheduledAt"] = com.google.firebase.Timestamp(java.util.Date(scheduledAtMillis))
         }
         if (seats != null) payload["seats"] = seats.coerceIn(1, 6)
+        if (!tariffId.isNullOrBlank()) payload["tariffId"] = tariffId.take(30)
+        if (!tariffName.isNullOrBlank()) payload["tariffName"] = tariffName.take(30)
         return runWrite(OperationType.CREATE, "rides/${doc.id}") {
             doc.set(payload).await()
             doc.id

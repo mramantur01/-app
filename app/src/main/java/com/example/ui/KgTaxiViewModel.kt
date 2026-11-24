@@ -120,6 +120,11 @@ data class KgTaxiUiState(
     val selectedIntercityRoute: IntercityRoute = KgGeoCatalog.intercityRoutes.first(),
     val selectedIntercitySeats: Set<Int> = setOf(2),
     val occupiedIntercitySeats: Set<Int> = emptySet(),
+    /** Pickup point is known (GPS, map or chosen address). An order can't go without it. */
+    val pickupConfirmed: Boolean = false,
+    val pickupDialogOpen: Boolean = false,
+    val pickupSearchQuery: String = "",
+    val pickupSearchResults: List<KgPlace> = emptyList(),
     /** Passenger sees the home menu (search + tiles); false = the order screen with the map. */
     val passengerHome: Boolean = true,
     /** Owner settings: tariff prices, commission, promo (config/app). */
@@ -229,7 +234,7 @@ data class KgTaxiUiState(
     val driverActivityScore: Int = 100,
     val driverPriorityPoints: Int = 0,
     val driverAutoAccept: Boolean = false,
-    val driverEnabledTariffs: Set<String> = setOf("econom", "comfort", "minivan"),
+    val driverEnabledTariffs: Set<String> = setOf("econom", "comfort", "comfort_plus", "business", "minivan"),
     val driverPendingPassengerRating: DriverIncomingOrder? = null,
     val driverPhotoControlVerified: Boolean = true,
     val driverTips: List<DriverTipEntry> = emptyList(),
@@ -1180,6 +1185,7 @@ class KgTaxiViewModel(
     // --- PASSENGER HOME MENU ---
 
     fun openPassengerOrder(service: ServiceType) {
+        if (!_uiState.value.pickupConfirmed) locateMyGps()
         if (_uiState.value.serviceType != service) setServiceType(service)
         if (service == ServiceType.INTERCITY) setIntercityDeparture(null)
         _uiState.update { it.copy(passengerHome = false) }
@@ -1193,6 +1199,57 @@ class KgTaxiViewModel(
     }
 
     fun backToPassengerHome() = _uiState.update { it.copy(passengerHome = true) }
+
+    // --- PICKUP POINT (point A) ---
+
+    fun openPickupDialog(open: Boolean) =
+        _uiState.update { it.copy(pickupDialogOpen = open, pickupSearchQuery = "", pickupSearchResults = emptyList()) }
+
+    private var pickupSearchJob: Job? = null
+
+    fun setPickupSearchQuery(q: String) {
+        _uiState.update { it.copy(pickupSearchQuery = q) }
+        pickupSearchJob?.cancel()
+        if (q.trim().length < 2) {
+            _uiState.update { it.copy(pickupSearchResults = emptyList()) }
+            return
+        }
+        pickupSearchJob = viewModelScope.launch {
+            delay(380)
+            val s = _uiState.value
+            val live = KyrgyzstanRoutingClient.searchKyrgyzstanAddresses(
+                query = q,
+                cityName = s.selectedCity.name,
+                offlineMode = s.offlineMode,
+                cityCenter = s.selectedCity.center
+            )
+            val curated = KgGeoCatalog.cities.flatMap { it.landmarks }.filter {
+                it.name.contains(q, ignoreCase = true) || it.address.contains(q, ignoreCase = true)
+            }
+            _uiState.update { it.copy(pickupSearchResults = (live + curated).distinctBy { p -> p.name }.take(8)) }
+        }
+    }
+
+    fun setPickupFromPlace(place: KgPlace) {
+        _uiState.update {
+            it.copy(
+                pickupPoint = place.point,
+                pickupAddress = place.address.ifBlank { place.name },
+                pickupConfirmed = true,
+                pickupDialogOpen = false,
+                pickupSearchQuery = "",
+                pickupSearchResults = emptyList(),
+                statusBanner = "Точка подачи: ${place.name}"
+            )
+        }
+        refreshLiveRoadRoute()
+    }
+
+    /** "My location" in the pickup dialog: GPS sets point A and the city. */
+    fun usePickupMyLocation() {
+        _uiState.update { it.copy(pickupDialogOpen = false) }
+        locateMyGps()
+    }
 
     fun goToSavedAddress(label: String, address: String) {
         if (address.isBlank()) {
@@ -1556,7 +1613,7 @@ class KgTaxiViewModel(
                 if (isDropoff) {
                     it.copy(dropoffPoint = point, dropoffAddress = resolved, statusBanner = "Точка Б: $resolved")
                 } else {
-                    it.copy(pickupPoint = point, pickupAddress = resolved, statusBanner = "Подача (А): $resolved")
+                    it.copy(pickupPoint = point, pickupAddress = resolved, pickupConfirmed = true, pickupDialogOpen = false, statusBanner = "Подача (А): $resolved")
                 }
             }
             refreshLiveRoadRoute()
@@ -1572,6 +1629,7 @@ class KgTaxiViewModel(
                     selectedCity = matchedCity,
                     pickupPoint = res.point,
                     pickupAddress = res.address,
+                    pickupConfirmed = it.pickupConfirmed || res.fromRealGps,
                     statusBanner = if (res.fromRealGps) "GPS определён: ${res.address}" else "Точка подачи (${matchedCity.name}): ${res.address}"
                 )
             }
@@ -2074,6 +2132,12 @@ class KgTaxiViewModel(
             return
         }
         if (s.activeRide != null) return
+        if (!s.pickupConfirmed) {
+            _uiState.update {
+                it.copy(pickupDialogOpen = true, statusBanner = "Укажите точку подачи — где вас будет ждать водитель")
+            }
+            return
+        }
 
         val price = customPriceSom ?: s.priceBreakdown.finalTotalSom
         val isIntercity = s.serviceType == ServiceType.INTERCITY
@@ -2162,7 +2226,9 @@ class KgTaxiViewModel(
                 priceSom = price,
                 comment = comment,
                 passengerPhone = s.profile.phone,
-                seats = if (isIntercity) s.selectedIntercitySeats.size.coerceIn(1, 6) else null
+                seats = if (isIntercity) s.selectedIntercitySeats.size.coerceIn(1, 6) else null,
+                tariffId = if (isIntercity) null else s.selectedTariff.id,
+                tariffName = if (isIntercity) "Межгород" else s.selectedTariff.nameRu
             )
             created.onSuccess { id ->
                 passengerRideId = id
@@ -2516,7 +2582,9 @@ class KgTaxiViewModel(
         driverOpenRidesJob = viewModelScope.launch {
             startDriverPreorders(city.name)
             rides.observeOpenRides(city.name).collect { all ->
+                val myTariffs = _uiState.value.driverEnabledTariffs
                 val open = all.filterNot { it.isFuturePreorder }
+                    .filter { r -> r.serviceType == "INTERCITY" || r.tariffId == null || r.tariffId in myTariffs }
                 val myPoint = _uiState.value.pickupPoint
                 val orders = open.map { it.toDriverOrder(myPoint) }
                 val fresh = open.map { it.id }.toSet() - knownIds
@@ -2555,7 +2623,7 @@ class KgTaxiViewModel(
             passengerName = passengerName,
             passengerRating = 5.0,
             serviceType = if (serviceType == "INTERCITY") ServiceType.INTERCITY else ServiceType.TAXI,
-            tariffName = if (serviceType == "INTERCITY") "Межгород" else "Такси",
+            tariffName = tariffName ?: if (serviceType == "INTERCITY") "Межгород" else "Такси",
             pickupAddress = pickupAddress,
             dropoffAddress = dropoffAddress,
             distanceKm = (tripKm * 10).roundToInt() / 10.0,

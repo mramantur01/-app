@@ -49,7 +49,9 @@ fun OsmMapLayer(
     fitTo: List<GeoPoint>,
     onTap: ((GeoPoint) -> Unit)?,
     modifier: Modifier = Modifier,
-    zoom: Double = 13.5
+    zoom: Double = 13.5,
+    /** Called when the user stops moving the map, with the point in the middle. */
+    onCenterChanged: ((GeoPoint) -> Unit)? = null
 ) {
     val context = LocalContext.current
     val lifecycle = LocalLifecycleOwner.current.lifecycle
@@ -81,6 +83,20 @@ fun OsmMapLayer(
 
             override fun longPressHelper(p: org.osmdroid.util.GeoPoint): Boolean = false
         })
+    }
+
+    val centerHandler by rememberUpdatedState(onCenterChanged)
+    DisposableEffect(mapView) {
+        val listener = org.osmdroid.events.DelayedMapListener(object : org.osmdroid.events.MapListener {
+            override fun onScroll(event: org.osmdroid.events.ScrollEvent?): Boolean {
+                val c = mapView.mapCenter
+                centerHandler?.invoke(GeoPoint(c.latitude, c.longitude))
+                return false
+            }
+            override fun onZoom(event: org.osmdroid.events.ZoomEvent?): Boolean = false
+        }, 250)
+        mapView.addMapListener(listener)
+        onDispose { mapView.removeMapListener(listener) }
     }
 
     DisposableEffect(lifecycle) {

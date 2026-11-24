@@ -245,6 +245,7 @@ object KgGeoCatalog {
     val taxiTariffs: List<TaxiTariff> = listOf(
         TaxiTariff("econom", "Эконом", "Эконом", "Economy", "Быстрая подача на каждый день", 90, 20, 3, 4),
         TaxiTariff("comfort", "Комфорт", "Комфорт", "Comfort", "Просторный седан, кондиционер", 130, 26, 4, 4),
+        TaxiTariff("comfort_plus", "Комфорт+", "Комфорт+", "Comfort+", "Новые седаны, больше места", 170, 32, 5, 4),
         TaxiTariff("business", "Бизнес", "Бизнес", "Black", "Toyota Camry 75 / Lexus ES, тишина", 250, 42, 6, 4),
         TaxiTariff("minivan", "Минивэн", "Минивэн", "UberXL", "До 6 пассажиров и большой багаж", 190, 32, 7, 6),
         TaxiTariff("lady", "Леди-такси", "Айым-такси", "Lady Taxi", "Только женщина-водитель, комфорт и безопасность", 145, 26, 5, 4, ladyOnly = true),

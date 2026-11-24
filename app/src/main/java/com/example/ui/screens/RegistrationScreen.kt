@@ -469,7 +469,7 @@ private fun TariffResultCard(tariffs: List<String>) {
                     color = KgTurquoise
                 )
                 Text(
-                    "Тариф выбран автоматически по модели и году. Комфорт — с ${CarCatalog.COMFORT_MIN_YEAR} года.",
+                    "Тариф выбран автоматически по модели и году: Комфорт — с ${CarCatalog.COMFORT_MIN_YEAR}, Комфорт+ — с ${CarCatalog.COMFORT_PLUS_MIN_YEAR}, Бизнес — с ${CarCatalog.BUSINESS_MIN_YEAR} года.",
                     style = MaterialTheme.typography.bodySmall,
                     color = KgInk.copy(alpha = 0.7f)
                 )

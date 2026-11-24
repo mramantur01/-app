@@ -117,7 +117,7 @@ fun OwnerPanel(
 @Composable
 private fun PricesEditor(state: KgTaxiUiState, onSave: (com.example.data.firebase.AppConfig) -> Unit) {
     val cfg = state.appConfig
-    val ids = listOf("econom", "comfort", "minivan")
+    val ids = listOf("econom", "comfort", "comfort_plus", "business", "minivan")
     val defaults = com.example.data.model.KgGeoCatalog.taxiTariffs.associateBy { it.id }
     val base = remember(cfg) { mutableStateMapOf<String, String>().apply { ids.forEach { put(it, (cfg.tariffs[it]?.baseSom ?: defaults[it]?.baseSom ?: 0).toString()) } } }
     val perKm = remember(cfg) { mutableStateMapOf<String, String>().apply { ids.forEach { put(it, (cfg.tariffs[it]?.perKmSom ?: defaults[it]?.perKmSom ?: 0).toString()) } } }

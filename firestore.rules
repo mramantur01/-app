@@ -473,6 +473,8 @@ service cloud.firestore {
               (data.serviceType == 'INTERCITY' && data.scheduledAt is timestamp &&
                data.scheduledAt > request.time && data.scheduledAt < request.time + duration.value(14, 'd'))) &&
              (!('seats' in data) || (data.seats is int && data.seats >= 1 && data.seats <= 6)) &&
+             (!('tariffId' in data) || (data.tariffId is string && data.tariffId.size() <= 30)) &&
+             (!('tariffName' in data) || (data.tariffName is string && data.tariffName.size() <= 30)) &&
              isValidTimestamp(data.createdAt) &&
              isValidTimestamp(data.updatedAt);
     }
@@ -487,7 +489,7 @@ service cloud.firestore {
                        incoming().keys().hasOnly(['passengerId', 'passengerName', 'passengerPhone', 'status', 'driverId', 'serviceType',
                                                   'city', 'pickupAddress', 'dropoffAddress', 'pickupLat', 'pickupLng',
                                                   'dropoffLat', 'dropoffLng', 'priceSom', 'paymentMethod', 'comment',
-                                                  'scheduledAt', 'seats', 'createdAt', 'updatedAt']) &&
+                                                  'scheduledAt', 'seats', 'tariffId', 'tariffName', 'createdAt', 'updatedAt']) &&
                        isValidRideCreate(incoming());
 
       allow get: if isSignedIn() && (
