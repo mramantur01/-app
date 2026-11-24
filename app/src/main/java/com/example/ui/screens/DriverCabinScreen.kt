@@ -37,6 +37,7 @@ import com.example.ui.components.DriverSidePassengerChatOverlay
 import com.example.ui.components.ElqrPaymentDialog
 import com.example.ui.components.MeetAndGreetPlacardDialog
 import com.example.ui.theme.*
+import androidx.compose.ui.text.style.TextOverflow
 import java.util.Locale
 
 private enum class DriverCabinTab(val label: String) {
@@ -372,6 +373,49 @@ private fun DriverEarningsTabContent(
                 Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceAround) {
                     state.driverWeeklyEarnings.forEach { (day, _) ->
                         Text(day, style = MaterialTheme.typography.labelSmall)
+                    }
+                }
+            }
+        }
+
+        // Order history (from the database)
+        Text("История заказов", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
+        if (state.driverHistory.isEmpty()) {
+            Text(
+                "Здесь появятся ваши поездки после первого заказа.",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+        }
+        val timeFmt = remember { java.text.SimpleDateFormat("dd.MM HH:mm", Locale.getDefault()) }
+        state.driverHistory.take(30).forEach { ride ->
+            val (statusText, statusColor) = when (ride.status) {
+                com.example.data.firebase.RideStatus.COMPLETED -> "Выполнен" to UberGreen
+                com.example.data.firebase.RideStatus.CANCELLED -> "Отменён" to UberRed
+                else -> "В работе" to UberBlue
+            }
+            Surface(
+                shape = RoundedCornerShape(14.dp),
+                color = MaterialTheme.colorScheme.surfaceVariant,
+                modifier = Modifier.fillMaxWidth().testTag("driver_history_${ride.id}")
+            ) {
+                Row(
+                    modifier = Modifier.padding(12.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(10.dp)
+                ) {
+                    Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                        Text(
+                            if (ride.createdAtMillis > 0) timeFmt.format(java.util.Date(ride.createdAtMillis)) else "—",
+                            style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                        Text(ride.pickupAddress, style = MaterialTheme.typography.bodyMedium, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                        Text("→ ${ride.dropoffAddress}", style = MaterialTheme.typography.bodyMedium, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                    }
+                    Column(horizontalAlignment = Alignment.End) {
+                        Text("${ride.priceSom} ${strings.currencySom}", fontWeight = FontWeight.Bold)
+                        Text(statusText, style = MaterialTheme.typography.labelSmall, color = statusColor, fontWeight = FontWeight.Bold)
                     }
                 }
             }

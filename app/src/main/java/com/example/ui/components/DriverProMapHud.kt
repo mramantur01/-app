@@ -898,7 +898,24 @@ private fun DriverActiveOrderExecutionSheet(
                     leadingIcon = { Icon(Icons.Default.Chat, contentDescription = null, tint = UberBlue, modifier = Modifier.size(14.dp)) },
                     modifier = Modifier.testTag("driver_open_passenger_chat_button")
                 )
-                AssistChip(
+                if (order.passengerPhone.isNotBlank()) {
+                    val ctx = LocalContext.current
+                    AssistChip(
+                        onClick = {
+                            runCatching {
+                                ctx.startActivity(
+                                    android.content.Intent(android.content.Intent.ACTION_DIAL, android.net.Uri.parse("tel:${order.passengerPhone}"))
+                                        .addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK)
+                                )
+                            }
+                        },
+                        label = { Text("Позвонить", style = MaterialTheme.typography.labelSmall) },
+                        leadingIcon = { Icon(Icons.Default.Call, contentDescription = null, tint = UberGreen, modifier = Modifier.size(14.dp)) },
+                        modifier = Modifier.testTag("driver_call_passenger_button")
+                    )
+                }
+                // ELQR payment needs online payments; passengers pay cash or by transfer now.
+                if (com.example.FeatureFlags.ONLINE_PAYMENTS) AssistChip(
                     onClick = onOpenElqr,
                     label = { Text("ELQR", style = MaterialTheme.typography.labelSmall) },
                     leadingIcon = { Icon(Icons.Default.QrCode2, contentDescription = null, modifier = Modifier.size(14.dp)) },

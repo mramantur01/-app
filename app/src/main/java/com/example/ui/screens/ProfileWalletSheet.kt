@@ -55,6 +55,7 @@ fun ProfileWalletOverlay(
     var nameInput by remember(state.profile.displayName) { mutableStateOf(state.profile.displayName) }
     var homeInput by remember(state.profile.homeAddress) { mutableStateOf(state.profile.homeAddress) }
     var workInput by remember(state.profile.workAddress) { mutableStateOf(state.profile.workAddress) }
+    var phoneInput by remember(state.profile.phone) { mutableStateOf(state.profile.phone) }
     var companyInput by remember(state.profile.companyName) { mutableStateOf(state.profile.companyName) }
     var companyEmailInput by remember(state.profile.companyEmail) { mutableStateOf(state.profile.companyEmail) }
     var companyInnInput by remember(state.businessCompanyInn) { mutableStateOf(state.businessCompanyInn) }
@@ -180,6 +181,15 @@ fun ProfileWalletOverlay(
                     Column(modifier = Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                         Text("Профиль и быстрые адреса", fontWeight = FontWeight.Bold)
                         OutlinedTextField(value = nameInput, onValueChange = { nameInput = it }, label = { Text("Имя") }, singleLine = true, modifier = Modifier.fillMaxWidth())
+                        OutlinedTextField(
+                            value = phoneInput,
+                            onValueChange = { phoneInput = it.take(20) },
+                            label = { Text("Телефон (для водителя и SOS)") },
+                            placeholder = { Text("0555 123 456") },
+                            singleLine = true,
+                            keyboardOptions = androidx.compose.foundation.text.KeyboardOptions(keyboardType = androidx.compose.ui.text.input.KeyboardType.Phone),
+                            modifier = Modifier.fillMaxWidth().testTag("profile_phone_input")
+                        )
                         OutlinedTextField(value = homeInput, onValueChange = { homeInput = it }, label = { Text(strings.home) }, singleLine = true, modifier = Modifier.fillMaxWidth())
                         OutlinedTextField(value = workInput, onValueChange = { workInput = it }, label = { Text(strings.work) }, singleLine = true, modifier = Modifier.fillMaxWidth())
                         Button(
@@ -188,7 +198,8 @@ fun ProfileWalletOverlay(
                                     it.copy(
                                         displayName = nameInput.trim().ifBlank { it.displayName },
                                         homeAddress = homeInput.trim(),
-                                        workAddress = workInput.trim()
+                                        workAddress = workInput.trim(),
+                                        phone = phoneInput.trim()
                                     )
                                 }
                             },

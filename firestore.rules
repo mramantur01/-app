@@ -399,7 +399,7 @@ service cloud.firestore {
                                                  'pickupAddress', 'dropoffAddress', 'pickupLat', 'pickupLng',
                                                  'dropoffLat', 'dropoffLng', 'priceSom', 'paymentMethod',
                                                  'createdAt', 'updatedAt']) &&
-                       incoming().keys().hasOnly(['passengerId', 'passengerName', 'status', 'driverId', 'serviceType',
+                       incoming().keys().hasOnly(['passengerId', 'passengerName', 'passengerPhone', 'status', 'driverId', 'serviceType',
                                                   'city', 'pickupAddress', 'dropoffAddress', 'pickupLat', 'pickupLng',
                                                   'dropoffLat', 'dropoffLng', 'priceSom', 'paymentMethod', 'comment',
                                                   'createdAt', 'updatedAt']) &&

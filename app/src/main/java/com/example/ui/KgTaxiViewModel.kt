@@ -55,6 +55,8 @@ data class KgTaxiUiState(
     /** Verified car and plate of this driver (from roles/{uid}). */
     val driverCar: String = "",
     val driverPlate: String = "",
+    /** Rides this driver took (newest first), from the database. */
+    val driverHistory: List<SharedRide> = emptyList(),
     val profile: LocalProfileEntity = LocalProfileEntity(),
     val language: AppLanguage = AppLanguage.RU,
     val darkTheme: Boolean = false,
@@ -364,6 +366,7 @@ class KgTaxiViewModel(
     private var dispatcherFeedJob: Job? = null
     private var passengerChatJob: Job? = null
     private var driverChatJob: Job? = null
+    private var driverHistoryJob: Job? = null
     private var verifiedDriverCar: String = ""
     private var verifiedDriverPlate: String = ""
     private var verifiedDriverPayPhone: String = ""
@@ -641,6 +644,7 @@ class KgTaxiViewModel(
             verifiedDriverPlate = info.plate
             verifiedDriverPayPhone = info.payPhone
             _uiState.update { it.copy(driverCar = info.car, driverPlate = info.plate) }
+            if (info.role == "driver") startDriverHistory() else stopDriverHistory()
             // Matches firestore.rules: only "driver" may take orders; dispatchers see the panel.
             val allowed = when (info.role) {
                 "driver" -> setOf(AppRole.PASSENGER, AppRole.DRIVER)
@@ -667,6 +671,51 @@ class KgTaxiViewModel(
                 driverOnline = s.driverOnline && AppRole.DRIVER in s.allowedRoles
             )
         }
+    }
+
+    // --- DRIVER HISTORY & REAL EARNINGS ---
+
+    private fun startDriverHistory() {
+        driverHistoryJob?.cancel()
+        driverHistoryJob = viewModelScope.launch {
+            rides.observeMyRides(asDriver = true).collect { list ->
+                val commission = _uiState.value.ownerBankConfig.commissionPercent
+                fun net(r: SharedRide) = OwnerPayoutGatewayClient.calculateOrderSplit(r.priceSom, commission).driverNetSom
+                val done = list.filter { it.status == RideStatus.COMPLETED }
+                val cal = java.util.Calendar.getInstance()
+                fun dayStart(daysAgo: Int): Long {
+                    val c = cal.clone() as java.util.Calendar
+                    c.add(java.util.Calendar.DAY_OF_YEAR, -daysAgo)
+                    c.set(java.util.Calendar.HOUR_OF_DAY, 0); c.set(java.util.Calendar.MINUTE, 0)
+                    c.set(java.util.Calendar.SECOND, 0); c.set(java.util.Calendar.MILLISECOND, 0)
+                    return c.timeInMillis
+                }
+                val todayStart = dayStart(0)
+                val today = done.filter { it.createdAtMillis >= todayStart }
+                val dayNames = listOf("Вс", "Пн", "Вт", "Ср", "Чт", "Пт", "Сб")
+                val week = (6 downTo 0).map { ago ->
+                    val from = dayStart(ago)
+                    val to = from + 24 * 60 * 60 * 1000L
+                    val c = java.util.Calendar.getInstance().apply { timeInMillis = from }
+                    dayNames[c.get(java.util.Calendar.DAY_OF_WEEK) - 1] to
+                        done.filter { it.createdAtMillis in from until to }.sumOf { net(it) }
+                }
+                _uiState.update {
+                    it.copy(
+                        driverHistory = list,
+                        driverTodayEarningsSom = today.sumOf { r -> net(r) },
+                        driverQuestTripsDone = today.size,
+                        driverWeeklyEarnings = week
+                    )
+                }
+            }
+        }
+    }
+
+    private fun stopDriverHistory() {
+        driverHistoryJob?.cancel()
+        driverHistoryJob = null
+        _uiState.update { it.copy(driverHistory = emptyList()) }
     }
 
     // --- DRIVER APPLICATION ---
@@ -1466,7 +1515,8 @@ class KgTaxiViewModel(
                 dropoffLat = s.dropoffPoint.lat,
                 dropoffLng = s.dropoffPoint.lng,
                 priceSom = price,
-                comment = comment
+                comment = comment,
+                passengerPhone = s.profile.phone
             )
             created.onSuccess { id ->
                 passengerRideId = id
@@ -1853,6 +1903,7 @@ class KgTaxiViewModel(
             pickupDistanceKm = (toPickupKm * 10).roundToInt() / 10.0,
             paymentMethodLabel = "Наличные",
             passengerPin = pin.ifBlank { "—" },
+            passengerPhone = passengerPhone,
             meetAndGreetSign = comment?.substringBefore(" • PIN")?.takeIf { it.isNotBlank() && !it.startsWith("PIN") }
         )
     }

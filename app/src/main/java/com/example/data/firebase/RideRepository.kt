@@ -34,6 +34,7 @@ data class SharedRide(
     val id: String,
     val passengerId: String,
     val passengerName: String,
+    val passengerPhone: String = "",
     val status: String,
     val driverId: String?,
     val driverName: String?,
@@ -52,7 +53,8 @@ data class SharedRide(
     val priceSom: Int,
     val comment: String?,
     val driverLat: Double?,
-    val driverLng: Double?
+    val driverLng: Double?,
+    val createdAtMillis: Long = 0L
 ) {
     val isActive: Boolean get() = status in RideStatus.ACTIVE
 
@@ -63,6 +65,7 @@ data class SharedRide(
                 id = snap.id,
                 passengerId = snap.getString("passengerId") ?: return null,
                 passengerName = snap.getString("passengerName") ?: "Пассажир",
+                passengerPhone = snap.getString("passengerPhone").orEmpty(),
                 status = snap.getString("status") ?: return null,
                 driverId = snap.getString("driverId"),
                 driverName = snap.getString("driverName"),
@@ -80,7 +83,8 @@ data class SharedRide(
                 priceSom = snap.getLong("priceSom")?.toInt() ?: 0,
                 comment = snap.getString("comment"),
                 driverLat = snap.getDouble("driverLat"),
-                driverLng = snap.getDouble("driverLng")
+                driverLng = snap.getDouble("driverLng"),
+                createdAtMillis = snap.getTimestamp("createdAt")?.toDate()?.time ?: 0L
             )
         }
     }
@@ -116,7 +120,8 @@ class RideRepository(
         dropoffLat: Double,
         dropoffLng: Double,
         priceSom: Int,
-        comment: String?
+        comment: String?,
+        passengerPhone: String = ""
     ): Result<String> {
         val uid = currentUid ?: return Result.failure(IllegalStateException("Войдите в аккаунт, чтобы заказать"))
         val doc = rides.document()
@@ -139,6 +144,7 @@ class RideRepository(
             "updatedAt" to FieldValue.serverTimestamp()
         )
         if (!comment.isNullOrBlank()) payload["comment"] = comment.take(200)
+        if (passengerPhone.isNotBlank()) payload["passengerPhone"] = passengerPhone.take(20)
         return runWrite(OperationType.CREATE, "rides/${doc.id}") {
             doc.set(payload).await()
             doc.id
@@ -184,6 +190,23 @@ class RideRepository(
             .catch { e ->
                 if (e is CancellationException) throw e
                 handleFirestoreError(e, OperationType.LIST, "rides?status in ACTIVE")
+                emit(emptyList())
+            }
+    }
+
+    /** My last rides (as passenger or as driver), newest first — for history and earnings. */
+    fun observeMyRides(asDriver: Boolean, limit: Long = 100): Flow<List<SharedRide>> {
+        val uid = currentUid ?: return emptyFlow()
+        val field = if (asDriver) "driverId" else "passengerId"
+        return rides
+            .whereEqualTo(field, uid)
+            .orderBy("createdAt", Query.Direction.DESCENDING)
+            .limit(limit)
+            .snapshots()
+            .map { qs -> qs.documents.mapNotNull { SharedRide.from(it) } }
+            .catch { e ->
+                if (e is CancellationException) throw e
+                handleFirestoreError(e, OperationType.LIST, "rides?$field=me")
                 emit(emptyList())
             }
     }

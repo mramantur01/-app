@@ -316,7 +316,9 @@ data class DriverIncomingOrder(
     val pickupEtaMin: Int = 4,
     val pickupDistanceKm: Double = 1.4,
     val paymentMethodLabel: String = "MBank",
-    val passengerPin: String = "4829"
+    val passengerPin: String = "4829",
+    /** Passenger phone for a call (real rides, if the passenger filled it in). */
+    val passengerPhone: String = ""
 )
 
 data class FoodCartEntry(
