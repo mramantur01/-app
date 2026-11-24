@@ -43,11 +43,12 @@ fun ActiveTripCard(
     onDismissRideCheck: () -> Unit,
     onEditDestination: (String) -> Unit,
     onCompleteNow: () -> Unit,
-    onCancelRide: () -> Unit,
+    onCancelRide: (String?) -> Unit,
     modifier: Modifier = Modifier
 ) {
     val context = LocalContext.current
     var showEditDestDialog by remember { mutableStateOf(false) }
+    var showCancelDialog by remember { mutableStateOf(false) }
     var newDestText by remember(ride.dropoffAddress) { mutableStateOf(ride.dropoffAddress) }
 
     val statusText = if (ride.serviceType == ServiceType.FOOD) {
@@ -516,7 +517,7 @@ fun ActiveTripCard(
                 horizontalArrangement = Arrangement.spacedBy(8.dp)
             ) {
                 OutlinedButton(
-                    onClick = onCancelRide,
+                    onClick = { showCancelDialog = true },
                     shape = RoundedCornerShape(12.dp),
                     modifier = Modifier.weight(1f).testTag("cancel_ride_button")
                 ) {
@@ -534,6 +535,42 @@ fun ActiveTripCard(
                 }
             }
         }
+    }
+
+    if (showCancelDialog) {
+        val reasons = listOf(
+            "Долго ждать",
+            "Водитель попросил отменить",
+            "Изменились планы",
+            "Заказал по ошибке",
+            "Другая причина"
+        )
+        AlertDialog(
+            onDismissRequest = { showCancelDialog = false },
+            title = { Text("Отменить заказ?") },
+            text = {
+                Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                    Text(
+                        if (ride.status == TripStatus.ARRIVED) "Водитель уже на месте и ждёт вас. Укажите причину:"
+                        else "Укажите причину — это поможет нам стать лучше:",
+                        style = MaterialTheme.typography.bodySmall
+                    )
+                    reasons.forEach { r ->
+                        OutlinedButton(
+                            onClick = {
+                                showCancelDialog = false
+                                onCancelRide(r)
+                            },
+                            modifier = Modifier.fillMaxWidth().testTag("cancel_reason_${reasons.indexOf(r)}")
+                        ) { Text(r) }
+                    }
+                }
+            },
+            confirmButton = {},
+            dismissButton = {
+                TextButton(onClick = { showCancelDialog = false }) { Text("Не отменять") }
+            }
+        )
     }
 
     if (showEditDestDialog) {

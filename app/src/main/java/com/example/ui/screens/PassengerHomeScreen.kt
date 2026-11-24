@@ -173,7 +173,7 @@ private fun PassengerControlSheet(
                 onDismissRideCheck = viewModel::dismissRideCheck,
                 onEditDestination = { viewModel.editDestinationInTrip(it) },
                 onCompleteNow = viewModel::completeActiveRideNow,
-                onCancelRide = viewModel::cancelActiveRide
+                onCancelRide = { reason -> viewModel.cancelActiveRide(reason) }
             )
             return@Column
         }

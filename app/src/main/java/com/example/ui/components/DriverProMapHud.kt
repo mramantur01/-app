@@ -161,7 +161,7 @@ fun DriverLineMapCockpit(
                         )
                         Text("•", color = Color.White.copy(alpha = 0.45f))
                         Text(
-                            text = "★ новый",
+                            text = state.driverRatingAvg?.let { "★ " + String.format(java.util.Locale.US, "%.2f", it) } ?: "★ новый",
                             fontFamily = JetBrainsMono,
                             fontWeight = FontWeight.Bold,
                             color = UberAmber,

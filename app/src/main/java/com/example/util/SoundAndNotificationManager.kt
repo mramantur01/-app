@@ -48,6 +48,23 @@ object SoundAndNotificationManager {
         }
     }
 
+    /** Strong vibration for a new order, felt even when the phone is on silent. */
+    fun vibrateNewOrder(context: Context) {
+        try {
+            val pattern = longArrayOf(0, 400, 200, 400, 200, 600)
+            if (android.os.Build.VERSION.SDK_INT >= 31) {
+                val vm = context.getSystemService(android.os.VibratorManager::class.java)
+                vm?.defaultVibrator?.vibrate(android.os.VibrationEffect.createWaveform(pattern, -1))
+            } else {
+                @Suppress("DEPRECATION")
+                val v = context.getSystemService(Context.VIBRATOR_SERVICE) as? android.os.Vibrator
+                v?.vibrate(android.os.VibrationEffect.createWaveform(pattern, -1))
+            }
+        } catch (_: Exception) {
+            // No vibrator: nothing to do.
+        }
+    }
+
     fun playCue(cue: SoundCue, soundEnabled: Boolean) {
         if (!soundEnabled) return
         try {

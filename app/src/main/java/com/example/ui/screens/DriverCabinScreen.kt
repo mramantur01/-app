@@ -669,7 +669,7 @@ private fun DriverProStatusTabContent(
                     }
                     Surface(shape = RoundedCornerShape(12.dp), color = UberAmber) {
                         Text(
-                            "★ новый",
+                            state.driverRatingAvg?.let { "★ " + String.format(java.util.Locale.US, "%.2f", it) } ?: "★ новый",
                             fontWeight = FontWeight.Bold,
                             color = Color.Black,
                             modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp)
@@ -733,7 +733,7 @@ private fun DriverProStatusTabContent(
                     }
                     Surface(shape = RoundedCornerShape(12.dp), color = UberAmber) {
                         Text(
-                            text = "★ новый",
+                            text = state.driverRatingAvg?.let { "★ " + String.format(java.util.Locale.US, "%.2f", it) } ?: "★ новый",
                             fontFamily = JetBrainsMono,
                             fontWeight = FontWeight.Black,
                             color = Color.Black,

@@ -422,14 +422,29 @@ service cloud.firestore {
         (existing().passengerId == request.auth.uid &&
          existing().status in ['SEARCHING', 'ASSIGNED', 'ARRIVED'] &&
          incoming().status == 'CANCELLED' &&
-         onlyChanged(['status', 'updatedAt'])) ||
+         onlyChanged(['status', 'updatedAt', 'cancelReason']) &&
+         (!('cancelReason' in incoming()) || (incoming().cancelReason is string && incoming().cancelReason.size() <= 100))) ||
+        // The passenger rates the driver once after the trip (and may add a tip).
+        (existing().passengerId == request.auth.uid &&
+         existing().status == 'COMPLETED' &&
+         !('driverRating' in existing()) &&
+         onlyChanged(['driverRating', 'tipSom', 'updatedAt']) &&
+         incoming().driverRating is int && incoming().driverRating >= 1 && incoming().driverRating <= 5 &&
+         (!('tipSom' in incoming()) || (incoming().tipSom is int && incoming().tipSom >= 0 && incoming().tipSom <= 100000))) ||
+        // The driver rates the passenger once after the trip.
+        (existing().driverId == request.auth.uid &&
+         existing().status == 'COMPLETED' &&
+         !('passengerRating' in existing()) &&
+         onlyChanged(['passengerRating', 'updatedAt']) &&
+         incoming().passengerRating is int && incoming().passengerRating >= 1 && incoming().passengerRating <= 5) ||
         // A driver takes an open order.
         (isDriver() &&
          existing().status == 'SEARCHING' &&
          existing().driverId == null &&
          incoming().status == 'ASSIGNED' &&
          incoming().driverId == request.auth.uid &&
-         onlyChanged(['status', 'driverId', 'driverName', 'driverCar', 'driverPlate', 'driverPayPhone', 'updatedAt'])) ||
+         onlyChanged(['status', 'driverId', 'driverName', 'driverCar', 'driverPlate', 'driverPayPhone', 'driverRatingAvg', 'updatedAt']) &&
+         (!('driverRatingAvg' in incoming()) || (incoming().driverRatingAvg is number && incoming().driverRatingAvg >= 0 && incoming().driverRatingAvg <= 5))) ||
         // The assigned driver moves the trip forward or cancels it.
         (isDriver() &&
          existing().driverId == request.auth.uid &&

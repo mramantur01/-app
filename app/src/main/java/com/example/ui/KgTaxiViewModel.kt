@@ -57,6 +57,9 @@ data class KgTaxiUiState(
     val driverPlate: String = "",
     /** Rides this driver took (newest first), from the database. */
     val driverHistory: List<SharedRide> = emptyList(),
+    /** Average of passengers' stars for this driver; null until the first rating. */
+    val driverRatingAvg: Double? = null,
+    val driverRatingCount: Int = 0,
     val profile: LocalProfileEntity = LocalProfileEntity(),
     val language: AppLanguage = AppLanguage.RU,
     val darkTheme: Boolean = false,
@@ -700,8 +703,11 @@ class KgTaxiViewModel(
                     dayNames[c.get(java.util.Calendar.DAY_OF_WEEK) - 1] to
                         done.filter { it.createdAtMillis in from until to }.sumOf { net(it) }
                 }
+                val rated = list.mapNotNull { it.driverRating }
                 _uiState.update {
                     it.copy(
+                        driverRatingAvg = if (rated.isEmpty()) null else rated.average(),
+                        driverRatingCount = rated.size,
                         driverHistory = list,
                         driverTodayEarningsSom = today.sumOf { r -> net(r) },
                         driverQuestTripsDone = today.size,
@@ -1421,13 +1427,13 @@ class KgTaxiViewModel(
         refreshLiveRoadRoute()
     }
 
-    fun cancelActiveRide() {
+    fun cancelActiveRide(reason: String? = null) {
         rideSimulationJob?.cancel()
         val realId = passengerRideId
         if (realId != null) {
             stopPassengerRideObserver()
             viewModelScope.launch {
-                val res = rides.cancelAsPassenger(realId)
+                val res = rides.cancelAsPassenger(realId, reason)
                 if (res.isFailure) {
                     _uiState.update { it.copy(statusBanner = "Не удалось отменить заказ: проверьте интернет") }
                 }
@@ -1585,6 +1591,7 @@ class KgTaxiViewModel(
                     status = status,
                     progress = progress,
                     driverName = shared.driverName ?: r.driverName,
+                    driverRating = shared.driverRatingAvg?.takeIf { it > 0 } ?: r.driverRating,
                     driverPayPhone = shared.driverPayPhone?.takeIf { it.isNotBlank() } ?: r.driverPayPhone,
                     driverPoint = if (shared.driverLat != null && shared.driverLng != null) GeoPoint(shared.driverLat, shared.driverLng) else r.driverPoint,
                     driverCar = listOfNotNull(shared.driverCar, shared.driverPlate)
@@ -1724,6 +1731,7 @@ class KgTaxiViewModel(
             dao.upsertTrip(updated)
             if (_uiState.value.isSignedIn) {
                 firestoreSync.syncTripPostUpdate(updated.id, rating, tipSom, lostItemNote)
+                if (FeatureFlags.REAL_RIDES && rating in 1..5) rides.rateDriver(updated.id, rating, tipSom)
             }
         }
     }
@@ -1859,6 +1867,7 @@ class KgTaxiViewModel(
                 _uiState.update { it.copy(driverIncomingOrders = orders) }
                 if (fresh.isNotEmpty() && _uiState.value.driverAcceptedOrder == null) {
                     SoundAndNotificationManager.playCue(SoundCue.DRIVER_ASSIGNED, _uiState.value.soundEnabled)
+                    SoundAndNotificationManager.vibrateNewOrder(appContext)
                     SoundAndNotificationManager.postNotification(
                         appContext,
                         "Новый заказ • ${orders.firstOrNull()?.grossFareSom ?: 0} сом",
@@ -1969,7 +1978,8 @@ class KgTaxiViewModel(
                 driverName = _uiState.value.profile.displayName,
                 driverCar = verifiedDriverCar,
                 driverPlate = verifiedDriverPlate,
-                driverPayPhone = verifiedDriverPayPhone
+                driverPayPhone = verifiedDriverPayPhone,
+                driverRatingAvg = _uiState.value.driverRatingAvg
             )
             res.onSuccess {
                 driverRideId = order.id
@@ -2359,6 +2369,9 @@ class KgTaxiViewModel(
 
     fun submitDriverPassengerRating(stars: Int) {
         val rated = _uiState.value.driverPendingPassengerRating
+        if (FeatureFlags.REAL_RIDES && rated != null && stars in 1..5) {
+            viewModelScope.launch { rides.ratePassenger(rated.id, stars) }
+        }
         _uiState.update {
             it.copy(
                 driverPendingPassengerRating = null,
