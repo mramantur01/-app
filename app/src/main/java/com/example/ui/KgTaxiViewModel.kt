@@ -3001,7 +3001,7 @@ class KgTaxiViewModel(
     }
 
     fun requestAiTourGuide(topic: String) {
-        if (!FeatureFlags.AI_ASSISTANT) {
+        if (!FeatureFlags.AI_TOUR_GUIDE) {
             showComingSoon("ИИ-гид")
             return
         }

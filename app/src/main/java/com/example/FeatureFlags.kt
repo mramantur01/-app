@@ -25,8 +25,11 @@ object FeatureFlags {
     /** Owner payouts to a bank. Off: the payout key must live on a server, not in the APK. */
     const val OWNER_PAYOUTS = false
 
-    /** AI route chat and AI tour guide. */
+    /** AI route chat. */
     const val AI_ASSISTANT = false
+
+    /** AI tour guide on the passenger home (falls back to ready-made stories without AI). */
+    const val AI_TOUR_GUIDE = true
 
     /** Voice commands. */
     const val VOICE_COMMANDS = false

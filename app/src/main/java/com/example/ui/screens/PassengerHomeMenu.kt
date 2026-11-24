@@ -206,6 +206,17 @@ fun PassengerHomeMenu(
             ) { Icon(Icons.Default.GpsFixed, contentDescription = "Моё местоположение") }
         }
 
+        // AI guide: stories about places of Kyrgyzstan (moved here from the intercity screen).
+        if (com.example.FeatureFlags.AI_TOUR_GUIDE) {
+            com.example.ui.components.AiTourGuideCard(
+                language = state.language,
+                currentTopic = state.tourGuideTopic,
+                storyText = state.tourGuideText,
+                isLoading = state.tourGuideLoading,
+                onRequestStory = viewModel::requestAiTourGuide
+            )
+        }
+
     }
 }
 

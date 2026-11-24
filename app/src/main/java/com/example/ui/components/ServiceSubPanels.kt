@@ -442,8 +442,8 @@ fun IntercitySeatPickerPanel(
             MountainPassesStatusCard(passes = state.mountainPasses)
         }
 
-        // AI Audio Tour Guide along the intercity highway
-        AiTourGuideCard(
+        // AI guide moved to the passenger home screen (under the map).
+        if (com.example.FeatureFlags.DEMO_EXTRAS) AiTourGuideCard(
             language = state.language,
             currentTopic = state.tourGuideTopic,
             storyText = state.tourGuideText,
