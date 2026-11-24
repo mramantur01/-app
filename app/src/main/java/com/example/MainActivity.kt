@@ -13,6 +13,7 @@ import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.background
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -200,7 +201,8 @@ fun KgTaxiAppRoot() {
     }
 
     KgTaxiTheme(darkTheme = effectiveDarkTheme) {
-        Box(modifier = Modifier.fillMaxSize()) {
+        // Paint the theme background: otherwise the dark window shows through in light mode.
+        Box(modifier = Modifier.fillMaxSize().background(MaterialTheme.colorScheme.background)) {
             Column(modifier = Modifier.fillMaxSize()) {
                 // While the driver is on the line the screen is for driving only: no role tabs or settings.
                 val driverOnLine = state.role == AppRole.DRIVER && (state.driverOnline || state.driverAcceptedOrder != null)
