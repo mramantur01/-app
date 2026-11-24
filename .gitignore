@@ -20,3 +20,7 @@ debug.keystore
 !/debug.keystore
 *-debug.log
 
+
+# Release signing keys never go to git
+*.jks
+keystore.properties

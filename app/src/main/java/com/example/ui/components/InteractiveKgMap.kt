@@ -190,7 +190,8 @@ fun InteractiveKgMap(
                     color = MaterialTheme.colorScheme.onPrimary,
                     fontFamily = JetBrainsMono
                 )
-                if (routeFromOsrm) {
+                // Technical route-source badge: only in demo builds.
+                if (routeFromOsrm && com.example.FeatureFlags.DEMO_EXTRAS) {
                     Surface(
                         shape = RoundedCornerShape(6.dp),
                         color = UberGreen.copy(alpha = 0.24f)

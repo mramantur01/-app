@@ -105,7 +105,7 @@ fun RegistrationScreen(
     BackHandler(enabled = !sending) { back() }
 
     Surface(color = KgTurquoiseBg, modifier = Modifier.fillMaxSize().testTag("registration_screen")) {
-        Column(modifier = Modifier.fillMaxSize()) {
+        Column(modifier = Modifier.fillMaxSize().statusBarsPadding().navigationBarsPadding().imePadding()) {
             // Top bar
             Row(
                 modifier = Modifier.fillMaxWidth().padding(horizontal = 8.dp, vertical = 8.dp),
@@ -185,15 +185,15 @@ fun RegistrationScreen(
 
                     RegStep.DRIVER_CAR -> {
                         Text("Марка", fontWeight = FontWeight.SemiBold, color = KgInk)
-                        ChipRow(CarCatalog.makes.map { it.name }, make) { make = it; model = "" }
+                        ChipFlow(CarCatalog.makes.map { it.name }, make) { make = it; model = "" }
                         if (make.isNotBlank()) {
                             Text("Модель", fontWeight = FontWeight.SemiBold, color = KgInk)
-                            ChipRow(CarCatalog.modelsOf(make).map { it.name }, model) { model = it }
+                            ChipFlow(CarCatalog.modelsOf(make).map { it.name }, model) { model = it }
                         }
                         Text("Год выпуска", fontWeight = FontWeight.SemiBold, color = KgInk)
                         ChipRow(CarCatalog.years.map { it.toString() }, year?.toString().orEmpty()) { year = it.toInt() }
                         Text("Цвет", fontWeight = FontWeight.SemiBold, color = KgInk)
-                        ChipRow(CarCatalog.colors, color) { color = it }
+                        ChipFlow(CarCatalog.colors, color) { color = it }
                         RegField(plate, { plate = it.uppercase().take(12) }, "Госномер (например 01KG123ABC)", "reg_plate")
                         val y = year
                         if (make.isNotBlank() && model.isNotBlank() && y != null) {
@@ -409,6 +409,29 @@ private fun RegField(
 private fun ChipRow(items: List<String>, selected: String, onSelect: (String) -> Unit) {
     Row(
         modifier = Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
+        horizontalArrangement = Arrangement.spacedBy(8.dp)
+    ) {
+        items.forEach { item ->
+            FilterChip(
+                selected = item == selected,
+                onClick = { onSelect(item) },
+                label = { Text(item) },
+                colors = FilterChipDefaults.filterChipColors(
+                    selectedContainerColor = KgTurquoise,
+                    selectedLabelColor = Color.White,
+                    containerColor = Color.White
+                )
+            )
+        }
+    }
+}
+
+/** Chips that wrap onto new lines: every option is visible without side scrolling. */
+@OptIn(ExperimentalLayoutApi::class)
+@Composable
+private fun ChipFlow(items: List<String>, selected: String, onSelect: (String) -> Unit) {
+    FlowRow(
+        modifier = Modifier.fillMaxWidth(),
         horizontalArrangement = Arrangement.spacedBy(8.dp)
     ) {
         items.forEach { item ->
