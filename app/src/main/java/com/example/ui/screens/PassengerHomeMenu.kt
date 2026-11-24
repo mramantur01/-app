@@ -10,6 +10,9 @@ import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.setValue
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -56,6 +59,11 @@ fun PassengerHomeMenu(
         state.passengerRides.filter { it.status == RideStatus.COMPLETED || it.status == RideStatus.CANCELLED }
             .distinctBy { it.dropoffAddress }
             .take(4)
+    }
+
+    var showMyRides by androidx.compose.runtime.saveable.rememberSaveable { androidx.compose.runtime.mutableStateOf(false) }
+    if (showMyRides) {
+        MyRidesSheet(state = state, viewModel = viewModel, recent = recent, onDismiss = { showMyRides = false })
     }
 
     Column(
@@ -126,7 +134,7 @@ fun PassengerHomeMenu(
                 highlighted = false,
                 tag = "home_tile_rides",
                 modifier = Modifier.weight(1f),
-                onClick = onOpenMyRides
+                onClick = { showMyRides = true }
             )
         }
 
@@ -198,27 +206,6 @@ fun PassengerHomeMenu(
             ) { Icon(Icons.Default.GpsFixed, contentDescription = "Моё местоположение") }
         }
 
-        Text("Недавние", fontWeight = FontWeight.Bold, color = KgInk)
-        RecentRow(
-            icon = Icons.Default.Home,
-            title = "Дом",
-            subtitle = state.profile.homeAddress.ifBlank { "Укажите адрес в профиле" },
-            onClick = { viewModel.goToSavedAddress("Дом", state.profile.homeAddress) }
-        )
-        RecentRow(
-            icon = Icons.Default.Work,
-            title = "Работа",
-            subtitle = state.profile.workAddress.ifBlank { "Укажите адрес в профиле" },
-            onClick = { viewModel.goToSavedAddress("Работа", state.profile.workAddress) }
-        )
-        recent.forEach { r ->
-            RecentRow(
-                icon = Icons.Default.Schedule,
-                title = r.dropoffAddress,
-                subtitle = r.pickupAddress.let { "из: $it" },
-                onClick = { viewModel.goToRecentDestination(r) }
-            )
-        }
     }
 }
 
@@ -263,6 +250,125 @@ private fun RecentRow(icon: ImageVector, title: String, subtitle: String, onClic
                 Text(subtitle, style = MaterialTheme.typography.bodySmall, color = KgInk.copy(alpha = 0.65f), maxLines = 1, overflow = TextOverflow.Ellipsis)
             }
             Icon(Icons.Default.ChevronRight, contentDescription = null, tint = KgInk.copy(alpha = 0.4f))
+        }
+    }
+}
+
+
+/** "Мои поездки": saved places, recent addresses and the history of orders with repeat and complaint. */
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun MyRidesSheet(
+    state: KgTaxiUiState,
+    viewModel: KgTaxiViewModel,
+    recent: List<com.example.data.firebase.SharedRide>,
+    onDismiss: () -> Unit
+) {
+    var complainRide by androidx.compose.runtime.remember { androidx.compose.runtime.mutableStateOf<com.example.data.firebase.SharedRide?>(null) }
+    ModalBottomSheet(onDismissRequest = onDismiss, containerColor = Color.White) {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .verticalScroll(rememberScrollState())
+                .padding(horizontal = 16.dp)
+                .padding(bottom = 24.dp)
+                .testTag("my_rides_sheet"),
+            verticalArrangement = Arrangement.spacedBy(10.dp)
+        ) {
+            Text("Мои поездки", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold, color = KgInk)
+
+            Text("Недавние адреса", fontWeight = FontWeight.Bold, color = KgInk)
+            RecentRow(
+                icon = Icons.Default.Home,
+                title = "Дом",
+                subtitle = state.profile.homeAddress.ifBlank { "Укажите адрес в профиле" },
+                onClick = { onDismiss(); viewModel.goToSavedAddress("Дом", state.profile.homeAddress) }
+            )
+            RecentRow(
+                icon = Icons.Default.Work,
+                title = "Работа",
+                subtitle = state.profile.workAddress.ifBlank { "Укажите адрес в профиле" },
+                onClick = { onDismiss(); viewModel.goToSavedAddress("Работа", state.profile.workAddress) }
+            )
+            recent.forEach { r ->
+                RecentRow(
+                    icon = Icons.Default.Schedule,
+                    title = r.dropoffAddress,
+                    subtitle = "из: ${r.pickupAddress}",
+                    onClick = { onDismiss(); viewModel.goToRecentDestination(r) }
+                )
+            }
+
+            Text("История заказов", fontWeight = FontWeight.Bold, color = KgInk, modifier = Modifier.padding(top = 6.dp))
+            if (state.passengerRides.isEmpty()) {
+                Text("Здесь появятся ваши заказы.", color = KgInk.copy(alpha = 0.6f))
+            }
+            state.passengerRides.take(30).forEach { r ->
+                RideHistoryRow(
+                    ride = r,
+                    onRepeat = { onDismiss(); viewModel.repeatRide(r) },
+                    onComplain = { complainRide = r }
+                )
+            }
+        }
+    }
+    complainRide?.let { ride ->
+        var text by androidx.compose.runtime.remember { androidx.compose.runtime.mutableStateOf("") }
+        AlertDialog(
+            onDismissRequest = { complainRide = null },
+            title = { Text("Жалоба на поездку") },
+            text = {
+                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Text("${ride.pickupAddress} → ${ride.dropoffAddress}", style = MaterialTheme.typography.bodySmall)
+                    OutlinedTextField(value = text, onValueChange = { text = it.take(1000) }, label = { Text("Что случилось?") }, minLines = 3, modifier = Modifier.fillMaxWidth())
+                }
+            },
+            confirmButton = {
+                Button(onClick = { viewModel.sendSupportMessage(text, ride.id); complainRide = null }, enabled = text.isNotBlank()) { Text("Отправить") }
+            },
+            dismissButton = { TextButton(onClick = { complainRide = null }) { Text("Отмена") } }
+        )
+    }
+}
+
+@Composable
+private fun RideHistoryRow(ride: com.example.data.firebase.SharedRide, onRepeat: () -> Unit, onComplain: () -> Unit) {
+    val date = androidx.compose.runtime.remember(ride.createdAtMillis) {
+        if (ride.createdAtMillis > 0) java.text.SimpleDateFormat("dd.MM HH:mm", java.util.Locale.US).format(java.util.Date(ride.createdAtMillis)) else ""
+    }
+    val status = when (ride.status) {
+        RideStatus.COMPLETED -> "Выполнен"
+        RideStatus.CANCELLED -> "Отменён"
+        RideStatus.BOOKED -> "Предзаказ принят"
+        RideStatus.SEARCHING -> "Ищем водителя"
+        else -> "В пути"
+    }
+    Surface(shape = RoundedCornerShape(14.dp), color = com.example.ui.theme.KgTurquoiseBg, border = androidx.compose.foundation.BorderStroke(1.dp, KgTurquoiseLight), modifier = Modifier.fillMaxWidth()) {
+        Column(modifier = Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+            Row {
+                Text(date, style = MaterialTheme.typography.labelMedium, color = KgInk.copy(alpha = 0.6f), modifier = Modifier.weight(1f))
+                Text("${ride.priceSom} сом", fontWeight = FontWeight.Bold, color = KgInk)
+            }
+            Text("${ride.pickupAddress} → ${ride.dropoffAddress}", color = KgInk, maxLines = 2, overflow = TextOverflow.Ellipsis)
+            Text(
+                listOfNotNull(status, ride.driverName?.takeIf { it.isNotBlank() }, ride.driverCar?.takeIf { it.isNotBlank() }).joinToString(" • "),
+                style = MaterialTheme.typography.bodySmall,
+                color = if (ride.status == RideStatus.CANCELLED) Color(0xFFC62828) else KgTurquoise
+            )
+            Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                TextButton(onClick = onRepeat, contentPadding = PaddingValues(horizontal = 8.dp)) {
+                    Icon(Icons.Default.Replay, contentDescription = null, modifier = Modifier.size(16.dp))
+                    Spacer(Modifier.width(4.dp))
+                    Text("Повторить")
+                }
+                if (ride.status == RideStatus.COMPLETED || ride.status == RideStatus.CANCELLED) {
+                    TextButton(onClick = onComplain, contentPadding = PaddingValues(horizontal = 8.dp)) {
+                        Icon(Icons.Default.ReportProblem, contentDescription = null, modifier = Modifier.size(16.dp))
+                        Spacer(Modifier.width(4.dp))
+                        Text("Пожаловаться")
+                    }
+                }
+            }
         }
     }
 }
