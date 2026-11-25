@@ -141,7 +141,7 @@ fun DriverLineMapCockpit(
                 Surface(
                     onClick = onOpenProTab,
                     shape = RoundedCornerShape(24.dp),
-                    color = Color(0xFF121212).copy(alpha = 0.92f),
+                    color = com.example.ui.theme.KgTurquoise,
                     shadowElevation = 6.dp,
                     modifier = Modifier.testTag("driver_hud_activity_pill")
                 ) {
@@ -153,7 +153,7 @@ fun DriverLineMapCockpit(
                         Icon(
                             Icons.Default.Bolt,
                             contentDescription = "Activity",
-                            tint = if (state.driverActivityScore >= 85) UberGreen else UberAmber,
+                            tint = Color.White,
                             modifier = Modifier.size(16.dp)
                         )
                         Text(
@@ -168,7 +168,7 @@ fun DriverLineMapCockpit(
                             text = state.driverRatingAvg?.let { "★ " + String.format(java.util.Locale.US, "%.2f", it) } ?: "★ новый",
                             fontFamily = JetBrainsMono,
                             fontWeight = FontWeight.Bold,
-                            color = UberAmber,
+                            color = Color.White,
                             fontSize = 13.sp
                         )
                     }
@@ -178,7 +178,7 @@ fun DriverLineMapCockpit(
                 Surface(
                     onClick = onOpenEarningsTab,
                     shape = RoundedCornerShape(24.dp),
-                    color = Color.Black,
+                    color = com.example.ui.theme.KgTurquoise,
                     shadowElevation = 8.dp,
                     modifier = Modifier
                         .border(1.dp, Color.White.copy(alpha = 0.18f), RoundedCornerShape(24.dp))
@@ -675,7 +675,7 @@ private fun DriverIncomingOfferSheet(
                         }
                     }
                     Text(
-                        text = "Чистыми • Тариф ${order.grossFareSom} с • ${order.passengerName} ★ ${order.passengerRating}",
+                        text = "Чистыми • Тариф ${order.grossFareSom} с • ${order.passengerName} ${com.example.data.model.ratingLabel(order.passengerRating, order.passengerTrips)}",
                         style = MaterialTheme.typography.labelSmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
@@ -801,7 +801,7 @@ private fun DriverActiveOrderExecutionSheet(
                 Column(modifier = Modifier.weight(1f)) {
                     Text(stageTitle, style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.Black, color = UberBlue)
                     Text(
-                        text = "${order.passengerName} ★ ${order.passengerRating} • ${order.tariffName} • ${order.paymentMethodLabel}",
+                        text = "${order.passengerName} ${com.example.data.model.ratingLabel(order.passengerRating, order.passengerTrips)} • ${order.tariffName} • ${order.paymentMethodLabel}",
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
@@ -982,7 +982,7 @@ private fun DriverActiveOrderExecutionSheet(
                 val (ctaText, ctaColor) = when (stage) {
                     DriverOrderStage.EN_ROUTE_TO_PICKUP -> "Свайп: НА МЕСТЕ" to UberBlue
                     DriverOrderStage.WAITING_AT_PICKUP -> "Свайп: ПОЕХАЛИ!" to UberGreen
-                    DriverOrderStage.IN_TRIP -> "Свайп: ЗАВЕРШИТЬ (+${order.upfrontNetEarningsSom}с)" to Color(0xFF111111)
+                    DriverOrderStage.IN_TRIP -> "Свайп: ЗАВЕРШИТЬ (+${order.upfrontNetEarningsSom}с)" to com.example.ui.theme.KgTurquoiseDark
                 }
                 SwipeToConfirmSlider(
                     text = ctaText,

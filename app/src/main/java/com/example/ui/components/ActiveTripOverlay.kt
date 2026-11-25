@@ -17,6 +17,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
@@ -286,14 +287,29 @@ fun ActiveTripCard(
                     horizontalArrangement = Arrangement.spacedBy(10.dp),
                     modifier = Modifier.weight(1f)
                 ) {
+                    // Driver face photo (after approval by the owner); a person icon until then.
+                    val driverBitmap = androidx.compose.runtime.remember(ride.driverPhoto) {
+                        ride.driverPhoto?.let { b64 ->
+                            runCatching {
+                                val bytes = android.util.Base64.decode(b64, android.util.Base64.DEFAULT)
+                                android.graphics.BitmapFactory.decodeByteArray(bytes, 0, bytes.size)?.asImageBitmap()
+                            }.getOrNull()
+                        }
+                    }
                     Box(
                         modifier = Modifier
-                            .size(44.dp)
+                            .size(52.dp)
                             .clip(CircleShape)
-                            .background(MaterialTheme.colorScheme.primary),
+                            .background(MaterialTheme.colorScheme.primary)
+                            .testTag("driver_photo"),
                         contentAlignment = Alignment.Center
                     ) {
-                        Icon(
+                        if (driverBitmap != null) androidx.compose.foundation.Image(
+                            bitmap = driverBitmap,
+                            contentDescription = "Фото водителя",
+                            contentScale = androidx.compose.ui.layout.ContentScale.Crop,
+                            modifier = Modifier.fillMaxSize()
+                        ) else Icon(
                             Icons.Default.Person,
                             contentDescription = "Driver",
                             tint = MaterialTheme.colorScheme.onPrimary
@@ -301,7 +317,7 @@ fun ActiveTripCard(
                     }
                     Column {
                         Text(
-                            text = if (ride.driverRating > 0.0) "${ride.driverName} ★ ${ride.driverRating}" else ride.driverName,
+                            text = if (ride.status == com.example.data.model.TripStatus.SEARCHING) ride.driverName else "${ride.driverName} ${com.example.data.model.ratingLabel(ride.driverRating, ride.driverTrips)}",
                             style = MaterialTheme.typography.titleSmall,
                             fontWeight = FontWeight.Bold
                         )

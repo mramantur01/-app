@@ -182,6 +182,7 @@ fun RegistrationScreen(
                         RegField(phone, { phone = it.filter { c -> c.isDigit() || c == '+' } }, "Телефон", "reg_phone", KeyboardType.Phone)
                         Text("Город работы", fontWeight = FontWeight.SemiBold, color = KgInk)
                         ChipRow(KgGeoCatalog.cities.map { it.name }, city) { city = it }
+                        PhotoSlot(RegPhoto.DRIVER_FACE, photos[RegPhoto.DRIVER_FACE]) { photos[RegPhoto.DRIVER_FACE] = it }
                         RegField(passport, { passport = it.uppercase().take(20) }, "Номер паспорта (ID-карты)", "reg_passport")
                         PhotoSlot(RegPhoto.PASSPORT, photos[RegPhoto.PASSPORT]) { photos[RegPhoto.PASSPORT] = it }
                         RegField(license, { license = it.uppercase().take(30) }, "Номер водительского удостоверения (ВУ)", "reg_license")
@@ -252,7 +253,7 @@ fun RegistrationScreen(
                     passport.length >= 6 && photos[RegPhoto.PASSPORT] != null
                 RegStep.DRIVER_DOCS -> fullName.trim().length >= 3 && phone.count { it.isDigit() } >= 9 &&
                     passport.length >= 6 && license.length >= 6 && experience.isNotBlank() &&
-                    photos[RegPhoto.PASSPORT] != null && photos[RegPhoto.LICENSE] != null
+                    photos[RegPhoto.PASSPORT] != null && photos[RegPhoto.LICENSE] != null && photos[RegPhoto.DRIVER_FACE] != null
                 RegStep.DRIVER_CAR -> make.isNotBlank() && model.isNotBlank() && year != null && color.isNotBlank() &&
                     plate.length >= 5 && CarCatalog.tariffsFor(make, model, year ?: 0, vehicleType, com.example.data.model.DriverOptions(childSeat, ladyDriver, soberDriver, courier, wheelchair, loaders)).isNotEmpty()
                 RegStep.DRIVER_PHOTOS -> RegPhoto.CAR.all { photos[it] != null }

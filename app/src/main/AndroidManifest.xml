@@ -9,6 +9,9 @@
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
     <uses-permission android:name="android.permission.RECORD_AUDIO" />
     <uses-permission android:name="android.permission.VIBRATE" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_LOCATION" />
+    <uses-permission android:name="android.permission.WAKE_LOCK" />
 
     <!-- Lets the app open 2GIS / Yandex Navigator / Google Maps for turn-by-turn navigation (Android 11+). -->
     <queries>
@@ -63,6 +66,11 @@
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
         </activity>
+
+        <service
+            android:name="com.example.util.DriverOnlineService"
+            android:exported="false"
+            android:foregroundServiceType="location" />
 
         <service
             android:name=".data.firebase.KgTaxiMessagingService"

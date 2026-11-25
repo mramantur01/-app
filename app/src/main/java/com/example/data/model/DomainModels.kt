@@ -279,7 +279,11 @@ data class ActiveRideState(
     /** Driver phone for a direct bank transfer (real rides only). */
     val driverPayPhone: String? = null,
     /** Live position of the driver, shared every ~10 s during a real ride. */
-    val driverPoint: GeoPoint? = null
+    val driverPoint: GeoPoint? = null,
+    /** Completed trips of the driver (shown with the rating). */
+    val driverTrips: Int = 0,
+    /** Driver face photo (base64 JPEG), loaded after a driver takes the order. */
+    val driverPhoto: String? = null
 )
 
 data class NearbyDriverMarker(
@@ -318,7 +322,9 @@ data class DriverIncomingOrder(
     val paymentMethodLabel: String = "MBank",
     val passengerPin: String = "4829",
     /** Passenger phone for a call (real rides, if the passenger filled it in). */
-    val passengerPhone: String = ""
+    val passengerPhone: String = "",
+    /** Completed trips of the passenger (0 = new passenger). */
+    val passengerTrips: Int = 0
 )
 
 data class FoodCartEntry(
@@ -471,3 +477,17 @@ data class OwnerBankSettlementRecord(
     val timeLabel: String
 )
 
+
+
+/** "★ 4.9 • 12 поездок" or "новый" when there are no rated trips yet. */
+fun ratingLabel(avg: Double?, trips: Int): String {
+    if (trips <= 0 || avg == null || avg <= 0.0) return "новый"
+    val n = trips % 100
+    val word = when {
+        n in 11..14 -> "поездок"
+        trips % 10 == 1 -> "поездка"
+        trips % 10 in 2..4 -> "поездки"
+        else -> "поездок"
+    }
+    return "★ " + String.format(java.util.Locale.US, "%.1f", avg) + " • $trips $word"
+}

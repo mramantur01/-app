@@ -20,6 +20,7 @@ import java.io.ByteArrayOutputStream
 /** Photo slots of the registration. */
 enum class RegPhoto(val id: String, val title: String) {
     PASSPORT("passport", "Паспорт (ID-карта), лицевая сторона"),
+    DRIVER_FACE("driver_face", "Ваше фото (лицо) — его увидят пассажиры"),
     LICENSE("license", "Водительское удостоверение"),
     CAR_FRONT("car_front", "Авто спереди (виден номер)"),
     CAR_BACK("car_back", "Авто сзади (виден номер)"),
@@ -29,7 +30,7 @@ enum class RegPhoto(val id: String, val title: String) {
 
     companion object {
         val PASSENGER = listOf(PASSPORT)
-        val DRIVER_DOCS = listOf(PASSPORT, LICENSE)
+        val DRIVER_DOCS = listOf(DRIVER_FACE, PASSPORT, LICENSE)
         val CAR = listOf(CAR_FRONT, CAR_BACK, CAR_LEFT, CAR_RIGHT, CAR_INTERIOR)
     }
 }

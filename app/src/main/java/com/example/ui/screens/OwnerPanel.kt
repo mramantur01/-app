@@ -125,6 +125,9 @@ private fun PricesEditor(state: KgTaxiUiState, onSave: (com.example.data.firebas
     var promoCode by remember(cfg) { mutableStateOf(cfg.promoCode) }
     var promoPercent by remember(cfg) { mutableStateOf(cfg.promoPercent.takeIf { it > 0 }?.toString() ?: "20") }
     var promoActive by remember(cfg) { mutableStateOf(cfg.promoActive) }
+    val routes = com.example.data.model.KgGeoCatalog.intercityRoutes
+    val seat = remember(cfg) { mutableStateMapOf<String, String>().apply { routes.forEach { put(it.id, (cfg.intercity[it.id] ?: it.seatPriceSom).toString()) } } }
+    var referral by remember(cfg) { mutableStateOf(cfg.referralPercent.toString()) }
 
     Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
         Text("Цены тарифов (сом)", fontWeight = FontWeight.Bold, color = KgInk)
@@ -136,6 +139,16 @@ private fun PricesEditor(state: KgTaxiUiState, onSave: (com.example.data.firebas
             }
         }
         NumField(commission, { commission = it }, "Комиссия сервиса, %", Modifier.fillMaxWidth())
+        HorizontalDivider()
+        Text("Межгород: цена за место (сом)", fontWeight = FontWeight.Bold, color = KgInk)
+        routes.forEach { r ->
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
+                Text("${r.fromCity} → ${r.toCity}", modifier = Modifier.weight(1.4f), color = KgInk)
+                NumField(seat[r.id].orEmpty(), { seat[r.id] = it }, "За место", Modifier.weight(1f))
+            }
+        }
+        HorizontalDivider()
+        NumField(referral, { referral = it }, "«Пригласи друга»: скидка другу, %", Modifier.fillMaxWidth())
         HorizontalDivider()
         Text("Промокод на первую поездку", fontWeight = FontWeight.Bold, color = KgInk)
         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -162,7 +175,9 @@ private fun PricesEditor(state: KgTaxiUiState, onSave: (com.example.data.firebas
                         },
                         promoCode = promoCode,
                         promoPercent = promoPercent.toIntOrNull() ?: 0,
-                        promoActive = promoActive && promoCode.isNotBlank()
+                        promoActive = promoActive && promoCode.isNotBlank(),
+                        intercity = routes.associate { it.id to (seat[it.id]?.toIntOrNull() ?: it.seatPriceSom) },
+                        referralPercent = referral.toIntOrNull() ?: 20
                     )
                 )
             },

@@ -337,7 +337,7 @@ fun IntercitySeatPickerPanel(
                 FilterChip(
                     selected = selected,
                     onClick = { onSelectRoute(route) },
-                    label = { Text("${route.fromCity} → ${route.toCity} • ${route.seatPriceSom}с") }
+                    label = { Text("${route.fromCity} → ${route.toCity} • ${state.pricedRoute(route).seatPriceSom}с") }
                 )
             }
         }

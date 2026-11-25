@@ -98,7 +98,16 @@ class OwnerRepository(context: Context) {
     }
 
     suspend fun approve(app: OwnerApplication): Result<Unit> = write("roles/${app.uid}") {
+        val face = runCatching {
+            db.collection("registrations").document(app.uid).collection("photos").document("driver_face").get().await().getString("data")
+        }.getOrNull()
         val batch = db.batch()
+        if (!face.isNullOrBlank()) {
+            batch.set(
+                db.collection("driver_avatars").document(app.uid),
+                mapOf("data" to face, "updatedAt" to FieldValue.serverTimestamp())
+            )
+        }
         batch.set(
             db.collection("roles").document(app.uid),
             mapOf(

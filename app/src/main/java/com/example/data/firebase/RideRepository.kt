@@ -70,7 +70,10 @@ data class SharedRide(
     val tariffId: String? = null,
     val tariffName: String? = null,
     /** "CASH" = cash or QR / transfer to the driver, "CARD" = card linked in the app. */
-    val paymentMethod: String = "CASH"
+    val paymentMethod: String = "CASH",
+    val passengerRatingAvg: Double? = null,
+    val passengerTrips: Int? = null,
+    val driverTrips: Int? = null
 ) {
     val isActive: Boolean get() = status in RideStatus.ACTIVE
 
@@ -113,7 +116,10 @@ data class SharedRide(
                 seats = snap.getLong("seats")?.toInt(),
                 tariffId = snap.getString("tariffId"),
                 tariffName = snap.getString("tariffName"),
-                paymentMethod = snap.getString("paymentMethod") ?: "CASH"
+                paymentMethod = snap.getString("paymentMethod") ?: "CASH",
+                passengerRatingAvg = snap.getDouble("passengerRatingAvg"),
+                passengerTrips = snap.getLong("passengerTrips")?.toInt(),
+                driverTrips = snap.getLong("driverTrips")?.toInt()
             )
         }
     }
@@ -155,7 +161,9 @@ class RideRepository(
         seats: Int? = null,
         tariffId: String? = null,
         tariffName: String? = null,
-        paymentMethod: String = "CASH"
+        paymentMethod: String = "CASH",
+        passengerRatingAvg: Double? = null,
+        passengerTrips: Int = 0
     ): Result<String> {
         val uid = currentUid ?: return Result.failure(IllegalStateException("Войдите в аккаунт, чтобы заказать"))
         val doc = rides.document()
@@ -184,6 +192,8 @@ class RideRepository(
         }
         if (seats != null) payload["seats"] = seats.coerceIn(1, 6)
         if (!tariffId.isNullOrBlank()) payload["tariffId"] = tariffId.take(30)
+        payload["passengerTrips"] = passengerTrips.coerceIn(0, 100000)
+        if (passengerRatingAvg != null) payload["passengerRatingAvg"] = passengerRatingAvg.coerceIn(0.0, 5.0)
         if (!tariffName.isNullOrBlank()) payload["tariffName"] = tariffName.take(30)
         return runWrite(OperationType.CREATE, "rides/${doc.id}") {
             doc.set(payload).await()
@@ -288,7 +298,8 @@ class RideRepository(
         driverCar: String,
         driverPlate: String,
         driverPayPhone: String = "",
-        driverRatingAvg: Double? = null
+        driverRatingAvg: Double? = null,
+        driverTrips: Int = 0
     ): Result<Unit> {
         val uid = currentUid ?: return Result.failure(IllegalStateException("Войдите в аккаунт"))
         val ref = rides.document(rideId)
@@ -308,6 +319,7 @@ class RideRepository(
                         "driverPlate" to driverPlate.take(20),
                         "driverPayPhone" to driverPayPhone.take(20),
                         "driverRatingAvg" to (driverRatingAvg ?: 0.0),
+                        "driverTrips" to driverTrips.coerceIn(0, 100000),
                         "updatedAt" to FieldValue.serverTimestamp()
                     )
                 )
@@ -323,7 +335,8 @@ class RideRepository(
         driverCar: String,
         driverPlate: String,
         driverPayPhone: String = "",
-        driverRatingAvg: Double? = null
+        driverRatingAvg: Double? = null,
+        driverTrips: Int = 0
     ): Result<Unit> {
         val uid = currentUid ?: return Result.failure(IllegalStateException("Войдите в аккаунт"))
         val ref = rides.document(rideId)
@@ -343,6 +356,7 @@ class RideRepository(
                         "driverPlate" to driverPlate.take(20),
                         "driverPayPhone" to driverPayPhone.take(20),
                         "driverRatingAvg" to (driverRatingAvg ?: 0.0),
+                        "driverTrips" to driverTrips.coerceIn(0, 100000),
                         "updatedAt" to FieldValue.serverTimestamp()
                     )
                 )
@@ -363,10 +377,20 @@ class RideRepository(
                     "driverPlate" to null,
                     "driverPayPhone" to null,
                     "driverRatingAvg" to null,
+                    "driverTrips" to null,
                     "updatedAt" to FieldValue.serverTimestamp()
                 )
             ).await()
         }
+
+    /** Driver face photo for the passenger (null if the driver has none yet). */
+    suspend fun fetchDriverAvatar(driverId: String): String? = try {
+        db.collection("driver_avatars").document(driverId).get().await().getString("data")
+    } catch (e: CancellationException) {
+        throw e
+    } catch (_: Exception) {
+        null
+    }
 
     /** The assigned driver moves the trip: ARRIVED, IN_PROGRESS, COMPLETED or CANCELLED. */
     suspend fun setStatusAsDriver(rideId: String, newStatus: String): Result<Unit> =

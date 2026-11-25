@@ -299,6 +299,10 @@ data class KgTaxiUiState(
             KgGeoCatalog.taxiTariffs.firstOrNull { it.id == selectedTariffId } ?: KgGeoCatalog.taxiTariffs[1]
         )
 
+    /** Intercity route with the owner's seat price, if set. */
+    fun pricedRoute(r: IntercityRoute): IntercityRoute =
+        appConfig.intercity[r.id]?.let { r.copy(seatPriceSom = it) } ?: r
+
     /** Tariff with the owner's current prices (from the owner panel), if set. */
     fun priced(t: TaxiTariff): TaxiTariff =
         appConfig.tariffs[t.id]?.let { t.copy(baseSom = it.baseSom, perKmSom = it.perKmSom) } ?: t
@@ -333,7 +337,7 @@ data class KgTaxiUiState(
                 ServiceType.INTERCITY -> {
                     val seats = selectedIntercitySeats.ifEmpty { setOf(2) }
                     base = seats.sumOf { seat ->
-                        selectedIntercityRoute.seatPriceSom +
+                        pricedRoute(selectedIntercityRoute).seatPriceSom +
                             if (seat == 1) selectedIntercityRoute.frontSeatExtraSom else 0
                     }
                     distCost = 0
@@ -923,7 +927,8 @@ class KgTaxiViewModel(
                 driverCar = verifiedDriverCar,
                 driverPlate = verifiedDriverPlate,
                 driverPayPhone = verifiedDriverPayPhone,
-                driverRatingAvg = _uiState.value.driverRatingAvg
+                driverRatingAvg = _uiState.value.driverRatingAvg,
+                driverTrips = _uiState.value.driverHistory.count { it.status == RideStatus.COMPLETED }
             )
             _uiState.update {
                 it.copy(
@@ -2239,7 +2244,9 @@ class KgTaxiViewModel(
                 seats = if (isIntercity) s.selectedIntercitySeats.size.coerceIn(1, 6) else null,
                 tariffId = if (isIntercity) null else s.selectedTariff.id,
                 tariffName = if (isIntercity) "Межгород" else s.selectedTariff.nameRu,
-                paymentMethod = s.ridePayment
+                paymentMethod = s.ridePayment,
+                passengerRatingAvg = s.passengerRides.mapNotNull { it.passengerRating }.takeIf { it.isNotEmpty() }?.average(),
+                passengerTrips = s.passengerRides.count { it.status == RideStatus.COMPLETED }
             )
             created.onSuccess { id ->
                 passengerRideId = id
@@ -2286,7 +2293,19 @@ class KgTaxiViewModel(
         }
     }
 
+    private var avatarLoadedFor: String? = null
+
+    private fun loadDriverPhoto(driverId: String) {
+        if (avatarLoadedFor == driverId) return
+        avatarLoadedFor = driverId
+        viewModelScope.launch {
+            val photo = rides.fetchDriverAvatar(driverId) ?: return@launch
+            _uiState.update { st -> st.activeRide?.let { st.copy(activeRide = it.copy(driverPhoto = photo)) } ?: st }
+        }
+    }
+
     private fun applySharedRideToPassenger(shared: SharedRide) {
+        shared.driverId?.let { loadDriverPhoto(it) }
         val status = when (shared.status) {
             RideStatus.ASSIGNED -> TripStatus.ASSIGNED
             RideStatus.ARRIVED -> TripStatus.ARRIVED
@@ -2309,6 +2328,7 @@ class KgTaxiViewModel(
                     progress = progress,
                     driverName = shared.driverName ?: r.driverName,
                     driverRating = shared.driverRatingAvg?.takeIf { it > 0 } ?: r.driverRating,
+                    driverTrips = shared.driverTrips ?: r.driverTrips,
                     driverPayPhone = shared.driverPayPhone?.takeIf { it.isNotBlank() } ?: r.driverPayPhone,
                     driverPoint = if (shared.driverLat != null && shared.driverLng != null) GeoPoint(shared.driverLat, shared.driverLng) else r.driverPoint,
                     driverEtaMin = pickupEtaMinutes(shared, status, r.pickupPoint) ?: r.driverEtaMin,
@@ -2546,6 +2566,9 @@ class KgTaxiViewModel(
                 statusBanner = if (next) "Вы на линии. Ждём заказы в городе ${it.selectedCity.name}." else "Вы ушли с линии."
             )
         }
+        // Keep receiving orders with the screen off while on the line.
+        if (_uiState.value.driverOnline) com.example.util.DriverOnlineService.start(appContext)
+        else com.example.util.DriverOnlineService.stop(appContext)
         if (FeatureFlags.REAL_RIDES) {
             generateDriverIncomingOrders(_uiState.value.selectedCity)
             syncPushToken()
@@ -2632,7 +2655,8 @@ class KgTaxiViewModel(
         return DriverIncomingOrder(
             id = id,
             passengerName = passengerName,
-            passengerRating = 5.0,
+            passengerRating = passengerRatingAvg ?: 0.0,
+            passengerTrips = passengerTrips ?: 0,
             serviceType = if (serviceType == "INTERCITY") ServiceType.INTERCITY else ServiceType.TAXI,
             tariffName = tariffName ?: if (serviceType == "INTERCITY") "Межгород" else "Такси",
             pickupAddress = pickupAddress,
@@ -2715,7 +2739,8 @@ class KgTaxiViewModel(
                 driverCar = verifiedDriverCar,
                 driverPlate = verifiedDriverPlate,
                 driverPayPhone = verifiedDriverPayPhone,
-                driverRatingAvg = _uiState.value.driverRatingAvg
+                driverRatingAvg = _uiState.value.driverRatingAvg,
+                driverTrips = _uiState.value.driverHistory.count { it.status == RideStatus.COMPLETED }
             )
             res.onSuccess {
                 driverRideId = order.id

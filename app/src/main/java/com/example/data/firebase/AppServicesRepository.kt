@@ -29,7 +29,11 @@ data class AppConfig(
     val tariffs: Map<String, TariffPrice> = emptyMap(),
     val promoCode: String = "",
     val promoPercent: Int = 0,
-    val promoActive: Boolean = false
+    val promoActive: Boolean = false,
+    /** Intercity seat price by route id (owner panel). */
+    val intercity: Map<String, Int> = emptyMap(),
+    /** Discount for a friend's first ride by an invite code. */
+    val referralPercent: Int = 20
 )
 
 /** A message to support or a complaint about a ride. */
@@ -65,7 +69,10 @@ class AppConfigRepository(context: Context) {
                     tariffs = tariffs,
                     promoCode = snap.getString("promoCode").orEmpty(),
                     promoPercent = snap.getLong("promoPercent")?.toInt() ?: 0,
-                    promoActive = snap.getBoolean("promoActive") == true
+                    promoActive = snap.getBoolean("promoActive") == true,
+                    intercity = (snap.get("intercity") as? Map<*, *>).orEmpty()
+                        .mapNotNull { (k, v) -> (k as? String)?.let { id -> (v as? Number)?.toInt()?.let { id to it } } }.toMap(),
+                    referralPercent = snap.getLong("referralPercent")?.toInt() ?: 20
                 )
             }
             .catch { e ->
@@ -83,6 +90,8 @@ class AppConfigRepository(context: Context) {
                 "promoCode" to config.promoCode.trim().uppercase().take(20),
                 "promoPercent" to config.promoPercent.coerceIn(0, 90),
                 "promoActive" to config.promoActive,
+                "intercity" to config.intercity.mapValues { (_, v) -> v.coerceIn(0, 50000) },
+                "referralPercent" to config.referralPercent.coerceIn(0, 90),
                 "updatedAt" to FieldValue.serverTimestamp()
             )
         ).await()
