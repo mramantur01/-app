@@ -16,8 +16,8 @@ data class UpdateInfo(val versionCode: Int, val versionName: String, val url: St
  * tells if a newer APK is there. Google Play installs update through Play, so they are skipped.
  */
 object UpdateChecker {
-    const val VERSION_URL = "https://mramantur01.github.io/-app/version.json"
-    const val SITE_URL = "https://mramantur01.github.io/-app/"
+    const val VERSION_URL = "https://mramantur-site.vercel.app/version.json"
+    const val SITE_URL = "https://mramantur-site.vercel.app/"
 
     private fun installedFromPlay(context: Context): Boolean = try {
         val installer = if (Build.VERSION.SDK_INT >= 30) {

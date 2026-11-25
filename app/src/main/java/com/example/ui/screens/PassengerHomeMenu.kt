@@ -587,7 +587,7 @@ private fun InviteFriendCard(code: String, percent: Int) {
         }
         Button(
             onClick = {
-                val text = "Еду с KG Taxi. Скачай приложение: https://mramantur01.github.io/-app/ и введи мой код $code — скидка $percent% на первую поездку."
+                val text = "Еду с KG Taxi. Скачай приложение: https://mramantur-site.vercel.app/ и введи мой код $code — скидка $percent% на первую поездку."
                 val send = android.content.Intent(android.content.Intent.ACTION_SEND).apply {
                     type = "text/plain"
                     putExtra(android.content.Intent.EXTRA_TEXT, text)

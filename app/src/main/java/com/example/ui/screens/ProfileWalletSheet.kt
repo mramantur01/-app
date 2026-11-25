@@ -768,7 +768,7 @@ private fun PromoSection(state: KgTaxiUiState, viewModel: KgTaxiViewModel) {
             OutlinedButton(onClick = {
                 val send = Intent(Intent.ACTION_SEND).apply {
                     type = "text/plain"
-                    putExtra(Intent.EXTRA_TEXT, "Мой код в KG Taxi: $code — скидка на первую поездку. Скачать: https://mramantur01.github.io/-app/")
+                    putExtra(Intent.EXTRA_TEXT, "Мой код в KG Taxi: $code — скидка на первую поездку. Скачать: https://mramantur-site.vercel.app/")
                 }
                 context.startActivity(Intent.createChooser(send, "Поделиться кодом"))
             }, modifier = Modifier.fillMaxWidth()) { Text("Поделиться кодом") }
@@ -825,8 +825,8 @@ private fun InfoSection() {
         Text("KG Taxi • версия ${com.example.BuildConfig.VERSION_NAME}", fontWeight = FontWeight.Bold)
         Text("Такси и межгород по Кыргызстану.", style = MaterialTheme.typography.bodySmall)
         ProfileMenuGroup {
-            ProfileMenuItem(Icons.Default.Policy, "Политика конфиденциальности", null) { open("https://mramantur01.github.io/-app/privacy.html") }
-            ProfileMenuItem(Icons.Default.Language, "Сайт и последняя версия", null) { open("https://mramantur01.github.io/-app/") }
+            ProfileMenuItem(Icons.Default.Policy, "Политика конфиденциальности", null) { open("https://mramantur-site.vercel.app/privacy.html") }
+            ProfileMenuItem(Icons.Default.Language, "Сайт и последняя версия", null) { open("https://mramantur-site.vercel.app/") }
         }
     }
 }

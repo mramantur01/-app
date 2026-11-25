@@ -1259,7 +1259,7 @@ private fun DriverQualityCard(state: KgTaxiUiState) {
             OutlinedButton(onClick = {
                 val send = android.content.Intent(android.content.Intent.ACTION_SEND).apply {
                     type = "text/plain"
-                    putExtra(android.content.Intent.EXTRA_TEXT, "Работай водителем в KG Taxi: регистрация прямо в приложении, тариф подбирается сам. Скачать: https://mramantur01.github.io/-app/")
+                    putExtra(android.content.Intent.EXTRA_TEXT, "Работай водителем в KG Taxi: регистрация прямо в приложении, тариф подбирается сам. Скачать: https://mramantur-site.vercel.app/")
                 }
                 ctx.startActivity(android.content.Intent.createChooser(send, "Пригласить водителя"))
             }, modifier = Modifier.fillMaxWidth()) { Text("Пригласить знакомого водителя") }
