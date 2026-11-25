@@ -74,7 +74,7 @@ fun MapPointPickerDialog(
                     colors = ButtonDefaults.buttonColors(containerColor = KgTurquoise, contentColor = Color.White),
                     shape = RoundedCornerShape(16.dp),
                     modifier = Modifier.align(Alignment.BottomCenter).navigationBarsPadding().padding(start = 16.dp, end = 16.dp, bottom = 72.dp).fillMaxWidth().height(56.dp).testTag("map_point_done")
-                ) { Text("Готово", fontWeight = FontWeight.Bold) }
+                ) { Text(com.example.i18n.t("Готово", "Даяр"), fontWeight = FontWeight.Bold) }
             }
         }
     }

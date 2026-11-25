@@ -43,7 +43,9 @@ fun OwnerPanel(
     onReject: (String, String) -> Unit,
     onSetBlocked: (String, Boolean) -> Unit,
     onSaveConfig: (com.example.data.firebase.AppConfig) -> Unit = {},
-    onResolveTicket: (String) -> Unit = {}
+    onResolveTicket: (String) -> Unit = {},
+    onSetStatsDays: (Int) -> Unit = {},
+    onExportCsv: () -> Unit = {}
 ) {
     var tab by remember { mutableIntStateOf(0) }
     val pending = state.ownerApplications.filter { it.status == "pending" }
@@ -56,9 +58,19 @@ fun OwnerPanel(
     ) {
         Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
             Text("Панель владельца", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.ExtraBold, color = KgInk)
-            // Today's numbers
+            // Period: today / 7 days / 30 days
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
+                listOf(1 to "Сегодня", 7 to "7 дней", 30 to "30 дней").forEach { (d, label) ->
+                    FilterChip(
+                        selected = state.ownerStatsDays == d,
+                        onClick = { onSetStatsDays(d) },
+                        label = { Text(label) },
+                        colors = FilterChipDefaults.filterChipColors(selectedContainerColor = KgTurquoise, selectedLabelColor = Color.White)
+                    )
+                }
+            }
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                OwnerStat("Заказов сегодня", "${state.ownerStats.ridesTotal}", Modifier.weight(1f))
+                OwnerStat("Заказов", "${state.ownerStats.ridesTotal}", Modifier.weight(1f))
                 OwnerStat("Выполнено", "${state.ownerStats.ridesDone}", Modifier.weight(1f))
             }
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -69,6 +81,20 @@ fun OwnerPanel(
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 OwnerStat("Водителей", "${state.ownerDrivers.size}", Modifier.weight(1f))
                 OwnerStat("Отмен", "${state.ownerStats.ridesCancelled}", Modifier.weight(1f))
+            }
+            if (state.ownerStats.topDrivers.isNotEmpty()) {
+                Text("Лучшие водители", fontWeight = FontWeight.Bold, color = KgInk)
+                state.ownerStats.topDrivers.forEachIndexed { i, (name, trips, revenue) ->
+                    Row {
+                        Text("${i + 1}. $name", color = KgInk, modifier = Modifier.weight(1f))
+                        Text("$trips поезд. • $revenue сом", color = KgInk.copy(alpha = 0.7f))
+                    }
+                }
+            }
+            OutlinedButton(onClick = onExportCsv, modifier = Modifier.fillMaxWidth().testTag("owner_export_csv")) {
+                Icon(Icons.Default.TableChart, contentDescription = null, modifier = Modifier.size(18.dp))
+                Spacer(Modifier.width(6.dp))
+                Text("Выгрузить в таблицу (Excel)")
             }
 
             val openTickets = state.supportTickets.count { it.status == "open" }

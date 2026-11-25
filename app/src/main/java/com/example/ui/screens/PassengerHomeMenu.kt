@@ -48,10 +48,10 @@ fun PassengerHomeMenu(
     val firstName = state.profile.displayName.substringBefore(' ').takeIf { it.isNotBlank() && it != "Пассажир" && it != "Гость" }
     val hour = remember { java.util.Calendar.getInstance().get(java.util.Calendar.HOUR_OF_DAY) }
     val greeting = when (hour) {
-        in 5..11 -> "Доброе утро"
-        in 12..17 -> "Добрый день"
-        in 18..22 -> "Добрый вечер"
-        else -> "Доброй ночи"
+        in 5..11 -> com.example.i18n.t("Доброе утро", "Кутман таң")
+        in 12..17 -> com.example.i18n.t("Добрый день", "Кутман күн")
+        in 18..22 -> com.example.i18n.t("Добрый вечер", "Кутман кеч")
+        else -> com.example.i18n.t("Доброй ночи", "Бейпил түн")
     }
     val econom = KgGeoCatalog.taxiTariffs.firstOrNull { it.id == "econom" }?.let { state.priced(it) }
     // Recent destinations from real orders, without repeats.
@@ -95,7 +95,7 @@ fun PassengerHomeMenu(
                 horizontalArrangement = Arrangement.spacedBy(10.dp)
             ) {
                 Icon(Icons.Default.Search, contentDescription = null, tint = KgTurquoise)
-                Text("Куда едем?", style = MaterialTheme.typography.titleMedium, color = KgInk)
+                Text(com.example.i18n.t("Куда едем?", "Кайда барабыз?"), style = MaterialTheme.typography.titleMedium, color = KgInk)
             }
         }
 
@@ -111,8 +111,8 @@ fun PassengerHomeMenu(
             ) { viewModel.openPassengerOrder(ServiceType.TAXI) }
             HomeTile(
                 icon = Icons.Default.Route,
-                title = "Межгород",
-                subtitle = "Ош, Иссык-Куль",
+                title = com.example.i18n.t("Межгород", "Шаар аралык"),
+                subtitle = com.example.i18n.t("Ош, Иссык-Куль", "Ош, Ысык-Көл"),
                 highlighted = false,
                 tag = "home_tile_intercity",
                 modifier = Modifier.weight(1f)
@@ -121,15 +121,15 @@ fun PassengerHomeMenu(
         Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
             HomeTile(
                 icon = Icons.Default.Event,
-                title = "Предзаказ",
-                subtitle = "межгород на завтра",
+                title = com.example.i18n.t("Предзаказ", "Алдын ала заказ"),
+                subtitle = com.example.i18n.t("межгород на завтра", "эртеңки шаар аралык"),
                 highlighted = false,
                 tag = "home_tile_preorder",
                 modifier = Modifier.weight(1f)
             ) { viewModel.openPassengerPreorder() }
             HomeTile(
                 icon = Icons.Default.History,
-                title = "Мои поездки",
+                title = com.example.i18n.t("Мои поездки", "Менин сапарларым"),
                 subtitle = if (state.passengerRides.isEmpty()) "пока пусто" else "повторить",
                 highlighted = false,
                 tag = "home_tile_rides",
@@ -140,7 +140,7 @@ fun PassengerHomeMenu(
 
         // Pre-orders waiting for departure.
         if (state.passengerPreorders.isNotEmpty()) {
-            Text("Ваши предзаказы", fontWeight = FontWeight.Bold, color = KgInk)
+            Text(com.example.i18n.t("Ваши предзаказы", "Алдын ала заказдарыңыз"), fontWeight = FontWeight.Bold, color = KgInk)
             state.passengerPreorders.forEach { r ->
                 RecentRow(
                     icon = Icons.Default.Event,
@@ -153,7 +153,7 @@ fun PassengerHomeMenu(
         }
 
         // Open map with "where I am" (instead of the recent list at the top).
-        Text("Вы здесь", fontWeight = FontWeight.Bold, color = KgInk)
+        Text(com.example.i18n.t("Вы здесь", "Сиз бул жердесиз"), fontWeight = FontWeight.Bold, color = KgInk)
         Box(
             modifier = Modifier
                 .fillMaxWidth()
@@ -226,6 +226,7 @@ fun PassengerHomeMenu(
             onOpenDriverMode = { viewModel.setRole(com.example.data.model.AppRole.DRIVER) }
         )
         SupportCard(sending = state.supportSending, onSend = { text -> viewModel.sendSupportMessage(text, null) })
+        viewModel.myInviteCode()?.let { code -> InviteFriendCard(code = code, percent = state.appConfig.referralPercent) }
 
     }
 }
@@ -296,18 +297,18 @@ private fun MyRidesSheet(
                 .testTag("my_rides_sheet"),
             verticalArrangement = Arrangement.spacedBy(10.dp)
         ) {
-            Text("Мои поездки", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold, color = KgInk)
+            Text(com.example.i18n.t("Мои поездки", "Менин сапарларым"), style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold, color = KgInk)
 
-            Text("Недавние адреса", fontWeight = FontWeight.Bold, color = KgInk)
+            Text(com.example.i18n.t("Недавние адреса", "Акыркы даректер"), fontWeight = FontWeight.Bold, color = KgInk)
             RecentRow(
                 icon = Icons.Default.Home,
-                title = "Дом",
+                title = com.example.i18n.t("Дом", "Үй"),
                 subtitle = state.profile.homeAddress.ifBlank { "Укажите адрес в профиле" },
                 onClick = { onDismiss(); viewModel.goToSavedAddress("Дом", state.profile.homeAddress) }
             )
             RecentRow(
                 icon = Icons.Default.Work,
-                title = "Работа",
+                title = com.example.i18n.t("Работа", "Жумуш"),
                 subtitle = state.profile.workAddress.ifBlank { "Укажите адрес в профиле" },
                 onClick = { onDismiss(); viewModel.goToSavedAddress("Работа", state.profile.workAddress) }
             )
@@ -320,9 +321,9 @@ private fun MyRidesSheet(
                 )
             }
 
-            Text("История заказов", fontWeight = FontWeight.Bold, color = KgInk, modifier = Modifier.padding(top = 6.dp))
+            Text(com.example.i18n.t("История заказов", "Заказдар тарыхы"), fontWeight = FontWeight.Bold, color = KgInk, modifier = Modifier.padding(top = 6.dp))
             if (state.passengerRides.isEmpty()) {
-                Text("Здесь появятся ваши заказы.", color = KgInk.copy(alpha = 0.6f))
+                Text(com.example.i18n.t("Здесь появятся ваши заказы.", "Бул жерде заказдарыңыз пайда болот."), color = KgInk.copy(alpha = 0.6f))
             }
             state.passengerRides.take(30).forEach { r ->
                 RideHistoryRow(
@@ -345,9 +346,9 @@ private fun MyRidesSheet(
                 }
             },
             confirmButton = {
-                Button(onClick = { viewModel.sendSupportMessage(text, ride.id); complainRide = null }, enabled = text.isNotBlank()) { Text("Отправить") }
+                Button(onClick = { viewModel.sendSupportMessage(text, ride.id); complainRide = null }, enabled = text.isNotBlank()) { Text(com.example.i18n.t("Отправить", "Жөнөтүү")) }
             },
-            dismissButton = { TextButton(onClick = { complainRide = null }) { Text("Отмена") } }
+            dismissButton = { TextButton(onClick = { complainRide = null }) { Text(com.example.i18n.t("Отмена", "Жокко чыгаруу")) } }
         )
     }
 }
@@ -380,13 +381,13 @@ private fun RideHistoryRow(ride: com.example.data.firebase.SharedRide, onRepeat:
                 TextButton(onClick = onRepeat, contentPadding = PaddingValues(horizontal = 8.dp)) {
                     Icon(Icons.Default.Replay, contentDescription = null, modifier = Modifier.size(16.dp))
                     Spacer(Modifier.width(4.dp))
-                    Text("Повторить")
+                    Text(com.example.i18n.t("Повторить", "Кайталоо"))
                 }
                 if (ride.status == RideStatus.COMPLETED || ride.status == RideStatus.CANCELLED) {
                     TextButton(onClick = onComplain, contentPadding = PaddingValues(horizontal = 8.dp)) {
                         Icon(Icons.Default.ReportProblem, contentDescription = null, modifier = Modifier.size(16.dp))
                         Spacer(Modifier.width(4.dp))
-                        Text("Пожаловаться")
+                        Text(com.example.i18n.t("Пожаловаться", "Арыздануу"))
                     }
                 }
             }
@@ -452,11 +453,11 @@ private fun InfoLine(icon: ImageVector, text: String) {
 @Composable
 private fun SafetyCard() {
     val context = androidx.compose.ui.platform.LocalContext.current
-    InfoCardFrame(Icons.Default.Shield, "Безопасность", collapseKey = "safety_expanded") {
-        InfoLine(Icons.Default.VerifiedUser, "Водители проверены: паспорт, права и фото авто")
-        InfoLine(Icons.Default.Share, "В поездке — «Поделиться» маршрутом с близкими")
-        InfoLine(Icons.Default.Pin, "PIN-код помогает пассажиру и водителю убедиться, что они нашли друг друга")
-        InfoLine(Icons.Default.Sos, "Кнопка SOS в поездке отправляет тревогу диспетчеру")
+    InfoCardFrame(Icons.Default.Shield, com.example.i18n.t("Безопасность", "Коопсуздук"), collapseKey = "safety_expanded") {
+        InfoLine(Icons.Default.VerifiedUser, com.example.i18n.t("Водители проверены: паспорт, права и фото авто", "Айдоочулар текшерилген: паспорт, күбөлүк жана унаанын сүрөтү"))
+        InfoLine(Icons.Default.Share, com.example.i18n.t("В поездке — «Поделиться» маршрутом с близкими", "Сапарда маршрутту жакындарыңыз менен «Бөлүшүңүз»"))
+        InfoLine(Icons.Default.Pin, com.example.i18n.t("PIN-код помогает пассажиру и водителю убедиться, что они нашли друг друга", "PIN-код жүргүнчү менен айдоочуга бири-бирин туура тапканын текшерүүгө жардам берет"))
+        InfoLine(Icons.Default.Sos, com.example.i18n.t("Кнопка SOS в поездке отправляет тревогу диспетчеру", "Сапардагы SOS баскычы диспетчерге кабар жөнөтөт"))
         OutlinedButton(
             onClick = {
                 runCatching {
@@ -468,7 +469,7 @@ private fun SafetyCard() {
         ) {
             Icon(Icons.Default.Call, contentDescription = null, modifier = Modifier.size(18.dp))
             Spacer(Modifier.width(6.dp))
-            Text("Экстренный вызов 112")
+            Text(com.example.i18n.t("Экстренный вызов 112", "Шашылыш чалуу 112"))
         }
     }
 }
@@ -476,10 +477,10 @@ private fun SafetyCard() {
 /** Invitation to drive with KG Taxi (hidden for drivers and the owner). */
 @Composable
 private fun BecomeDriverCard(isDriver: Boolean, status: String?, onStart: () -> Unit, onOpenDriverMode: () -> Unit) {
-    InfoCardFrame(Icons.Default.DirectionsCar, "Стать водителем", collapseKey = "driver_invite_expanded") {
+    InfoCardFrame(Icons.Default.DirectionsCar, com.example.i18n.t("Стать водителем", "Айдоочу болуу"), collapseKey = "driver_invite_expanded") {
         if (isDriver) {
             Text(
-                "Вы уже водитель KG Taxi. Откройте режим водителя и нажмите GO, чтобы выйти на линию.",
+                com.example.i18n.t("Вы уже водитель KG Taxi. Откройте режим водителя и нажмите GO, чтобы выйти на линию.", "Сиз KG Taxi айдоочусусуз. Айдоочу режимин ачып, линияга чыгуу үчүн GO басыңыз."),
                 style = MaterialTheme.typography.bodyMedium,
                 color = KgInk
             )
@@ -487,14 +488,14 @@ private fun BecomeDriverCard(isDriver: Boolean, status: String?, onStart: () -> 
                 onClick = onOpenDriverMode,
                 colors = ButtonDefaults.buttonColors(containerColor = KgTurquoise, contentColor = Color.White),
                 modifier = Modifier.fillMaxWidth().testTag("home_driver_mode")
-            ) { Text("Режим водителя") }
+            ) { Text(com.example.i18n.t("Режим водителя", "Айдоочу режими")) }
             return@InfoCardFrame
         }
         Text(
             when (status) {
-                "pending" -> "Ваша заявка на проверке. Мы сообщим, когда откроется экран водителя."
-                "rejected" -> "Заявка отклонена. Можно исправить данные и подать снова."
-                else -> "Зарабатывайте на своём авто. Регистрация в приложении: паспорт, права и фото машины — тариф подберём сами."
+                "pending" -> com.example.i18n.t("Ваша заявка на проверке. Мы сообщим, когда откроется экран водителя.", "Арызыңыз текшерилүүдө. Айдоочу экраны ачылганда кабарлайбыз.")
+                "rejected" -> com.example.i18n.t("Заявка отклонена. Можно исправить данные и подать снова.", "Арыз четке кагылды. Маалыматты оңдоп, кайра тапшырсаңыз болот.")
+                else -> com.example.i18n.t("Зарабатывайте на своём авто. Регистрация в приложении: паспорт, права и фото машины — тариф подберём сами.", "Өз унааңыз менен иштеп табыңыз. Тиркемеде каттоо: паспорт, күбөлүк жана унаанын сүрөтү — тарифти өзүбүз тандайбыз.")
             },
             style = MaterialTheme.typography.bodyMedium,
             color = KgInk
@@ -506,8 +507,8 @@ private fun BecomeDriverCard(isDriver: Boolean, status: String?, onStart: () -> 
         ) {
             Text(
                 when (status) {
-                    "pending" -> "Статус заявки"
-                    "rejected" -> "Подать заново"
+                    "pending" -> com.example.i18n.t("Статус заявки", "Арыздын абалы")
+                    "rejected" -> com.example.i18n.t("Подать заново", "Кайра тапшыруу")
                     else -> "Начать"
                 }
             )
@@ -520,27 +521,27 @@ private fun BecomeDriverCard(isDriver: Boolean, status: String?, onStart: () -> 
 private fun SupportCard(sending: Boolean, onSend: (String) -> Unit) {
     var open by remember { mutableStateOf(false) }
     var text by remember { mutableStateOf("") }
-    InfoCardFrame(Icons.Default.SupportAgent, "Поддержка", collapseKey = "support_expanded") {
+    InfoCardFrame(Icons.Default.SupportAgent, com.example.i18n.t("Поддержка", "Колдоо кызматы"), collapseKey = "support_expanded") {
         Text(
-            "Есть вопрос или что-то пошло не так? Напишите нам: поможем с поездкой, оплатой или забытыми вещами. Ответим в ближайшее время.",
+            com.example.i18n.t("Есть вопрос или что-то пошло не так? Напишите нам: поможем с поездкой, оплатой или забытыми вещами. Ответим в ближайшее время.", "Сурооңуз барбы же бир нерсе туура эмес болдубу? Бизге жазыңыз: сапар, төлөм же унаада калган буюмдар боюнча жардам беребиз. Жакын арада жооп беребиз."),
             style = MaterialTheme.typography.bodyMedium,
             color = KgInk
         )
         OutlinedButton(onClick = { open = true }, modifier = Modifier.fillMaxWidth().testTag("home_support")) {
             Icon(Icons.Default.Chat, contentDescription = null, modifier = Modifier.size(18.dp))
             Spacer(Modifier.width(6.dp))
-            Text("Написать нам")
+            Text(com.example.i18n.t("Написать нам", "Бизге жазуу"))
         }
     }
     if (open) {
         AlertDialog(
             onDismissRequest = { open = false },
-            title = { Text("Написать в поддержку") },
+            title = { Text(com.example.i18n.t("Написать в поддержку", "Колдоо кызматына жазуу")) },
             text = {
                 OutlinedTextField(
                     value = text,
                     onValueChange = { text = it.take(1000) },
-                    label = { Text("Опишите вопрос") },
+                    label = { Text(com.example.i18n.t("Опишите вопрос", "Сурооңузду жазыңыз")) },
                     minLines = 4,
                     modifier = Modifier.fillMaxWidth().testTag("home_support_text")
                 )
@@ -549,9 +550,48 @@ private fun SupportCard(sending: Boolean, onSend: (String) -> Unit) {
                 Button(
                     onClick = { onSend(text); text = ""; open = false },
                     enabled = text.isNotBlank() && !sending
-                ) { Text("Отправить") }
+                ) { Text(com.example.i18n.t("Отправить", "Жөнөтүү")) }
             },
-            dismissButton = { TextButton(onClick = { open = false }) { Text("Отмена") } }
+            dismissButton = { TextButton(onClick = { open = false }) { Text(com.example.i18n.t("Отмена", "Жокко чыгаруу")) } }
         )
+    }
+}
+
+
+/** "Пригласи друга": my code and a share button. */
+@Composable
+private fun InviteFriendCard(code: String, percent: Int) {
+    val context = androidx.compose.ui.platform.LocalContext.current
+    InfoCardFrame(Icons.Default.CardGiftcard, com.example.i18n.t("Пригласи друга", "Досуңду чакыр"), collapseKey = "invite_expanded") {
+        Text(
+            com.example.i18n.t("Отправьте другу свой код. Он получит скидку $percent% на первую поездку.", "Досуңузга кодуңузду жөнөтүңүз. Ал биринчи сапарга $percent% арзандатуу алат."),
+            style = MaterialTheme.typography.bodyMedium,
+            color = KgInk
+        )
+        Surface(shape = RoundedCornerShape(12.dp), color = Color.White, border = androidx.compose.foundation.BorderStroke(1.dp, KgTurquoise)) {
+            Text(
+                code,
+                style = MaterialTheme.typography.titleLarge,
+                fontWeight = FontWeight.ExtraBold,
+                color = KgTurquoise,
+                modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp).testTag("invite_code")
+            )
+        }
+        Button(
+            onClick = {
+                val text = "Еду с KG Taxi. Скачай приложение: https://mramantur01.github.io/-app/ и введи мой код $code — скидка $percent% на первую поездку."
+                val send = android.content.Intent(android.content.Intent.ACTION_SEND).apply {
+                    type = "text/plain"
+                    putExtra(android.content.Intent.EXTRA_TEXT, text)
+                }
+                runCatching { context.startActivity(android.content.Intent.createChooser(send, "Пригласить друга")) }
+            },
+            colors = ButtonDefaults.buttonColors(containerColor = KgTurquoise, contentColor = Color.White),
+            modifier = Modifier.fillMaxWidth().testTag("invite_share")
+        ) {
+            Icon(Icons.Default.Share, contentDescription = null, modifier = Modifier.size(18.dp))
+            Spacer(Modifier.width(6.dp))
+            Text(com.example.i18n.t("Поделиться кодом", "Кодду бөлүшүү"))
+        }
     }
 }

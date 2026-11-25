@@ -200,6 +200,8 @@ fun KgTaxiAppRoot() {
         AppThemeMode.DARK -> true
     }
 
+    // Newer screens read the language from here (RU / KG).
+    com.example.i18n.Lang.kg = state.language == com.example.i18n.AppLanguage.KG
     KgTaxiTheme(darkTheme = effectiveDarkTheme) {
         // Paint the theme background: otherwise the dark window shows through in light mode.
         Box(modifier = Modifier.fillMaxSize().background(MaterialTheme.colorScheme.background)) {
@@ -269,7 +271,9 @@ fun KgTaxiAppRoot() {
                             onRejectApplication = viewModel::rejectApplication,
                             onSetDriverBlocked = viewModel::setDriverBlocked,
                             onSaveAppConfig = viewModel::saveAppConfig,
-                            onResolveTicket = viewModel::resolveSupportTicket
+                            onResolveTicket = viewModel::resolveSupportTicket,
+                            onSetStatsDays = viewModel::setOwnerStatsDays,
+                            onExportCsv = viewModel::exportOwnerCsv
                         )
                     }
                 }

@@ -43,7 +43,24 @@ data class OwnerDayStats(
     val ridesTotal: Int = 0,
     val ridesDone: Int = 0,
     val ridesCancelled: Int = 0,
-    val revenueSom: Int = 0
+    val revenueSom: Int = 0,
+    /** Best drivers of the period: name to completed trips and revenue. */
+    val topDrivers: List<Triple<String, Int, Int>> = emptyList(),
+    /** Rows for the spreadsheet export. */
+    val rows: List<OwnerRideRow> = emptyList()
+)
+
+data class OwnerRideRow(
+    val createdAtMillis: Long,
+    val city: String,
+    val from: String,
+    val to: String,
+    val tariff: String,
+    val priceSom: Int,
+    val status: String,
+    val payment: String,
+    val passenger: String,
+    val driver: String
 )
 
 /**
@@ -200,7 +217,25 @@ class OwnerRepository(context: Context) {
                     ridesTotal = docs.size,
                     ridesDone = done.size,
                     ridesCancelled = docs.count { it.getString("status") == RideStatus.CANCELLED },
-                    revenueSom = done.sumOf { (it.getLong("priceSom") ?: 0L).toInt() }
+                    revenueSom = done.sumOf { (it.getLong("priceSom") ?: 0L).toInt() },
+                    topDrivers = done.groupBy { it.getString("driverName").orEmpty().ifBlank { "Без имени" } }
+                        .map { (name, list) -> Triple(name, list.size, list.sumOf { (it.getLong("priceSom") ?: 0L).toInt() }) }
+                        .sortedByDescending { it.second }
+                        .take(5),
+                    rows = docs.map { d ->
+                        OwnerRideRow(
+                            createdAtMillis = d.getTimestamp("createdAt")?.toDate()?.time ?: 0L,
+                            city = d.getString("city").orEmpty(),
+                            from = d.getString("pickupAddress").orEmpty(),
+                            to = d.getString("dropoffAddress").orEmpty(),
+                            tariff = d.getString("tariffName") ?: if (d.getString("serviceType") == "INTERCITY") "Межгород" else "Такси",
+                            priceSom = (d.getLong("priceSom") ?: 0L).toInt(),
+                            status = d.getString("status").orEmpty(),
+                            payment = if (d.getString("paymentMethod") == "CARD") "Карта" else "Наличные/QR",
+                            passenger = d.getString("passengerName").orEmpty(),
+                            driver = d.getString("driverName").orEmpty()
+                        )
+                    }
                 )
             }
             .catch { e ->

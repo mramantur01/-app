@@ -171,7 +171,7 @@ fun AiTourGuideCard(
             ) {
                 Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                     Icon(Icons.Default.RecordVoiceOver, contentDescription = null, tint = UberBlue, modifier = Modifier.size(18.dp))
-                    Text("AI-аудиогид по Кыргызстану", style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.Bold, color = UberBlue)
+                    Text(com.example.i18n.t("AI-аудиогид по Кыргызстану", "Кыргызстан боюнча AI-аудиогид"), style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.Bold, color = UberBlue)
                 }
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Text(language.code, style = MaterialTheme.typography.labelSmall, fontFamily = JetBrainsMono, color = UberBlue)

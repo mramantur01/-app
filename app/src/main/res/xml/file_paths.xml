@@ -2,4 +2,6 @@
 <paths>
     <!-- Photos taken during registration (documents and car), deleted after upload. -->
     <cache-path name="reg_photos" path="reg_photos/" />
+    <!-- Owner spreadsheet exports. -->
+    <cache-path name="exports" path="exports/" />
 </paths>

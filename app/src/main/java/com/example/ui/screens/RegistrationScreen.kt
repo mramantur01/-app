@@ -331,7 +331,7 @@ fun RegistrationScreen(
 private fun ChoiceStep(onPassenger: () -> Unit, onDriver: () -> Unit) {
     Spacer(Modifier.height(12.dp))
     Text(
-        "Кто вы?",
+        com.example.i18n.t("Кто вы?", "Сиз кимсиз?"),
         style = MaterialTheme.typography.headlineMedium,
         fontWeight = FontWeight.ExtraBold,
         color = KgInk,
@@ -347,7 +347,7 @@ private fun ChoiceStep(onPassenger: () -> Unit, onDriver: () -> Unit) {
     Spacer(Modifier.height(8.dp))
     RoleCard(
         icon = Icons.Default.Person,
-        title = "Пассажир",
+        title = com.example.i18n.t("Пассажир", "Жүргүнчү"),
         subtitle = "Заказываю такси и межгород.\nНужен только паспорт.",
         filled = true,
         tag = "reg_choice_passenger",
@@ -355,7 +355,7 @@ private fun ChoiceStep(onPassenger: () -> Unit, onDriver: () -> Unit) {
     )
     RoleCard(
         icon = Icons.Default.DirectionsCar,
-        title = "Водитель",
+        title = com.example.i18n.t("Водитель", "Айдоочу"),
         subtitle = "Зарабатываю на своём авто.\nНужны паспорт, ВУ и фото машины.",
         filled = false,
         tag = "reg_choice_driver",

@@ -213,3 +213,40 @@ class AccountDeletionRepository(context: Context, private val auth: FirebaseAuth
         }
     }
 }
+
+
+/**
+ * "Пригласи друга": every user has a code (KG + 6 letters of the account id).
+ * referrals/{code} = { uid } so a friend's code can be checked when they enter it.
+ */
+class ReferralRepository(context: Context, private val auth: FirebaseAuth = Firebase.auth) {
+    private val col = db(context).collection("referrals")
+
+    fun myCode(): String? = auth.currentUser?.uid?.let { uid ->
+        "KG" + uid.filter { it.isLetterOrDigit() }.take(6).uppercase()
+    }
+
+    /** Registers my code once so friends can use it. */
+    suspend fun ensureMyCode() {
+        val uid = auth.currentUser?.uid ?: return
+        val code = myCode() ?: return
+        try {
+            val doc = col.document(code)
+            if (!doc.get().await().exists()) {
+                doc.set(mapOf("uid" to uid, "createdAt" to FieldValue.serverTimestamp())).await()
+            }
+        } catch (e: CancellationException) {
+            throw e
+        } catch (_: Exception) {
+        }
+    }
+
+    /** Owner uid of the code, or null if there is no such code. */
+    suspend fun ownerOf(code: String): String? = try {
+        col.document(code.trim().uppercase()).get().await().getString("uid")
+    } catch (e: CancellationException) {
+        throw e
+    } catch (_: Exception) {
+        null
+    }
+}

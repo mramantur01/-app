@@ -363,6 +363,18 @@ service cloud.firestore {
                       incoming().data is string && incoming().data.size() > 100 && incoming().data.size() < 900000;
     }
 
+    // "Пригласи друга": invite codes. Anyone signed in can check a code; each user creates only their own.
+    match /referrals/{code} {
+      allow get: if isSignedIn();
+      allow list: if false;
+      allow create: if isSignedIn() &&
+                       code.size() <= 12 &&
+                       incoming().keys().hasOnly(['uid', 'createdAt']) &&
+                       incoming().uid == request.auth.uid &&
+                       isValidTimestamp(incoming().createdAt);
+      allow update, delete: if false;
+    }
+
     // Registration: who the user is (passenger or driver) and their passport number.
     // Document photos live in the photos subcollection: only the user and the owner can see them.
     match /registrations/{uid} {

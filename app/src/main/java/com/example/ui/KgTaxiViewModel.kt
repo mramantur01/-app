@@ -155,6 +155,8 @@ data class KgTaxiUiState(
     val ownerDrivers: List<com.example.data.firebase.OwnerDriver> = emptyList(),
     val ownerBlockedDrivers: List<com.example.data.firebase.OwnerDriver> = emptyList(),
     val ownerStats: com.example.data.firebase.OwnerDayStats = com.example.data.firebase.OwnerDayStats(),
+    /** Owner stats period in days: 1 = today, 7 = week, 30 = month. */
+    val ownerStatsDays: Int = 1,
     /** Photos of the application the owner opened: kind id -> base64 JPEG. */
     val ownerPhotos: Map<String, String> = emptyMap(),
     val ownerPhotosUid: String? = null,
@@ -434,6 +436,10 @@ class KgTaxiViewModel(
     private var applicationWatchJob: Job? = null
     private val configRepo by lazy { com.example.data.firebase.AppConfigRepository(appContext) }
     private val supportRepo by lazy { com.example.data.firebase.SupportRepository(appContext) }
+    private val referralRepo by lazy { com.example.data.firebase.ReferralRepository(appContext) }
+
+    /** My invite code for "Пригласи друга". */
+    fun myInviteCode(): String? = referralRepo.myCode()
     private val deletionRepo by lazy { com.example.data.firebase.AccountDeletionRepository(appContext) }
     private val appWatcher by lazy { com.example.data.firebase.DriverApplicationWatcher(appContext) }
     private val docPrefs by lazy { appContext.getSharedPreferences("driver_docs", Context.MODE_PRIVATE) }
@@ -544,6 +550,7 @@ class KgTaxiViewModel(
         refreshRegistration()
         startAppConfig()
         watchDriverApplication()
+        viewModelScope.launch { referralRepo.ensureMyCode() }
 
         viewModelScope.launch {
             // Read the saved profile first: the screen state may still be the empty default at startup,
@@ -1083,8 +1090,59 @@ class KgTaxiViewModel(
         ownerJobs += viewModelScope.launch {
             ownerRepo.observeBlockedDrivers().collect { list -> _uiState.update { it.copy(ownerBlockedDrivers = list) } }
         }
-        ownerJobs += viewModelScope.launch {
-            ownerRepo.observeRidesSince(dayStart).collect { st -> _uiState.update { it.copy(ownerStats = st) } }
+        startOwnerStats(_uiState.value.ownerStatsDays)
+    }
+
+    private var ownerStatsJob: Job? = null
+
+    private fun startOwnerStats(days: Int) {
+        ownerStatsJob?.cancel()
+        val from = java.util.Calendar.getInstance().apply {
+            set(java.util.Calendar.HOUR_OF_DAY, 0); set(java.util.Calendar.MINUTE, 0)
+            set(java.util.Calendar.SECOND, 0); set(java.util.Calendar.MILLISECOND, 0)
+            add(java.util.Calendar.DAY_OF_YEAR, -(days - 1))
+        }.timeInMillis
+        ownerStatsJob = viewModelScope.launch {
+            ownerRepo.observeRidesSince(from).collect { st -> _uiState.update { it.copy(ownerStats = st) } }
+        }
+    }
+
+    fun setOwnerStatsDays(days: Int) {
+        _uiState.update { it.copy(ownerStatsDays = days) }
+        if (_uiState.value.isAdmin) startOwnerStats(days)
+    }
+
+    /** Saves the period's orders as a CSV table and opens "Поделиться" (Excel, Google Sheets, Telegram…). */
+    fun exportOwnerCsv() {
+        val s = _uiState.value
+        val rows = s.ownerStats.rows
+        if (rows.isEmpty()) {
+            _uiState.update { it.copy(statusBanner = "За этот период заказов нет") }
+            return
+        }
+        viewModelScope.launch {
+            val file = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
+                val fmt = java.text.SimpleDateFormat("dd.MM.yyyy HH:mm", java.util.Locale.US)
+                fun cell(v: String) = "\"" + v.replace("\"", "\"\"") + "\""
+                val sb = StringBuilder("\uFEFF") // BOM so Excel opens Cyrillic correctly
+                sb.append("Дата;Город;Откуда;Куда;Тариф;Цена, сом;Статус;Оплата;Пассажир;Водитель\n")
+                rows.forEach { r ->
+                    sb.append(listOf(
+                        if (r.createdAtMillis > 0) fmt.format(java.util.Date(r.createdAtMillis)) else "",
+                        r.city, r.from, r.to, r.tariff, r.priceSom.toString(), r.status, r.payment, r.passenger, r.driver
+                    ).joinToString(";") { cell(it) }).append("\n")
+                }
+                val dir = java.io.File(appContext.cacheDir, "exports").apply { mkdirs() }
+                java.io.File(dir, "kgtaxi_zakazy_${s.ownerStatsDays}d.csv").apply { writeText(sb.toString()) }
+            }
+            val uri = androidx.core.content.FileProvider.getUriForFile(appContext, appContext.packageName + ".fileprovider", file)
+            val send = android.content.Intent(android.content.Intent.ACTION_SEND).apply {
+                type = "text/csv"
+                putExtra(android.content.Intent.EXTRA_STREAM, uri)
+                addFlags(android.content.Intent.FLAG_GRANT_READ_URI_PERMISSION)
+            }
+            val chooser = android.content.Intent.createChooser(send, "Выгрузка заказов").addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK)
+            runCatching { appContext.startActivity(chooser) }
         }
     }
 
@@ -1779,9 +1837,35 @@ class KgTaxiViewModel(
         val code = s0.promoCodeInput.trim().uppercase()
         val cfg = s0.appConfig
         val firstRide = s0.passengerRides.none { it.status == RideStatus.COMPLETED }
+        // A friend's invite code (KG…): checked online, works only for the first ride.
+        val ownPromo = cfg.promoActive && cfg.promoCode.isNotBlank() && code == cfg.promoCode.uppercase()
+        if (!ownPromo && code.startsWith("KG") && code.length in 6..12) {
+            viewModelScope.launch {
+                val owner = referralRepo.ownerOf(code)
+                val me = _uiState.value.signedInUid
+                val p = when {
+                    owner == null -> -1
+                    owner == me -> -3
+                    !firstRide -> -2
+                    else -> cfg.referralPercent
+                }
+                _uiState.update {
+                    it.copy(
+                        appliedPromoPercent = p.coerceAtLeast(0),
+                        statusBanner = when (p) {
+                            -1 -> "Такого кода нет"
+                            -2 -> "Код друга действует только на первую поездку"
+                            -3 -> "Это ваш код — отправьте его друзьям"
+                            else -> "Код друга применён: −$p%"
+                        }
+                    )
+                }
+            }
+            return
+        }
         val pct = when {
             code.isBlank() -> 0
-            !cfg.promoActive || cfg.promoCode.isBlank() || code != cfg.promoCode.uppercase() -> -1
+            !ownPromo -> -1
             !firstRide -> -2
             else -> cfg.promoPercent
         }

@@ -192,7 +192,7 @@ private fun PassengerControlSheet(
             TextButton(onClick = viewModel::backToPassengerHome, modifier = Modifier.testTag("order_back_home")) {
                 Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = null, modifier = Modifier.size(18.dp))
                 Spacer(Modifier.width(6.dp))
-                Text("Главная")
+                Text(com.example.i18n.t("Главная", "Башкы бет"))
             }
             Spacer(Modifier.weight(1f))
             Box {
@@ -266,7 +266,7 @@ private fun PassengerControlSheet(
                         )
                     }
                     TextButton(onClick = { viewModel.openPickupDialog(true) }, contentPadding = PaddingValues(horizontal = 6.dp)) {
-                        Text("Изменить")
+                        Text(com.example.i18n.t("Изменить", "Өзгөртүү"))
                     }
                     if (state.profile.businessProfileActive) {
                         Surface(shape = RoundedCornerShape(6.dp), color = UberBlue.copy(alpha = 0.16f)) {
@@ -358,12 +358,12 @@ private fun PassengerControlSheet(
             OutlinedButton(onClick = { pickOnMap = false }, modifier = Modifier.weight(1f).testTag("pick_pickup_on_map")) {
                 Icon(Icons.Default.Map, contentDescription = null, modifier = Modifier.size(16.dp))
                 Spacer(Modifier.width(4.dp))
-                Text("Откуда на карте", maxLines = 1)
+                Text(com.example.i18n.t("Откуда на карте", "Кайдан — картадан"), maxLines = 1)
             }
             OutlinedButton(onClick = { pickOnMap = true }, modifier = Modifier.weight(1f).testTag("pick_dropoff_on_map")) {
                 Icon(Icons.Default.Map, contentDescription = null, modifier = Modifier.size(16.dp))
                 Spacer(Modifier.width(4.dp))
-                Text("Куда на карте", maxLines = 1)
+                Text(com.example.i18n.t("Куда на карте", "Кайда — картадан"), maxLines = 1)
             }
         }
         if (state.pickupDialogOpen) {
@@ -1220,7 +1220,7 @@ private fun PassengerControlSheet(
                 }
             },
             confirmButton = {
-                TextButton(onClick = { showWaypointDialog = false }) { Text("Закрыть") }
+                TextButton(onClick = { showWaypointDialog = false }) { Text(com.example.i18n.t("Закрыть", "Жабуу")) }
             }
         )
     }
@@ -1231,7 +1231,7 @@ private fun PassengerControlSheet(
         var rPhone by remember { mutableStateOf(state.recipientPhone.ifBlank { "+996 " }) }
         AlertDialog(
             onDismissRequest = { showForOtherDialog = false },
-            title = { Text("Заказать другому человеку", fontWeight = FontWeight.Bold) },
+            title = { Text(com.example.i18n.t("Заказать другому человеку", "Башка адамга заказ берүү"), fontWeight = FontWeight.Bold) },
             text = {
                 Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                     Text("Водитель увидит имя получателя, а PIN безопасности можно переслать ему в 1 клик.", style = MaterialTheme.typography.bodySmall)
@@ -1349,7 +1349,7 @@ private fun PickupPointDialog(
 ) {
     AlertDialog(
         onDismissRequest = onDismiss,
-        title = { Text("Точка подачи") },
+        title = { Text(com.example.i18n.t("Точка подачи", "Алып кетүү жери")) },
         text = {
             Column(verticalArrangement = Arrangement.spacedBy(10.dp), modifier = Modifier.verticalScroll(rememberScrollState())) {
                 Text(
@@ -1360,17 +1360,17 @@ private fun PickupPointDialog(
                 OutlinedButton(onClick = onMyLocation, modifier = Modifier.fillMaxWidth().testTag("pickup_my_location")) {
                     Icon(Icons.Default.MyLocation, contentDescription = null, modifier = Modifier.size(18.dp))
                     Spacer(Modifier.width(6.dp))
-                    Text("Моё местоположение")
+                    Text(com.example.i18n.t("Моё местоположение", "Менин жайгашкан жерим"))
                 }
                 OutlinedButton(onClick = onPickOnMap, modifier = Modifier.fillMaxWidth().testTag("pickup_on_map")) {
                     Icon(Icons.Default.Map, contentDescription = null, modifier = Modifier.size(18.dp))
                     Spacer(Modifier.width(6.dp))
-                    Text("Указать точку на карте")
+                    Text(com.example.i18n.t("Указать точку на карте", "Картадан көрсөтүү"))
                 }
                 OutlinedTextField(
                     value = state.pickupSearchQuery,
                     onValueChange = onQuery,
-                    label = { Text("Или введите адрес") },
+                    label = { Text(com.example.i18n.t("Или введите адрес", "Же даректи жазыңыз")) },
                     singleLine = true,
                     modifier = Modifier.fillMaxWidth().testTag("pickup_search")
                 )
@@ -1392,7 +1392,7 @@ private fun PickupPointDialog(
             }
         },
         confirmButton = {},
-        dismissButton = { TextButton(onClick = onDismiss) { Text("Закрыть") } }
+        dismissButton = { TextButton(onClick = onDismiss) { Text(com.example.i18n.t("Закрыть", "Жабуу")) } }
     )
 }
 
@@ -1420,18 +1420,18 @@ private fun PaymentMethodRow(selected: String, onSelect: (String) -> Unit) {
                 fontWeight = FontWeight.Medium,
                 modifier = Modifier.weight(1f)
             )
-            Text("Изменить", color = MaterialTheme.colorScheme.primary, style = MaterialTheme.typography.labelLarge)
+            Text(com.example.i18n.t("Изменить", "Өзгөртүү"), color = MaterialTheme.colorScheme.primary, style = MaterialTheme.typography.labelLarge)
         }
     }
     if (open) {
         AlertDialog(
             onDismissRequest = { open = false },
-            title = { Text("Способ оплаты") },
+            title = { Text(com.example.i18n.t("Способ оплаты", "Төлөм ыкмасы")) },
             text = {
                 Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                     PaymentOption(
                         icon = Icons.Default.Payments,
-                        title = "Наличные или QR",
+                        title = com.example.i18n.t("Наличные или QR", "Накталай же QR"),
                         subtitle = "Наличными водителю или по QR / переводом на его номер",
                         selected = !isCard,
                         enabled = true,
@@ -1439,7 +1439,7 @@ private fun PaymentMethodRow(selected: String, onSelect: (String) -> Unit) {
                     ) { onSelect("CASH"); open = false }
                     PaymentOption(
                         icon = Icons.Default.CreditCard,
-                        title = "Банковская карта",
+                        title = com.example.i18n.t("Банковская карта", "Банк картасы"),
                         subtitle = if (FeatureFlags.ONLINE_PAYMENTS) "Спишем с привязанной карты после поездки"
                         else "Привязка карты появится после подключения платёжной системы",
                         selected = isCard,
@@ -1449,7 +1449,7 @@ private fun PaymentMethodRow(selected: String, onSelect: (String) -> Unit) {
                 }
             },
             confirmButton = {},
-            dismissButton = { TextButton(onClick = { open = false }) { Text("Закрыть") } }
+            dismissButton = { TextButton(onClick = { open = false }) { Text(com.example.i18n.t("Закрыть", "Жабуу")) } }
         )
     }
 }

@@ -49,6 +49,8 @@ fun DispatcherDashboardScreen(
     onSetDriverBlocked: (String, Boolean) -> Unit = { _, _ -> },
     onSaveAppConfig: (com.example.data.firebase.AppConfig) -> Unit = {},
     onResolveTicket: (String) -> Unit = {},
+    onSetStatsDays: (Int) -> Unit = {},
+    onExportCsv: () -> Unit = {},
     modifier: Modifier = Modifier
 ) {
     var activeTab by remember { mutableIntStateOf(0) } // 0 = Владелец & Банк, 1 = Мониторинг
@@ -74,7 +76,9 @@ fun DispatcherDashboardScreen(
                 onReject = onRejectApplication,
                 onSetBlocked = onSetDriverBlocked,
                 onSaveConfig = onSaveAppConfig,
-                onResolveTicket = onResolveTicket
+                onResolveTicket = onResolveTicket,
+                onSetStatsDays = onSetStatsDays,
+                onExportCsv = onExportCsv
             )
         }
         // Header Actions
