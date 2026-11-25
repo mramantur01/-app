@@ -726,7 +726,6 @@ private fun DriverIncomingOfferSheet(
                 ) {
                     Column(horizontalAlignment = Alignment.CenterHorizontally) {
                         Text("Пропустить", style = MaterialTheme.typography.labelMedium, fontWeight = FontWeight.Bold)
-                        Text("-4 актр.", style = MaterialTheme.typography.labelSmall, color = UberRed)
                     }
                 }
                 Button(

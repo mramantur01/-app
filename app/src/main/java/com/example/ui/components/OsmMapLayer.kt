@@ -13,6 +13,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clipToBounds
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalLifecycleOwner
 import androidx.compose.ui.viewinterop.AndroidView
@@ -140,7 +141,8 @@ fun OsmMapLayer(
 
     AndroidView(
         factory = { mapView },
-        modifier = modifier,
+        // The map view must not draw over the header above it.
+        modifier = modifier.clipToBounds(),
         update = { mv ->
             mv.overlays.clear()
             mv.overlays.add(eventsOverlay)
