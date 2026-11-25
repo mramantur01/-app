@@ -1,5 +1,8 @@
 package com.example.ui
 
+import com.example.util.DriverWorkPrefs
+import com.example.util.VoiceAnnouncer
+
 import android.content.Context
 import android.util.Log
 import androidx.lifecycle.ViewModel
@@ -170,6 +173,31 @@ data class KgTaxiUiState(
     val driverBookedPreorders: List<SharedRide> = emptyList(),
     /** Week days (Calendar.DAY_OF_WEEK) the driver wants pre-order alerts for. */
     val driverPreorderAlertDays: Set<Int> = emptySet(),
+    /** Only orders within this distance to the pickup, km. 0 = any. */
+    val driverPickupRadiusKm: Int = 0,
+    val driverVoiceAnnounce: Boolean = true,
+    /** Dark map from 20:00 to 6:00. */
+    val driverNightMapAuto: Boolean = true,
+    val driverHomePoint: GeoPoint? = null,
+    val driverHomeAddress: String = "",
+    /** "Домой": only orders that bring the driver closer to home. */
+    val driverHomeModeOn: Boolean = false,
+    val driverHomeUsesLeft: Int = 2,
+    /** Leave the line after the current trip. */
+    val driverLastOrder: Boolean = false,
+    val driverOnlineMinutes24h: Int = 0,
+    /** Must rest until this time (12 h on the line rule). */
+    val driverRestUntil: Long? = null,
+    val driverBalance: com.example.data.model.DriverBalance = com.example.data.model.DriverBalance(),
+    /** Where passengers are waiting for a car right now (demand map). */
+    val driverDemandPoints: List<GeoPoint> = emptyList(),
+    val driverShowDemand: Boolean = false,
+    /** Passenger asks to change the route; the driver answers yes or no. */
+    val driverRouteRequest: com.example.data.model.RouteRequest? = null,
+    /** Passenger side: "pending", "accepted", "rejected" or null. */
+    val passengerRouteRequestStatus: String? = null,
+    /** Owner panel: each driver's balance, by uid. */
+    val ownerDriverBalances: Map<String, com.example.data.model.DriverBalance> = emptyMap(),
     val selectedVenueId: String = KgGeoCatalog.foodVenues.first().id,
     val foodCart: List<FoodCartEntry> = emptyList(),
     // Active Trip, Driver Chat & Post-Trip
@@ -790,8 +818,10 @@ class KgTaxiViewModel(
     private fun startDriverHistory() {
         driverHistoryJob?.cancel()
         driverHistoryJob = viewModelScope.launch {
-            rides.observeMyRides(asDriver = true).collect { list ->
+            rides.observeMyRides(asDriver = true, limit = 500).collect { list ->
                 restoreDriverActiveRide(list)
+                driverHistoryCache = list
+                recomputeDriverBalance()
                 val commission = _uiState.value.ownerBankConfig.commissionPercent
                 fun net(r: SharedRide) = OwnerPayoutGatewayClient.calculateOrderSplit(r.priceSom, commission).driverNetSom
                 val done = list.filter { it.status == RideStatus.COMPLETED }
@@ -941,13 +971,196 @@ class KgTaxiViewModel(
         driverPreordersJob?.cancel()
         com.example.util.PreorderAlerts.setCity(appContext, city)
         _uiState.update { it.copy(driverPreorderAlertDays = com.example.util.PreorderAlerts.days(appContext)) }
+        loadDriverWorkPrefs()
         com.example.util.PreorderAlerts.schedule(appContext)
         driverPreordersJob = viewModelScope.launch {
             rides.observeOpenRides(city).collect { open ->
                 val pre = open.filter { r -> r.scheduledAtMillis != null }.sortedBy { r -> r.scheduledAtMillis ?: 0L }
-                _uiState.update { it.copy(driverOpenPreorders = pre) }
+                val demand = open.filter { r -> !r.isFuturePreorder && r.pickupLat != 0.0 }.map { r -> GeoPoint(r.pickupLat, r.pickupLng) }
+                _uiState.update { it.copy(driverOpenPreorders = pre, driverDemandPoints = demand) }
                 com.example.util.PreorderAlerts.check(appContext, pre)
             }
+        }
+    }
+
+    private var driverHistoryCache: List<SharedRide> = emptyList()
+    private var driverPaidSom = 0
+    private var driverPaidJob: Job? = null
+    private var driverOnlineTickJob: Job? = null
+
+    private fun recomputeDriverBalance() {
+        val s = _uiState.value
+        val b = com.example.data.model.DriverBalance.compute(
+            driverHistoryCache, s.ownerBankConfig.commissionPercent, s.appConfig.goalTrips, s.appConfig.goalBonusSom, driverPaidSom
+        )
+        _uiState.update { it.copy(driverBalance = b) }
+    }
+
+    private fun loadDriverWorkPrefs() {
+        val c = appContext
+        val home = DriverWorkPrefs.home(c)
+        _uiState.update {
+            it.copy(
+                driverPickupRadiusKm = DriverWorkPrefs.radiusKm(c),
+                driverVoiceAnnounce = DriverWorkPrefs.voice(c),
+                driverNightMapAuto = DriverWorkPrefs.nightMap(c),
+                driverHomePoint = home?.first,
+                driverHomeAddress = home?.second.orEmpty(),
+                driverHomeUsesLeft = DriverWorkPrefs.homeUsesLeft(c),
+                driverOnlineMinutes24h = DriverWorkPrefs.onlineMinutes24h(c),
+                driverRestUntil = DriverWorkPrefs.restUntil(c)
+            )
+        }
+        if (driverPaidJob == null) {
+            driverPaidJob = viewModelScope.launch {
+                rides.observeMyPaidSom().collect { paid ->
+                    driverPaidSom = paid
+                    recomputeDriverBalance()
+                }
+            }
+        }
+    }
+
+    fun setDriverPickupRadius(km: Int) {
+        DriverWorkPrefs.setRadiusKm(appContext, km)
+        _uiState.update { it.copy(driverPickupRadiusKm = km) }
+    }
+
+    fun setDriverVoice(on: Boolean) {
+        DriverWorkPrefs.setVoice(appContext, on)
+        _uiState.update { it.copy(driverVoiceAnnounce = on) }
+        if (on) VoiceAnnouncer.speak(appContext, "Голосовые подсказки включены")
+    }
+
+    fun setDriverNightMap(on: Boolean) {
+        DriverWorkPrefs.setNightMap(appContext, on)
+        _uiState.update { it.copy(driverNightMapAuto = on) }
+    }
+
+    fun toggleDriverDemandMap() {
+        _uiState.update { it.copy(driverShowDemand = !it.driverShowDemand) }
+    }
+
+    fun setDriverHome(point: GeoPoint) {
+        viewModelScope.launch {
+            val address = LocationAndVoiceHelper.reverseGeocode(appContext, _uiState.value.selectedCity, point)
+            DriverWorkPrefs.setHome(appContext, point, address)
+            _uiState.update { it.copy(driverHomePoint = point, driverHomeAddress = address, statusBanner = "Домашний адрес сохранён") }
+        }
+    }
+
+    fun toggleDriverHomeMode() {
+        val s = _uiState.value
+        if (s.driverHomeModeOn) {
+            _uiState.update { it.copy(driverHomeModeOn = false, statusBanner = "Режим «Домой» выключен") }
+        } else {
+            when {
+                s.driverHomePoint == null -> _uiState.update { it.copy(statusBanner = "Сначала укажите домашний адрес в настройках линии") }
+                DriverWorkPrefs.homeUsesLeft(appContext) <= 0 -> _uiState.update { it.copy(statusBanner = "«Домой» можно включать 2 раза в день. Попробуйте завтра.") }
+                else -> {
+                    DriverWorkPrefs.useHome(appContext)
+                    _uiState.update {
+                        it.copy(
+                            driverHomeModeOn = true,
+                            driverHomeUsesLeft = DriverWorkPrefs.homeUsesLeft(appContext),
+                            statusBanner = "«Домой»: будем предлагать заказы в сторону дома"
+                        )
+                    }
+                }
+            }
+        }
+        generateDriverIncomingOrders(_uiState.value.selectedCity)
+    }
+
+    fun toggleDriverLastOrder() {
+        _uiState.update {
+            val next = !it.driverLastOrder
+            it.copy(driverLastOrder = next, statusBanner = if (next) "После этой поездки вы уйдёте с линии" else "Продолжаете работать после поездки")
+        }
+    }
+
+    /** Driver answers the passenger's route change. */
+    fun answerRouteChange(accept: Boolean) {
+        val req = _uiState.value.driverRouteRequest ?: return
+        val id = driverRideId ?: return
+        viewModelScope.launch {
+            val res = rides.answerRouteChange(id, req, accept)
+            if (res.isFailure) {
+                _uiState.update { it.copy(statusBanner = "Нет связи с сервером. Попробуйте ещё раз.") }
+                return@launch
+            }
+            _uiState.update { st ->
+                val order = st.driverAcceptedOrder
+                val updated = if (accept && order != null) {
+                    val split = OwnerPayoutGatewayClient.calculateOrderSplit(req.priceSom, st.ownerBankConfig.commissionPercent)
+                    order.copy(
+                        dropoffAddress = if (req.stopAddress.isNullOrBlank()) req.dropoffAddress else "${req.stopAddress} → ${req.dropoffAddress}",
+                        dropoffPoint = GeoPoint(req.dropoffLat, req.dropoffLng),
+                        grossFareSom = req.priceSom,
+                        upfrontNetEarningsSom = split.driverNetSom
+                    )
+                } else order
+                st.copy(
+                    driverAcceptedOrder = updated,
+                    driverRouteRequest = null,
+                    statusBanner = if (accept) "Маршрут изменён. Новая цена ${req.priceSom} сом" else "Вы отказались менять маршрут"
+                )
+            }
+        }
+    }
+
+    /** Passenger asks the driver to change the destination (and maybe add a stop). */
+    fun requestRouteChange(newDropoff: GeoPoint, stop: GeoPoint?) {
+        val ride = _uiState.value.activeRide ?: return
+        val id = passengerRideId ?: return
+        viewModelScope.launch {
+            val city = _uiState.value.selectedCity
+            val dropAddr = LocationAndVoiceHelper.reverseGeocode(appContext, city, newDropoff)
+            val stopAddr = stop?.let { LocationAndVoiceHelper.reverseGeocode(appContext, city, it) }
+            val tariff = KgGeoCatalog.taxiTariffs.firstOrNull { it.nameRu == ride.tariffName }?.let { _uiState.value.priced(it) }
+            val price = com.example.data.model.RouteRequest.newPrice(
+                oldPrice = ride.totalPriceSom,
+                pickup = ride.pickupPoint,
+                oldDropoff = ride.dropoffPoint,
+                newDropoff = newDropoff,
+                stop = stop,
+                perKmSom = tariff?.perKmSom ?: 20,
+                baseSom = tariff?.baseSom ?: 90
+            )
+            val req = com.example.data.model.RouteRequest(
+                dropoffAddress = dropAddr, dropoffLat = newDropoff.lat, dropoffLng = newDropoff.lng,
+                stopAddress = stopAddr, stopLat = stop?.lat, stopLng = stop?.lng, priceSom = price
+            )
+            val res = rides.requestRouteChange(id, req)
+            _uiState.update {
+                it.copy(
+                    passengerRouteRequestStatus = if (res.isSuccess) "pending" else it.passengerRouteRequestStatus,
+                    statusBanner = if (res.isSuccess) "Запрос отправлен водителю. Новая цена $price сом — если водитель согласится."
+                    else "Не удалось отправить. Проверьте интернет."
+                )
+            }
+        }
+    }
+
+    fun loadOwnerDriverBalances() {
+        val s = _uiState.value
+        val drivers = s.ownerDrivers + s.ownerBlockedDrivers
+        viewModelScope.launch {
+            val map = mutableMapOf<String, com.example.data.model.DriverBalance>()
+            drivers.forEach { d ->
+                ownerRepo.fetchDriverBalance(d.uid, s.ownerBankConfig.commissionPercent, s.appConfig.goalTrips, s.appConfig.goalBonusSom)
+                    ?.let { map[d.uid] = it }
+            }
+            _uiState.update { it.copy(ownerDriverBalances = map) }
+        }
+    }
+
+    fun addOwnerDriverPayment(uid: String, amountSom: Int) {
+        if (amountSom <= 0) return
+        viewModelScope.launch {
+            val res = ownerRepo.addDriverPayment(uid, amountSom)
+            _uiState.update { it.copy(statusBanner = if (res.isSuccess) "Оплата $amountSom сом записана" else "Не удалось сохранить. Проверьте интернет.") }
+            if (res.isSuccess) loadOwnerDriverBalances()
         }
     }
 
@@ -1049,17 +1262,19 @@ class KgTaxiViewModel(
 
     fun closeRegistration() = _uiState.update { it.copy(registrationOpen = false, registrationStartAsDriver = false) }
 
-    fun registerPassenger(fullName: String, phone: String, passportNumber: String, passportPhoto: android.net.Uri) {
+    fun registerPassenger(fullName: String, phone: String, passportNumber: String, photos: Map<com.example.data.firebase.RegPhoto, android.net.Uri>) {
         _uiState.update { it.copy(registrationSending = true) }
         viewModelScope.launch {
-            val data = registrationRepo.encodePhoto(passportPhoto)
-            if (data == null) {
-                _uiState.update { it.copy(registrationSending = false, statusBanner = "Не удалось прочитать фото паспорта. Сфотографируйте ещё раз.") }
-                return@launch
+            val encoded = mutableMapOf<com.example.data.firebase.RegPhoto, String>()
+            for ((kind, uri) in photos) {
+                val data = registrationRepo.encodePhoto(uri)
+                if (data == null) {
+                    _uiState.update { it.copy(registrationSending = false, statusBanner = "Не удалось прочитать фото «${kind.title}». Сфотографируйте ещё раз.") }
+                    return@launch
+                }
+                encoded[kind] = data
             }
-            val res = registrationRepo.registerPassenger(
-                fullName, phone, passportNumber, mapOf(com.example.data.firebase.RegPhoto.PASSPORT to data)
-            )
+            val res = registrationRepo.registerPassenger(fullName, phone, passportNumber, encoded)
             res.onSuccess {
                 updateProfile { p -> p.copy(displayName = fullName.trim(), phone = phone.trim()) }
             }
@@ -1354,7 +1569,8 @@ class KgTaxiViewModel(
     /** "My location" in the pickup dialog: GPS sets point A and the city. */
     fun usePickupMyLocation() {
         _uiState.update { it.copy(pickupDialogOpen = false) }
-        locateMyGps()
+        // The passenger chose this point himself: it counts as confirmed.
+        locateMyGps(confirm = true)
     }
 
     fun goToSavedAddress(label: String, address: String) {
@@ -1726,7 +1942,7 @@ class KgTaxiViewModel(
         }
     }
 
-    fun locateMyGps() {
+    fun locateMyGps(confirm: Boolean = false) {
         viewModelScope.launch {
             val res = LocationAndVoiceHelper.fetchCurrentLocation(appContext, _uiState.value.selectedCity)
             val matchedCity = KgGeoCatalog.cityByName(res.matchedCityName)
@@ -1735,7 +1951,7 @@ class KgTaxiViewModel(
                     selectedCity = matchedCity,
                     pickupPoint = res.point,
                     pickupAddress = res.address,
-                    pickupConfirmed = it.pickupConfirmed || res.fromRealGps,
+                    pickupConfirmed = it.pickupConfirmed || res.fromRealGps || confirm,
                     statusBanner = if (res.fromRealGps) "GPS определён: ${res.address}" else "Точка подачи (${matchedCity.name}): ${res.address}"
                 )
             }
@@ -2437,10 +2653,20 @@ class KgTaxiViewModel(
             TripStatus.COMPLETED -> 1f
             else -> 0f
         }
+        val rq = shared.routeRequest
+        if (rq != null && rq.status != "pending" && _uiState.value.passengerRouteRequestStatus == "pending") {
+            _uiState.update {
+                it.copy(statusBanner = if (rq.status == "accepted") "Водитель согласился: новый маршрут, цена ${rq.priceSom} сом" else "Водитель не может изменить маршрут")
+            }
+        }
+        _uiState.update { it.copy(passengerRouteRequestStatus = rq?.status) }
         _uiState.update { st ->
             val r = st.activeRide ?: return@update st
             st.copy(
                 activeRide = r.copy(
+                    dropoffAddress = if (rq?.status == "accepted") shared.dropoffAddress else r.dropoffAddress,
+                    dropoffPoint = if (rq?.status == "accepted") GeoPoint(shared.dropoffLat, shared.dropoffLng) else r.dropoffPoint,
+                    totalPriceSom = if (rq?.status == "accepted") shared.priceSom else r.totalPriceSom,
                     status = status,
                     progress = progress,
                     driverName = shared.driverName ?: r.driverName,
@@ -2676,6 +2902,33 @@ class KgTaxiViewModel(
     // --- DRIVER CABIN, FUEL CALCULATOR & MAINTENANCE ---
 
     fun toggleDriverOnline() {
+        val goingOnline = !_uiState.value.driverOnline
+        if (goingOnline) {
+            val rest = DriverWorkPrefs.restUntil(appContext)
+            if (rest != null) {
+                val t = java.text.SimpleDateFormat("HH:mm", java.util.Locale.US).format(java.util.Date(rest))
+                _uiState.update { it.copy(driverRestUntil = rest, statusBanner = "Вы были на линии 12 часов. Отдых до $t.") }
+                return
+            }
+            val limit = _uiState.value.appConfig.debtLimitSom
+            val debt = _uiState.value.driverBalance.debtSom
+            if (FeatureFlags.REAL_RIDES && limit > 0 && debt > limit) {
+                _uiState.update { it.copy(statusBanner = "Долг сервису $debt сом. Оплатите его, чтобы выйти на линию.") }
+                return
+            }
+            DriverWorkPrefs.startOnline(appContext)
+        } else {
+            DriverWorkPrefs.stopOnline(appContext)
+            driverOnlineTickJob?.cancel()
+            _uiState.update {
+                it.copy(
+                    driverOnlineMinutes24h = DriverWorkPrefs.onlineMinutes24h(appContext),
+                    driverRestUntil = DriverWorkPrefs.restUntil(appContext),
+                    driverHomeModeOn = false,
+                    driverLastOrder = false
+                )
+            }
+        }
         _uiState.update {
             val next = !it.driverOnline
             it.copy(
@@ -2684,6 +2937,7 @@ class KgTaxiViewModel(
             )
         }
         // Keep receiving orders with the screen off while on the line.
+        if (_uiState.value.driverOnline) startDriverOnlineTicker()
         if (_uiState.value.driverOnline) com.example.util.DriverOnlineService.start(appContext)
         else com.example.util.DriverOnlineService.stop(appContext)
         if (FeatureFlags.REAL_RIDES) {
@@ -2693,6 +2947,27 @@ class KgTaxiViewModel(
         }
         if (_uiState.value.driverOnline) {
             generateDriverIncomingOrders(_uiState.value.selectedCity)
+        }
+    }
+
+    /** Counts time on the line; after 12 hours (and no trip in progress) the driver leaves the line. */
+    private fun startDriverOnlineTicker() {
+        driverOnlineTickJob?.cancel()
+        driverOnlineTickJob = viewModelScope.launch {
+            while (_uiState.value.driverOnline) {
+                val min = DriverWorkPrefs.onlineMinutes24h(appContext)
+                _uiState.update { it.copy(driverOnlineMinutes24h = min) }
+                if (min >= DriverWorkPrefs.MAX_ONLINE_MIN && _uiState.value.driverAcceptedOrder == null) {
+                    toggleDriverOnline()
+                    _uiState.update { it.copy(statusBanner = "12 часов на линии. Отдохните 6 часов — это для вашей безопасности.") }
+                    SoundAndNotificationManager.postNotification(appContext, "Время отдохнуть", "Вы были на линии 12 часов. Выйти снова можно через 6 часов.")
+                    break
+                }
+                if (min == DriverWorkPrefs.MAX_ONLINE_MIN - 30) {
+                    SoundAndNotificationManager.postNotification(appContext, "Осталось 30 минут", "Скоро 12 часов на линии. Потом нужен отдых 6 часов.")
+                }
+                delay(60_000)
+            }
         }
     }
 
@@ -2737,13 +3012,24 @@ class KgTaxiViewModel(
                 val open = all.filterNot { it.isFuturePreorder }
                     .filter { r -> r.serviceType == "INTERCITY" || r.tariffId == null || r.tariffId in myTariffs }
                 val myPoint = _uiState.value.pickupPoint
+                val st = _uiState.value
+                val home = st.driverHomePoint
                 val orders = open.map { it.toDriverOrder(myPoint) }
-                val fresh = open.map { it.id }.toSet() - knownIds
-                knownIds = open.map { it.id }.toSet()
+                    .filter { o -> st.driverPickupRadiusKm <= 0 || o.serviceType == ServiceType.INTERCITY || o.pickupDistanceKm <= st.driverPickupRadiusKm }
+                    .filter { o ->
+                        !st.driverHomeModeOn || home == null ||
+                            KgGeoCatalog.haversineKm(o.dropoffPoint, home) < KgGeoCatalog.haversineKm(myPoint, home) - 1.0
+                    }
+                val fresh = orders.map { it.id }.toSet() - knownIds
+                knownIds = orders.map { it.id }.toSet()
                 _uiState.update { it.copy(driverIncomingOrders = orders) }
                 if (fresh.isNotEmpty() && _uiState.value.driverAcceptedOrder == null) {
                     SoundAndNotificationManager.playCue(SoundCue.DRIVER_ASSIGNED, _uiState.value.soundEnabled)
                     SoundAndNotificationManager.vibrateNewOrder(appContext)
+                    val first = orders.firstOrNull { it.id in fresh }
+                    if (_uiState.value.driverVoiceAnnounce && first != null) {
+                        VoiceAnnouncer.speak(appContext, "Новый заказ. Подача ${first.pickupEtaMin} минут. ${first.grossFareSom} сом.")
+                    }
                     SoundAndNotificationManager.postNotification(
                         appContext,
                         "Новый заказ • ${orders.firstOrNull()?.grossFareSom ?: 0} сом",
@@ -2813,6 +3099,13 @@ class KgTaxiViewModel(
         driverRideWatchJob?.cancel()
         driverRideWatchJob = viewModelScope.launch {
             rides.observeRide(rideId).collect { shared ->
+                val req = shared?.routeRequest?.takeIf { it.status == "pending" }
+                if (req != null && _uiState.value.driverRouteRequest != req) {
+                    SoundAndNotificationManager.vibrateNewOrder(appContext)
+                    SoundAndNotificationManager.postNotification(appContext, "Пассажир хочет изменить маршрут", "${req.dropoffAddress} • ${req.priceSom} сом")
+                    if (_uiState.value.driverVoiceAnnounce) VoiceAnnouncer.speak(appContext, "Пассажир хочет изменить маршрут")
+                }
+                _uiState.update { it.copy(driverRouteRequest = req) }
                 if (shared?.status == RideStatus.CANCELLED && driverRideId == rideId) {
                     finishDriverRealRide()
                     applyDriverCancel()
@@ -2834,9 +3127,9 @@ class KgTaxiViewModel(
     }
 
     /** Pushes the driver's stage change to Firestore. Returns false if it failed (stage must not move). */
-    private suspend fun pushDriverStatus(newStatus: String): Boolean {
+    private suspend fun pushDriverStatus(newStatus: String, cancelReason: String? = null): Boolean {
         val id = driverRideId ?: return true
-        val res = rides.setStatusAsDriver(id, newStatus)
+        val res = rides.setStatusAsDriver(id, newStatus, cancelReason)
         if (res.isFailure) {
             _uiState.update { it.copy(statusBanner = "Нет связи с сервером. Попробуйте ещё раз.") }
         }
@@ -3000,10 +3293,12 @@ class KgTaxiViewModel(
         }
     }
 
-    fun cancelDriverAcceptedOrder() {
+    fun cancelDriverAcceptedOrder() = cancelDriverAcceptedOrderWithReason(null)
+
+    fun cancelDriverAcceptedOrderWithReason(reason: String?) {
         if (driverRideId != null) {
             viewModelScope.launch {
-                if (pushDriverStatus(RideStatus.CANCELLED)) {
+                if (pushDriverStatus(RideStatus.CANCELLED, reason)) {
                     finishDriverRealRide()
                     applyDriverCancel()
                 }
@@ -3089,6 +3384,10 @@ class KgTaxiViewModel(
         )
         if (queuedNext == null) {
             generateDriverIncomingOrders(_uiState.value.selectedCity)
+        }
+        if (_uiState.value.driverLastOrder && _uiState.value.driverOnline) {
+            toggleDriverOnline()
+            _uiState.update { it.copy(statusBanner = "Последний заказ выполнен. Вы ушли с линии.") }
         }
     }
 

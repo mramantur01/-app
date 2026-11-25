@@ -46,6 +46,8 @@ data class OwnerDayStats(
     val revenueSom: Int = 0,
     /** Best drivers of the period: name to completed trips and revenue. */
     val topDrivers: List<Triple<String, Int, Int>> = emptyList(),
+    /** Why orders were cancelled in the period: reason to count. */
+    val cancelReasons: List<Pair<String, Int>> = emptyList(),
     /** Rows for the spreadsheet export. */
     val rows: List<OwnerRideRow> = emptyList()
 )
@@ -177,6 +179,27 @@ class OwnerRepository(context: Context) {
             }
 
     /** Blocks or unblocks a driver: a blocked driver keeps the role record but can't take orders. */
+    /** Debt of one driver: his completed rides and what he already paid. */
+    suspend fun fetchDriverBalance(uid: String, commissionPercent: Int, goalTrips: Int, goalBonusSom: Int): com.example.data.model.DriverBalance? = try {
+        val rides = db.collection("rides").whereEqualTo("driverId", uid).whereEqualTo("status", RideStatus.COMPLETED)
+            .limit(2000).get().await().documents.mapNotNull { SharedRide.from(it) }
+        val paid = db.collection("driver_balances").document(uid).get().await().getLong("paidSom")?.toInt() ?: 0
+        com.example.data.model.DriverBalance.compute(rides, commissionPercent, goalTrips, goalBonusSom, paid)
+    } catch (e: CancellationException) {
+        throw e
+    } catch (e: Exception) {
+        handleFirestoreError(e, OperationType.LIST, "rides?driverId=$uid")
+        null
+    }
+
+    /** Owner got money from the driver: add it to what the driver has paid. */
+    suspend fun addDriverPayment(uid: String, amountSom: Int): Result<Unit> = write("driver_balances/$uid") {
+        db.collection("driver_balances").document(uid).set(
+            mapOf("paidSom" to FieldValue.increment(amountSom.toLong()), "updatedAt" to FieldValue.serverTimestamp()),
+            com.google.firebase.firestore.SetOptions.merge()
+        ).await()
+    }
+
     suspend fun setBlocked(uid: String, blocked: Boolean): Result<Unit> = write("roles/$uid") {
         db.collection("roles").document(uid).update(
             mapOf("role" to if (blocked) "driver_blocked" else "driver", "blocked" to blocked)
@@ -222,6 +245,9 @@ class OwnerRepository(context: Context) {
                         .map { (name, list) -> Triple(name, list.size, list.sumOf { (it.getLong("priceSom") ?: 0L).toInt() }) }
                         .sortedByDescending { it.second }
                         .take(5),
+                    cancelReasons = docs.filter { it.getString("status") == RideStatus.CANCELLED }
+                        .groupingBy { it.getString("cancelReason")?.takeIf { r -> r.isNotBlank() } ?: "Без причины" }
+                        .eachCount().toList().sortedByDescending { it.second },
                     rows = docs.map { d ->
                         OwnerRideRow(
                             createdAtMillis = d.getTimestamp("createdAt")?.toDate()?.time ?: 0L,

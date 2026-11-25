@@ -64,7 +64,7 @@ fun RegistrationScreen(
     defaultName: String,
     defaultPhone: String,
     defaultCity: String,
-    onRegisterPassenger: (name: String, phone: String, passport: String, photo: Uri) -> Unit,
+    onRegisterPassenger: (name: String, phone: String, passport: String, photos: Map<RegPhoto, Uri>) -> Unit,
     onRegisterDriver: (DriverRegistration, Map<RegPhoto, Uri>) -> Unit,
     onClose: () -> Unit
 ) {
@@ -170,7 +170,8 @@ fun RegistrationScreen(
                         RegField(fullName, { fullName = it }, "ФИО", "reg_full_name")
                         RegField(phone, { phone = it.filter { c -> c.isDigit() || c == '+' } }, "Телефон", "reg_phone", KeyboardType.Phone)
                         RegField(passport, { passport = it.uppercase().take(20) }, "Номер паспорта (ID-карты)", "reg_passport")
-                        PhotoSlot(RegPhoto.PASSPORT, photos[RegPhoto.PASSPORT]) { photos[RegPhoto.PASSPORT] = it }
+                        CameraOnlyNote()
+                        RegPhoto.PASSENGER.forEach { k -> PhotoSlot(k, photos[k]) { photos[k] = it } }
                     }
 
                     RegStep.DRIVER_DOCS -> {
@@ -182,11 +183,15 @@ fun RegistrationScreen(
                         RegField(phone, { phone = it.filter { c -> c.isDigit() || c == '+' } }, "Телефон", "reg_phone", KeyboardType.Phone)
                         Text("Город работы", fontWeight = FontWeight.SemiBold, color = KgInk)
                         ChipRow(KgGeoCatalog.cities.map { it.name }, city) { city = it }
+                        CameraOnlyNote()
                         PhotoSlot(RegPhoto.DRIVER_FACE, photos[RegPhoto.DRIVER_FACE]) { photos[RegPhoto.DRIVER_FACE] = it }
                         RegField(passport, { passport = it.uppercase().take(20) }, "Номер паспорта (ID-карты)", "reg_passport")
                         PhotoSlot(RegPhoto.PASSPORT, photos[RegPhoto.PASSPORT]) { photos[RegPhoto.PASSPORT] = it }
+                        PhotoSlot(RegPhoto.PASSPORT_BACK, photos[RegPhoto.PASSPORT_BACK]) { photos[RegPhoto.PASSPORT_BACK] = it }
+                        PhotoSlot(RegPhoto.SELFIE_DOC, photos[RegPhoto.SELFIE_DOC]) { photos[RegPhoto.SELFIE_DOC] = it }
                         RegField(license, { license = it.uppercase().take(30) }, "Номер водительского удостоверения (ВУ)", "reg_license")
                         PhotoSlot(RegPhoto.LICENSE, photos[RegPhoto.LICENSE]) { photos[RegPhoto.LICENSE] = it }
+                        PhotoSlot(RegPhoto.LICENSE_BACK, photos[RegPhoto.LICENSE_BACK]) { photos[RegPhoto.LICENSE_BACK] = it }
                         RegField(experience, { experience = it.filter { c -> c.isDigit() }.take(2) }, "Стаж вождения, лет", "reg_experience", KeyboardType.Number)
                         RegField(payPhone, { payPhone = it.filter { c -> c.isDigit() || c == '+' } }, "Номер для переводов (MBank / O!Деньги), необязательно", "reg_pay_phone", KeyboardType.Phone)
                     }
@@ -250,10 +255,10 @@ fun RegistrationScreen(
             val canContinue = when (step) {
                 RegStep.CHOICE, RegStep.DRIVER_STATUS -> false
                 RegStep.PASSENGER -> fullName.trim().length >= 3 && phone.count { it.isDigit() } >= 9 &&
-                    passport.length >= 6 && photos[RegPhoto.PASSPORT] != null
+                    passport.length >= 6 && RegPhoto.PASSENGER.all { photos[it] != null }
                 RegStep.DRIVER_DOCS -> fullName.trim().length >= 3 && phone.count { it.isDigit() } >= 9 &&
                     passport.length >= 6 && license.length >= 6 && experience.isNotBlank() &&
-                    photos[RegPhoto.PASSPORT] != null && photos[RegPhoto.LICENSE] != null && photos[RegPhoto.DRIVER_FACE] != null
+                    RegPhoto.DRIVER_DOCS.all { photos[it] != null }
                 RegStep.DRIVER_CAR -> make.isNotBlank() && model.isNotBlank() && year != null && color.isNotBlank() &&
                     plate.length >= 5 && CarCatalog.tariffsFor(make, model, year ?: 0, vehicleType, com.example.data.model.DriverOptions(childSeat, ladyDriver, soberDriver, courier, wheelchair, loaders)).isNotEmpty()
                 RegStep.DRIVER_PHOTOS -> RegPhoto.CAR.all { photos[it] != null }
@@ -265,6 +270,8 @@ fun RegistrationScreen(
                             Text(
                                 when (step) {
                                     RegStep.DRIVER_PHOTOS -> "Нужны все 5 фото"
+                                    RegStep.PASSENGER -> "Заполните поля и снимите паспорт с двух сторон и селфи с паспортом"
+                                    RegStep.DRIVER_DOCS -> "Заполните поля и снимите все документы: обе стороны паспорта и прав, селфи с паспортом"
                                     RegStep.DRIVER_CAR -> "Выберите марку, модель, год, цвет и введите номер"
                                     else -> "Заполните все поля и добавьте фото документов"
                                 },
@@ -276,7 +283,7 @@ fun RegistrationScreen(
                         Button(
                             onClick = {
                                 when (step) {
-                                    RegStep.PASSENGER -> onRegisterPassenger(fullName, phone, passport, photos.getValue(RegPhoto.PASSPORT))
+                                    RegStep.PASSENGER -> onRegisterPassenger(fullName, phone, passport, RegPhoto.PASSENGER.associateWith { photos.getValue(it) })
                                     RegStep.DRIVER_DOCS -> step = RegStep.DRIVER_CAR
                                     RegStep.DRIVER_CAR -> step = RegStep.DRIVER_PHOTOS
                                     RegStep.DRIVER_PHOTOS -> onRegisterDriver(
@@ -531,15 +538,27 @@ private fun DriverStatusStep(status: String?, rejectReason: String?, onReapply: 
 
 /** One photo: preview, "Сфотографировать" (camera) and "Из галереи". */
 @Composable
+private fun CameraOnlyNote() {
+    Surface(shape = RoundedCornerShape(14.dp), color = KgTurquoiseLight, modifier = Modifier.fillMaxWidth()) {
+        Row(Modifier.padding(12.dp), verticalAlignment = Alignment.CenterVertically) {
+            Icon(Icons.Default.PhotoCamera, contentDescription = null, tint = KgTurquoise, modifier = Modifier.size(18.dp))
+            Spacer(Modifier.width(8.dp))
+            Text(
+                "Фото делаются только камерой, прямо сейчас — так мы убеждаемся, что документы ваши.",
+                style = MaterialTheme.typography.bodySmall,
+                color = KgInk
+            )
+        }
+    }
+}
+
+@Composable
 private fun PhotoSlot(kind: RegPhoto, uri: Uri?, onPicked: (Uri) -> Unit) {
     val context = LocalContext.current
     var pendingUri by remember { mutableStateOf<Uri?>(null) }
     val camera = rememberLauncherForActivityResult(ActivityResultContracts.TakePicture()) { ok ->
         val u = pendingUri
         if (ok && u != null) onPicked(u)
-    }
-    val gallery = rememberLauncherForActivityResult(ActivityResultContracts.PickVisualMedia()) { picked ->
-        if (picked != null) onPicked(picked)
     }
     var preview by remember(uri) { mutableStateOf<ImageBitmap?>(null) }
     LaunchedEffect(uri) {
@@ -596,10 +615,6 @@ private fun PhotoSlot(kind: RegPhoto, uri: Uri?, onPicked: (Uri) -> Unit) {
                         Spacer(Modifier.width(4.dp))
                         Text(if (uri == null) "Снять" else "Переснять")
                     }
-                    TextButton(
-                        onClick = { gallery.launch(PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly)) },
-                        colors = ButtonDefaults.textButtonColors(contentColor = KgTurquoise)
-                    ) { Text("Из галереи") }
                 }
             }
         }

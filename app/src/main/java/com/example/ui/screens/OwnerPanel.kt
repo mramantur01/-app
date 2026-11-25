@@ -45,7 +45,9 @@ fun OwnerPanel(
     onSaveConfig: (com.example.data.firebase.AppConfig) -> Unit = {},
     onResolveTicket: (String) -> Unit = {},
     onSetStatsDays: (Int) -> Unit = {},
-    onExportCsv: () -> Unit = {}
+    onExportCsv: () -> Unit = {},
+    onLoadBalances: () -> Unit = {},
+    onAddPayment: (String, Int) -> Unit = { _, _ -> }
 ) {
     var tab by remember { mutableIntStateOf(0) }
     val pending = state.ownerApplications.filter { it.status == "pending" }
@@ -91,6 +93,15 @@ fun OwnerPanel(
                     }
                 }
             }
+            if (state.ownerStats.cancelReasons.isNotEmpty()) {
+                Text("Причины отмен", fontWeight = FontWeight.Bold, color = KgInk)
+                state.ownerStats.cancelReasons.take(6).forEach { (reason, n) ->
+                    Row {
+                        Text(reason, color = KgInk, modifier = Modifier.weight(1f))
+                        Text("$n", color = KgInk.copy(alpha = 0.7f), fontWeight = FontWeight.Bold)
+                    }
+                }
+            }
             OutlinedButton(onClick = onExportCsv, modifier = Modifier.fillMaxWidth().testTag("owner_export_csv")) {
                 Icon(Icons.Default.TableChart, contentDescription = null, modifier = Modifier.size(18.dp))
                 Spacer(Modifier.width(6.dp))
@@ -112,9 +123,12 @@ fun OwnerPanel(
                     }
                 }
                 1 -> {
+                    LaunchedEffect(state.ownerDrivers.size) { onLoadBalances() }
                     if (state.ownerDrivers.isEmpty() && state.ownerBlockedDrivers.isEmpty()) EmptyNote("Водителей пока нет")
+                    val totalDebt = state.ownerDriverBalances.values.sumOf { it.debtSom.coerceAtLeast(0) }
+                    if (totalDebt > 0) Text("Всего долг водителей: $totalDebt сом", fontWeight = FontWeight.Bold, color = Color(0xFFC62828))
                     (state.ownerDrivers + state.ownerBlockedDrivers).forEach { d ->
-                        DriverRow(d, onSetBlocked)
+                        DriverRow(d, onSetBlocked, state.ownerDriverBalances[d.uid], onAddPayment)
                     }
                 }
                 2 -> PricesEditor(state, onSaveConfig)
@@ -154,6 +168,9 @@ private fun PricesEditor(state: KgTaxiUiState, onSave: (com.example.data.firebas
     val routes = com.example.data.model.KgGeoCatalog.intercityRoutes
     val seat = remember(cfg) { mutableStateMapOf<String, String>().apply { routes.forEach { put(it.id, (cfg.intercity[it.id] ?: it.seatPriceSom).toString()) } } }
     var referral by remember(cfg) { mutableStateOf(cfg.referralPercent.toString()) }
+    var goalTrips by remember(cfg) { mutableStateOf(cfg.goalTrips.toString()) }
+    var goalBonus by remember(cfg) { mutableStateOf(cfg.goalBonusSom.toString()) }
+    var debtLimit by remember(cfg) { mutableStateOf(cfg.debtLimitSom.toString()) }
 
     Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
         Text("Цены тарифов (сом)", fontWeight = FontWeight.Bold, color = KgInk)
@@ -175,6 +192,13 @@ private fun PricesEditor(state: KgTaxiUiState, onSave: (com.example.data.firebas
         }
         HorizontalDivider()
         NumField(referral, { referral = it }, "«Пригласи друга»: скидка другу, %", Modifier.fillMaxWidth())
+        HorizontalDivider()
+        Text("Водители: цель дня и долг", fontWeight = FontWeight.Bold, color = KgInk)
+        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            NumField(goalTrips, { goalTrips = it }, "Поездок за день", Modifier.weight(1f))
+            NumField(goalBonus, { goalBonus = it }, "Бонус, сом", Modifier.weight(1f))
+        }
+        NumField(debtLimit, { debtLimit = it }, "Макс. долг для выхода на линию, сом (0 — без лимита)", Modifier.fillMaxWidth())
         HorizontalDivider()
         Text("Промокод на первую поездку", fontWeight = FontWeight.Bold, color = KgInk)
         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -203,7 +227,10 @@ private fun PricesEditor(state: KgTaxiUiState, onSave: (com.example.data.firebas
                         promoPercent = promoPercent.toIntOrNull() ?: 0,
                         promoActive = promoActive && promoCode.isNotBlank(),
                         intercity = routes.associate { it.id to (seat[it.id]?.toIntOrNull() ?: it.seatPriceSom) },
-                        referralPercent = referral.toIntOrNull() ?: 20
+                        referralPercent = referral.toIntOrNull() ?: 20,
+                        goalTrips = goalTrips.toIntOrNull() ?: 0,
+                        goalBonusSom = goalBonus.toIntOrNull() ?: 0,
+                        debtLimitSom = debtLimit.toIntOrNull() ?: 0
                     )
                 )
             },
@@ -308,7 +335,31 @@ private fun ApplicationCard(app: OwnerApplication, onOpen: () -> Unit) {
 }
 
 @Composable
-private fun DriverRow(d: OwnerDriver, onSetBlocked: (String, Boolean) -> Unit) {
+private fun DriverRow(
+    d: OwnerDriver,
+    onSetBlocked: (String, Boolean) -> Unit,
+    balance: com.example.data.model.DriverBalance? = null,
+    onAddPayment: (String, Int) -> Unit = { _, _ -> }
+) {
+    var payOpen by remember { mutableStateOf(false) }
+    var amount by remember { mutableStateOf("") }
+    if (payOpen) {
+        AlertDialog(
+            onDismissRequest = { payOpen = false },
+            title = { Text("Оплата от водителя") },
+            text = {
+                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Text("${d.name} • долг ${balance?.debtSom ?: 0} сом")
+                    NumField(amount, { amount = it }, "Получено, сом", Modifier.fillMaxWidth())
+                }
+            },
+            confirmButton = {
+                Button(onClick = { onAddPayment(d.uid, amount.toIntOrNull() ?: 0); amount = ""; payOpen = false }, enabled = (amount.toIntOrNull() ?: 0) > 0) { Text("Записать") }
+            },
+            dismissButton = { TextButton(onClick = { payOpen = false }) { Text("Отмена") } }
+        )
+    }
+    Column {
     Row(
         modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp),
         verticalAlignment = Alignment.CenterVertically
@@ -316,6 +367,12 @@ private fun DriverRow(d: OwnerDriver, onSetBlocked: (String, Boolean) -> Unit) {
         Column(modifier = Modifier.weight(1f)) {
             Text(d.name.ifBlank { d.uid.take(8) }, fontWeight = FontWeight.Bold, color = if (d.blocked) Color.Gray else KgInk)
             Text("${d.car} • ${d.plate}", style = MaterialTheme.typography.bodySmall, color = KgInk.copy(alpha = 0.7f))
+            if (balance != null) Text(
+                if (balance.debtSom > 0) "Долг: ${balance.debtSom} сом" else "Долга нет",
+                style = MaterialTheme.typography.bodySmall,
+                fontWeight = FontWeight.Bold,
+                color = if (balance.debtSom > 0) Color(0xFFC62828) else KgTurquoise
+            )
         }
         if (d.blocked) {
             TextButton(onClick = { onSetBlocked(d.uid, false) }) { Text("Разблокировать") }
@@ -324,6 +381,8 @@ private fun DriverRow(d: OwnerDriver, onSetBlocked: (String, Boolean) -> Unit) {
                 Text("Заблокировать")
             }
         }
+    }
+    if (balance != null && balance.debtSom > 0) TextButton(onClick = { payOpen = true }, modifier = Modifier.testTag("owner_driver_pay_${d.uid}")) { Text("Принять оплату") }
     }
 }
 

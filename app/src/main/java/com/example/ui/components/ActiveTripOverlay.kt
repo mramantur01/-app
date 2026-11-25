@@ -45,10 +45,14 @@ fun ActiveTripCard(
     onEditDestination: (String) -> Unit,
     onCompleteNow: () -> Unit,
     onCancelRide: (String?) -> Unit,
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
+    /** Real rides: ask the driver to change the route (new address and optional stop). */
+    onRequestRouteChange: ((com.example.data.model.GeoPoint, com.example.data.model.GeoPoint?) -> Unit)? = null,
+    routeRequestStatus: String? = null
 ) {
     val context = LocalContext.current
     var showEditDestDialog by remember { mutableStateOf(false) }
+    var showRouteChange by remember { mutableStateOf(false) }
     var showCancelDialog by remember { mutableStateOf(false) }
     var newDestText by remember(ride.dropoffAddress) { mutableStateOf(ride.dropoffAddress) }
 
@@ -406,14 +410,29 @@ fun ActiveTripCard(
                         )
                     }
                 }
-                TextButton(
-                    onClick = { showEditDestDialog = true },
+                val canChange = ride.status == TripStatus.ASSIGNED || ride.status == TripStatus.ARRIVED || ride.status == TripStatus.IN_PROGRESS
+                if (onRequestRouteChange == null || canChange) TextButton(
+                    onClick = { if (onRequestRouteChange != null) showRouteChange = true else showEditDestDialog = true },
+                    enabled = routeRequestStatus != "pending",
                     modifier = Modifier.testTag("edit_destination_in_trip_button")
                 ) {
                     Icon(Icons.Default.EditLocationAlt, contentDescription = null, modifier = Modifier.size(16.dp))
                     Spacer(Modifier.width(4.dp))
-                    Text(strings.editDestination, style = MaterialTheme.typography.labelMedium)
+                    Text(if (onRequestRouteChange != null) "Изменить маршрут" else strings.editDestination, style = MaterialTheme.typography.labelMedium)
                 }
+            }
+            if (onRequestRouteChange != null && routeRequestStatus != null) {
+                Text(
+                    when (routeRequestStatus) {
+                        "pending" -> "Ждём ответа водителя на новый маршрут…"
+                        "accepted" -> "Водитель согласился на новый маршрут"
+                        else -> "Водитель не смог изменить маршрут"
+                    },
+                    style = MaterialTheme.typography.labelMedium,
+                    fontWeight = FontWeight.SemiBold,
+                    color = when (routeRequestStatus) { "pending" -> UberAmber; "accepted" -> UberGreen; else -> UberRed },
+                    modifier = Modifier.testTag("route_request_status")
+                )
             }
 
             // Driver Chat + AI Auto-Translate Button
@@ -606,6 +625,17 @@ fun ActiveTripCard(
             dismissButton = {
                 TextButton(onClick = { showCancelDialog = false }) { Text("Не отменять") }
             }
+        )
+    }
+
+    if (showRouteChange && onRequestRouteChange != null) {
+        RouteChangeDialog(
+            ride = ride,
+            onSend = { drop, stop ->
+                showRouteChange = false
+                onRequestRouteChange(drop, stop)
+            },
+            onDismiss = { showRouteChange = false }
         )
     }
 
@@ -870,4 +900,62 @@ private fun paymentLabelRu(code: String): String = when (code.uppercase()) {
     "CASH" -> "наличные или QR"
     "CARD" -> "карта"
     else -> code
+}
+
+
+/** Passenger picks a new address (and optionally a stop) on the map; the driver must agree. */
+@Composable
+private fun RouteChangeDialog(
+    ride: ActiveRideState,
+    onSend: (com.example.data.model.GeoPoint, com.example.data.model.GeoPoint?) -> Unit,
+    onDismiss: () -> Unit
+) {
+    var drop by remember { mutableStateOf<com.example.data.model.GeoPoint?>(null) }
+    var stop by remember { mutableStateOf<com.example.data.model.GeoPoint?>(null) }
+    var picking by remember { mutableStateOf<String?>(null) }
+    when (picking) {
+        "drop" -> MapPointPickerDialog(
+            title = "Куда теперь едем?",
+            start = drop ?: ride.dropoffPoint,
+            pinColor = UberRed,
+            onPicked = { drop = it; picking = null },
+            onDismiss = { picking = null }
+        )
+        "stop" -> MapPointPickerDialog(
+            title = "Где остановиться по пути?",
+            start = stop ?: ride.pickupPoint,
+            pinColor = UberAmber,
+            onPicked = { stop = it; picking = null },
+            onDismiss = { picking = null }
+        )
+    }
+    if (picking != null) return
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("Изменить маршрут") },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                Text(
+                    "Водитель увидит новый адрес и новую цену. Маршрут изменится, только если он согласится.",
+                    style = MaterialTheme.typography.bodySmall
+                )
+                OutlinedButton(onClick = { picking = "drop" }, modifier = Modifier.fillMaxWidth().testTag("route_change_pick_drop")) {
+                    Icon(if (drop != null) Icons.Default.CheckCircle else Icons.Default.Place, contentDescription = null, tint = if (drop != null) UberGreen else UberRed)
+                    Spacer(Modifier.width(6.dp))
+                    Text(if (drop != null) "Новый адрес выбран" else "Новый адрес на карте")
+                }
+                OutlinedButton(onClick = { picking = "stop" }, modifier = Modifier.fillMaxWidth().testTag("route_change_pick_stop")) {
+                    Icon(if (stop != null) Icons.Default.CheckCircle else Icons.Default.AddLocationAlt, contentDescription = null, tint = if (stop != null) UberGreen else UberAmber)
+                    Spacer(Modifier.width(6.dp))
+                    Text(if (stop != null) "Остановка выбрана" else "Остановка по пути (не обязательно)")
+                }
+            }
+        },
+        confirmButton = {
+            Button(onClick = { drop?.let { onSend(it, stop) } }, enabled = drop != null, modifier = Modifier.testTag("route_change_send")) {
+                Text("Отправить водителю")
+            }
+        },
+        dismissButton = { TextButton(onClick = onDismiss) { Text("Отмена") } }
+    )
 }

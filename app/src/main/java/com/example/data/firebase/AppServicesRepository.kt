@@ -33,7 +33,12 @@ data class AppConfig(
     /** Intercity seat price by route id (owner panel). */
     val intercity: Map<String, Int> = emptyMap(),
     /** Discount for a friend's first ride by an invite code. */
-    val referralPercent: Int = 20
+    val referralPercent: Int = 20,
+    /** Daily goal for drivers: this many trips in a day gives [goalBonusSom]. 0 = off. */
+    val goalTrips: Int = 0,
+    val goalBonusSom: Int = 0,
+    /** A driver who owes more than this cannot go on the line. 0 = no limit. */
+    val debtLimitSom: Int = 0
 )
 
 /** A message to support or a complaint about a ride. */
@@ -72,7 +77,10 @@ class AppConfigRepository(context: Context) {
                     promoActive = snap.getBoolean("promoActive") == true,
                     intercity = (snap.get("intercity") as? Map<*, *>).orEmpty()
                         .mapNotNull { (k, v) -> (k as? String)?.let { id -> (v as? Number)?.toInt()?.let { id to it } } }.toMap(),
-                    referralPercent = snap.getLong("referralPercent")?.toInt() ?: 20
+                    referralPercent = snap.getLong("referralPercent")?.toInt() ?: 20,
+                    goalTrips = snap.getLong("goalTrips")?.toInt() ?: 0,
+                    goalBonusSom = snap.getLong("goalBonusSom")?.toInt() ?: 0,
+                    debtLimitSom = snap.getLong("debtLimitSom")?.toInt() ?: 0
                 )
             }
             .catch { e ->
@@ -92,6 +100,9 @@ class AppConfigRepository(context: Context) {
                 "promoActive" to config.promoActive,
                 "intercity" to config.intercity.mapValues { (_, v) -> v.coerceIn(0, 50000) },
                 "referralPercent" to config.referralPercent.coerceIn(0, 90),
+                "goalTrips" to config.goalTrips.coerceIn(0, 100),
+                "goalBonusSom" to config.goalBonusSom.coerceIn(0, 100000),
+                "debtLimitSom" to config.debtLimitSom.coerceIn(0, 1000000),
                 "updatedAt" to FieldValue.serverTimestamp()
             )
         ).await()

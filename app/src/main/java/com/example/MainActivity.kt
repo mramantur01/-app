@@ -273,7 +273,9 @@ fun KgTaxiAppRoot() {
                             onSaveAppConfig = viewModel::saveAppConfig,
                             onResolveTicket = viewModel::resolveSupportTicket,
                             onSetStatsDays = viewModel::setOwnerStatsDays,
-                            onExportCsv = viewModel::exportOwnerCsv
+                            onExportCsv = viewModel::exportOwnerCsv,
+                            onLoadBalances = viewModel::loadOwnerDriverBalances,
+                            onAddPayment = viewModel::addOwnerDriverPayment
                         )
                     }
                 }

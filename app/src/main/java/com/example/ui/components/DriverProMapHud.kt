@@ -74,12 +74,22 @@ fun DriverLineMapCockpit(
     onReleasePreorder: (String) -> Unit = {},
     onToggleAlertDay: (Int) -> Unit = {},
     onStartPreorder: (com.example.data.firebase.SharedRide) -> Unit = {},
+    onCancelWithReason: (String) -> Unit = { onCancelAcceptedOrder() },
+    onToggleDemand: () -> Unit = {},
+    onToggleLastOrder: () -> Unit = {},
+    onToggleHomeMode: () -> Unit = {},
+    onAnswerRouteChange: (Boolean) -> Unit = {},
+    onSetRadius: (Int) -> Unit = {},
+    onSetVoice: (Boolean) -> Unit = {},
+    onSetNightMap: (Boolean) -> Unit = {},
+    onSetHome: (GeoPoint) -> Unit = {},
     modifier: Modifier = Modifier
 ) {
     val context = LocalContext.current
     var showLineSettings by remember { mutableStateOf(false) }
     var showPreorders by remember { mutableStateOf(false) }
     var showEarnings by remember { mutableStateOf(false) }
+    var showCancelReasons by remember { mutableStateOf(false) }
 
     // Sort incoming offers so home-bound orders appear first when Destination Filter is active
     val targetKey = state.driverHomeTargetDistrict.substringBefore(" /").trim()
@@ -121,8 +131,9 @@ fun DriverLineMapCockpit(
             orderStage = state.driverOrderStage,
             currentOffer = if (state.driverOnline && state.driverAcceptedOrder == null) currentOffer else null,
             showSurgeHeatmap = com.example.FeatureFlags.SURGE_PRICING && (state.showSurgeHeatmap || state.driverOnline),
-            darkTheme = state.darkTheme,
+            darkTheme = state.darkTheme || (state.driverNightMapAuto && com.example.util.DriverWorkPrefs.isNight()),
             offlineMode = state.offlineMode,
+            heat = if (state.driverShowDemand && state.driverAcceptedOrder == null) state.driverDemandPoints else emptyList(),
             modifier = Modifier.fillMaxSize()
         )
 
@@ -325,11 +336,14 @@ fun DriverLineMapCockpit(
 
         // Preorders: small calendar button on the right side of the map (not during an order or an offer).
         if (com.example.FeatureFlags.REAL_RIDES && state.driverAcceptedOrder == null && !(state.driverOnline && currentOffer != null)) {
-            DriverPreordersFab(
-                state = state,
-                onClick = { showPreorders = true },
-                modifier = Modifier.align(Alignment.CenterEnd).padding(end = 12.dp)
-            )
+            Column(
+                modifier = Modifier.align(Alignment.CenterEnd).padding(end = 12.dp),
+                verticalArrangement = Arrangement.spacedBy(12.dp),
+                horizontalAlignment = Alignment.CenterHorizontally
+            ) {
+                DriverDemandFab(on = state.driverShowDemand, count = state.driverDemandPoints.size, onClick = onToggleDemand)
+                DriverPreordersFab(state = state, onClick = { showPreorders = true })
+            }
         }
 
         // 3. FLOATING BOTTOM DRIVER COCKPIT PANEL (3 Authentic States: Offline GO / Live Offer / Active Execution)
@@ -367,13 +381,14 @@ fun DriverLineMapCockpit(
                             )
                         }
                     }
+                    DriverLastOrderChip(on = state.driverLastOrder, onClick = onToggleLastOrder)
                     DriverActiveOrderExecutionSheet(
                         order = activeOrder,
                         stage = state.driverOrderStage,
                         waitingSeconds = state.driverOrderWaitingSeconds,
                         chatCount = state.driverActiveOrderMessages.size,
                         onAdvanceStage = onAdvanceStage,
-                        onCancelOrder = onCancelAcceptedOrder,
+                        onCancelOrder = { showCancelReasons = true },
                         onOpenChat = onOpenDriverPassengerChat,
                         onOpenElqr = onOpenElqrDialog,
                         onOpenMeetGreet = onOpenMeetGreetPlacard,
@@ -434,6 +449,7 @@ fun DriverLineMapCockpit(
                 // STATE A2: ONLINE — waiting for orders. Clean screen, one big button to leave the line.
                 state.driverOnline -> {
                     Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                        DriverLineQuickChips(state = state, onToggleLastOrder = onToggleLastOrder, onToggleHomeMode = onToggleHomeMode)
                         DriverWaitingForOrdersCard(
                             city = state.selectedCity.name,
                             todayEarningsSom = state.driverTodayEarningsSom,
@@ -464,11 +480,29 @@ fun DriverLineMapCockpit(
         )
     }
 
+    if (showCancelReasons) {
+        DriverCancelReasonsDialog(
+            onPick = { reason ->
+                showCancelReasons = false
+                onCancelWithReason(reason)
+            },
+            onDismiss = { showCancelReasons = false }
+        )
+    }
+
+    state.driverRouteRequest?.let { req ->
+        DriverRouteRequestDialog(req = req, oldPrice = state.driverAcceptedOrder?.grossFareSom, onAnswer = onAnswerRouteChange)
+    }
+
     if (showLineSettings) {
         DriverLineSettingsSheet(
             state = state,
             onToggleTariff = onToggleTariff,
             onSelectCity = onSelectCity,
+            onSetRadius = onSetRadius,
+            onSetVoice = onSetVoice,
+            onSetNightMap = onSetNightMap,
+            onSetHome = onSetHome,
             onDismiss = { showLineSettings = false }
         )
     }
@@ -967,6 +1001,7 @@ private fun DriverNavigationMapSurface(
     showSurgeHeatmap: Boolean,
     darkTheme: Boolean,
     offlineMode: Boolean,
+    heat: List<GeoPoint> = emptyList(),
     modifier: Modifier = Modifier
 ) {
     val hasValidMapsKey = remember {
@@ -1027,7 +1062,8 @@ private fun DriverNavigationMapSurface(
             darkTheme = darkTheme,
             fitTo = remember(targetOrder?.id) { targetOrder?.let { listOf(it.pickupPoint, it.dropoffPoint) } ?: emptyList() },
             onTap = null,
-            modifier = modifier
+            modifier = modifier,
+            heat = heat
         )
     } else {
         // High-Craft Uber Driver / Yandex Pro Vector Navigation Map Canvas
@@ -1174,6 +1210,19 @@ private fun DriverOfflineGo(state: KgTaxiUiState, onGoOnline: () -> Unit) {
                     fontWeight = FontWeight.SemiBold,
                     color = Color(0xFF263238)
                 )
+            }
+        }
+        val rest = state.driverRestUntil?.takeIf { it > System.currentTimeMillis() }
+        val limit = state.appConfig.debtLimitSom
+        val warn = when {
+            rest != null -> "Отдых после 12 часов на линии до " + java.text.SimpleDateFormat("HH:mm", Locale.US).format(java.util.Date(rest))
+            limit > 0 && state.driverBalance.debtSom > limit -> "Долг сервису ${state.driverBalance.debtSom} сом — оплатите, чтобы выйти на линию"
+            else -> null
+        }
+        if (warn != null) {
+            Surface(shape = RoundedCornerShape(14.dp), color = Color(0xFFFFF3E0), shadowElevation = 4.dp, modifier = Modifier.testTag("driver_offline_warning")) {
+                Text(warn, color = Color(0xFFE65100), fontWeight = FontWeight.SemiBold, style = MaterialTheme.typography.bodySmall,
+                    modifier = Modifier.padding(horizontal = 14.dp, vertical = 8.dp))
             }
         }
     }
@@ -1467,8 +1516,22 @@ private fun DriverLineSettingsSheet(
     state: KgTaxiUiState,
     onToggleTariff: (String) -> Unit,
     onSelectCity: (KgCity) -> Unit,
+    onSetRadius: (Int) -> Unit = {},
+    onSetVoice: (Boolean) -> Unit = {},
+    onSetNightMap: (Boolean) -> Unit = {},
+    onSetHome: (GeoPoint) -> Unit = {},
     onDismiss: () -> Unit
 ) {
+    var pickHome by remember { mutableStateOf(false) }
+    if (pickHome) {
+        MapPointPickerDialog(
+            title = "Где ваш дом?",
+            start = state.driverHomePoint ?: state.selectedCity.center,
+            pinColor = KgTurquoise,
+            onPicked = { p -> pickHome = false; onSetHome(p) },
+            onDismiss = { pickHome = false }
+        )
+    }
     ModalBottomSheet(onDismissRequest = onDismiss) {
         Column(
             modifier = Modifier
@@ -1520,6 +1583,47 @@ private fun DriverLineSettingsSheet(
                     )
                 }
             }
+            HorizontalDivider()
+            Text("Радиус подачи", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
+            Text("Заказы, до которых ехать не дальше выбранного", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            Row(modifier = Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                listOf(1 to "1 км", 3 to "3 км", 5 to "5 км", 10 to "10 км", 0 to "Любой").forEach { (km, label) ->
+                    FilterChip(
+                        selected = state.driverPickupRadiusKm == km,
+                        onClick = { onSetRadius(km) },
+                        label = { Text(label) },
+                        modifier = Modifier.testTag("line_radius_$km")
+                    )
+                }
+            }
+            HorizontalDivider()
+            Text("Дом", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
+            Text(
+                if (state.driverHomeAddress.isBlank()) "Укажите адрес — включайте «Домой» 2 раза в день и берите заказы по пути к дому."
+                else state.driverHomeAddress,
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+            OutlinedButton(onClick = { pickHome = true }, modifier = Modifier.fillMaxWidth().testTag("line_set_home")) {
+                Icon(Icons.Default.Home, contentDescription = null, modifier = Modifier.size(18.dp))
+                Spacer(Modifier.width(6.dp))
+                Text(if (state.driverHomePoint == null) "Указать дом на карте" else "Изменить адрес дома")
+            }
+            HorizontalDivider()
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Column(Modifier.weight(1f)) {
+                    Text("Голосовые подсказки", fontWeight = FontWeight.Bold)
+                    Text("«Новый заказ, подача 5 минут, 250 сом»", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                }
+                Switch(checked = state.driverVoiceAnnounce, onCheckedChange = onSetVoice, modifier = Modifier.testTag("line_voice"))
+            }
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Column(Modifier.weight(1f)) {
+                    Text("Ночная карта", fontWeight = FontWeight.Bold)
+                    Text("Тёмная карта с 20:00 до 6:00 — меньше слепит", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                }
+                Switch(checked = state.driverNightMapAuto, onCheckedChange = onSetNightMap, modifier = Modifier.testTag("line_night_map"))
+            }
             Button(
                 onClick = onDismiss,
                 shape = RoundedCornerShape(16.dp),
@@ -1527,4 +1631,150 @@ private fun DriverLineSettingsSheet(
             ) { Text("Готово", fontWeight = FontWeight.Bold) }
         }
     }
+}
+
+
+/** Round "demand" button: shows where passengers are waiting right now. */
+@Composable
+private fun DriverDemandFab(on: Boolean, count: Int, onClick: () -> Unit) {
+    Box {
+        Surface(
+            onClick = onClick,
+            shape = CircleShape,
+            color = if (on) Color(0xFFFF6D00) else Color.White,
+            shadowElevation = 8.dp,
+            modifier = Modifier.size(54.dp).testTag("driver_demand_button")
+        ) {
+            Box(contentAlignment = Alignment.Center) {
+                Icon(Icons.Default.LocalFireDepartment, contentDescription = "Карта спроса",
+                    tint = if (on) Color.White else Color(0xFFFF6D00), modifier = Modifier.size(26.dp))
+            }
+        }
+        if (count > 0) {
+            Surface(
+                shape = CircleShape,
+                color = Color(0xFFFF6D00),
+                border = androidx.compose.foundation.BorderStroke(2.dp, Color.White),
+                modifier = Modifier.align(Alignment.TopEnd).offset(x = 4.dp, y = (-4).dp).defaultMinSize(minWidth = 22.dp, minHeight = 22.dp)
+            ) {
+                Box(contentAlignment = Alignment.Center, modifier = Modifier.padding(horizontal = 5.dp)) {
+                    Text("$count", color = Color.White, fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                }
+            }
+        }
+    }
+}
+
+/** On the line: time on the line, "Последний заказ" and "Домой". */
+@Composable
+private fun DriverLineQuickChips(state: KgTaxiUiState, onToggleLastOrder: () -> Unit, onToggleHomeMode: () -> Unit) {
+    val h = state.driverOnlineMinutes24h / 60
+    val m = state.driverOnlineMinutes24h % 60
+    Row(
+        modifier = Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
+        horizontalArrangement = Arrangement.spacedBy(8.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Surface(shape = RoundedCornerShape(18.dp), color = Color.White, shadowElevation = 4.dp) {
+            Row(Modifier.padding(horizontal = 12.dp, vertical = 8.dp), verticalAlignment = Alignment.CenterVertically) {
+                Icon(Icons.Default.Schedule, contentDescription = null, tint = if (state.driverOnlineMinutes24h >= 11 * 60) UberRed else KgTurquoiseDark, modifier = Modifier.size(16.dp))
+                Spacer(Modifier.width(4.dp))
+                Text("${h} ч ${m} мин из 12", style = MaterialTheme.typography.labelLarge, color = Color(0xFF263238))
+            }
+        }
+        DriverLastOrderChip(on = state.driverLastOrder, onClick = onToggleLastOrder)
+        Surface(
+            onClick = onToggleHomeMode,
+            shape = RoundedCornerShape(18.dp),
+            color = if (state.driverHomeModeOn) KgTurquoise else Color.White,
+            shadowElevation = 4.dp,
+            modifier = Modifier.testTag("driver_home_mode")
+        ) {
+            Row(Modifier.padding(horizontal = 12.dp, vertical = 8.dp), verticalAlignment = Alignment.CenterVertically) {
+                Icon(Icons.Default.Home, contentDescription = null, tint = if (state.driverHomeModeOn) Color.White else KgTurquoiseDark, modifier = Modifier.size(16.dp))
+                Spacer(Modifier.width(4.dp))
+                Text(
+                    if (state.driverHomeModeOn) "Домой: вкл" else "Домой (${state.driverHomeUsesLeft})",
+                    style = MaterialTheme.typography.labelLarge,
+                    color = if (state.driverHomeModeOn) Color.White else Color(0xFF263238)
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun DriverLastOrderChip(on: Boolean, onClick: () -> Unit) {
+    Surface(
+        onClick = onClick,
+        shape = RoundedCornerShape(18.dp),
+        color = if (on) UberRed else Color.White,
+        shadowElevation = 4.dp,
+        modifier = Modifier.testTag("driver_last_order")
+    ) {
+        Row(Modifier.padding(horizontal = 12.dp, vertical = 8.dp), verticalAlignment = Alignment.CenterVertically) {
+            Icon(Icons.Default.FlagCircle, contentDescription = null, tint = if (on) Color.White else UberRed, modifier = Modifier.size(16.dp))
+            Spacer(Modifier.width(4.dp))
+            Text(
+                if (on) "Последний заказ ✓" else "Последний заказ",
+                style = MaterialTheme.typography.labelLarge,
+                color = if (on) Color.White else Color(0xFF263238)
+            )
+        }
+    }
+}
+
+/** Why the driver cancels an accepted order. The owner sees these reasons. */
+@Composable
+private fun DriverCancelReasonsDialog(onPick: (String) -> Unit, onDismiss: () -> Unit) {
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("Почему отменяете?") },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                DRIVER_CANCEL_REASONS.forEach { r ->
+                    OutlinedButton(onClick = { onPick(r) }, modifier = Modifier.fillMaxWidth().testTag("cancel_reason_${r.hashCode()}")) {
+                        Text(r, modifier = Modifier.fillMaxWidth())
+                    }
+                }
+            }
+        },
+        confirmButton = {},
+        dismissButton = { TextButton(onClick = onDismiss) { Text("Не отменять") } }
+    )
+}
+
+/** Passenger wants another address (and maybe a stop): the driver sees all of it and answers yes or no. */
+@Composable
+private fun DriverRouteRequestDialog(req: RouteRequest, oldPrice: Int?, onAnswer: (Boolean) -> Unit) {
+    AlertDialog(
+        onDismissRequest = {},
+        icon = { Icon(Icons.Default.AltRoute, contentDescription = null, tint = KgTurquoiseDark) },
+        title = { Text("Пассажир хочет изменить маршрут") },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                if (!req.stopAddress.isNullOrBlank()) {
+                    Text("Остановка по пути", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    Text(req.stopAddress, fontWeight = FontWeight.SemiBold)
+                }
+                Text("Новый адрес", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                Text(req.dropoffAddress, fontWeight = FontWeight.SemiBold)
+                Text("Новая цена", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                Text(
+                    (if (oldPrice != null) "$oldPrice → " else "") + "${req.priceSom} сом",
+                    fontSize = 22.sp, fontWeight = FontWeight.Black, color = KgTurquoiseDark
+                )
+            }
+        },
+        confirmButton = {
+            Button(
+                onClick = { onAnswer(true) },
+                colors = ButtonDefaults.buttonColors(containerColor = KgTurquoise),
+                modifier = Modifier.testTag("route_request_yes")
+            ) { Text("Да, поеду") }
+        },
+        dismissButton = {
+            TextButton(onClick = { onAnswer(false) }, modifier = Modifier.testTag("route_request_no")) { Text("Нет") }
+        }
+    )
 }

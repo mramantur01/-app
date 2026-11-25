@@ -51,6 +51,8 @@ fun DispatcherDashboardScreen(
     onResolveTicket: (String) -> Unit = {},
     onSetStatsDays: (Int) -> Unit = {},
     onExportCsv: () -> Unit = {},
+    onLoadBalances: () -> Unit = {},
+    onAddPayment: (String, Int) -> Unit = { _, _ -> },
     modifier: Modifier = Modifier
 ) {
     var activeTab by remember { mutableIntStateOf(0) } // 0 = Владелец & Банк, 1 = Мониторинг
@@ -78,7 +80,9 @@ fun DispatcherDashboardScreen(
                 onSaveConfig = onSaveAppConfig,
                 onResolveTicket = onResolveTicket,
                 onSetStatsDays = onSetStatsDays,
-                onExportCsv = onExportCsv
+                onExportCsv = onExportCsv,
+                onLoadBalances = onLoadBalances,
+                onAddPayment = onAddPayment
             )
         }
         // Header Actions

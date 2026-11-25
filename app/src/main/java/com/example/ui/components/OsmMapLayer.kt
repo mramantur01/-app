@@ -51,7 +51,9 @@ fun OsmMapLayer(
     modifier: Modifier = Modifier,
     zoom: Double = 13.5,
     /** Called when the user stops moving the map, with the point in the middle. */
-    onCenterChanged: ((GeoPoint) -> Unit)? = null
+    onCenterChanged: ((GeoPoint) -> Unit)? = null,
+    /** Demand map: soft orange circles where passengers are waiting. */
+    heat: List<GeoPoint> = emptyList()
 ) {
     val context = LocalContext.current
     val lifecycle = LocalLifecycleOwner.current.lifecycle
@@ -143,6 +145,16 @@ fun OsmMapLayer(
             mv.overlays.clear()
             mv.overlays.add(eventsOverlay)
             mv.overlayManager.tilesOverlay.setColorFilter(if (darkTheme) TilesOverlay.INVERT_COLORS else null)
+            heat.forEach { h ->
+                val circle = org.osmdroid.views.overlay.Polygon(mv).apply {
+                    points = org.osmdroid.views.overlay.Polygon.pointsAsCircle(org.osmdroid.util.GeoPoint(h.lat, h.lng), 450.0)
+                    fillPaint.color = 0x40FF6D00
+                    outlinePaint.color = 0x80FF6D00.toInt()
+                    outlinePaint.strokeWidth = 2f
+                    setOnClickListener { _, _, _ -> false }
+                }
+                mv.overlays.add(circle)
+            }
             if (route.size >= 2) {
                 val line = Polyline(mv).apply {
                     setPoints(route.map { org.osmdroid.util.GeoPoint(it.lat, it.lng) })

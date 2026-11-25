@@ -327,7 +327,8 @@ service cloud.firestore {
       allow list: if false;
       allow write: if isAdmin() && docId == 'app' &&
                       incoming().keys().hasOnly(['commissionPercent', 'tariffs', 'promoCode', 'promoPercent',
-                                                 'promoActive', 'intercity', 'referralPercent', 'updatedAt']) &&
+                                                 'promoActive', 'intercity', 'referralPercent',
+                                                 'goalTrips', 'goalBonusSom', 'debtLimitSom', 'updatedAt']) &&
                       incoming().commissionPercent is int && incoming().commissionPercent >= 0 && incoming().commissionPercent <= 50 &&
                       incoming().tariffs is map &&
                       incoming().promoCode is string && incoming().promoCode.size() <= 20 &&
@@ -355,6 +356,15 @@ service cloud.firestore {
     }
 
     // Driver face photo shown to passengers. Copied by the owner when approving a driver.
+    // What a driver has paid to the service (commission). Only the owner writes it.
+    match /driver_balances/{uid} {
+      allow get: if isOwner(uid) || isAdmin();
+      allow list: if isAdmin();
+      allow write: if isAdmin() &&
+                      incoming().keys().hasOnly(['paidSom', 'updatedAt']) &&
+                      incoming().paidSom is int && incoming().paidSom >= 0 && incoming().paidSom <= 100000000;
+    }
+
     match /driver_avatars/{uid} {
       allow get: if isSignedIn();
       allow list: if false;
@@ -394,7 +404,7 @@ service cloud.firestore {
       match /photos/{kind} {
         allow read: if isOwner(uid) || isAdmin();
         allow create, update: if isOwner(uid) &&
-                                 kind in ['passport', 'license', 'driver_face', 'car_front', 'car_back', 'car_left', 'car_right', 'car_interior'] &&
+                                 kind in ['passport', 'passport_back', 'selfie_passport', 'license', 'license_back', 'driver_face', 'car_front', 'car_back', 'car_left', 'car_right', 'car_interior'] &&
                                  incoming().keys().hasOnly(['kind', 'data', 'createdAt']) &&
                                  incoming().kind == kind &&
                                  incoming().data is string && incoming().data.size() > 100 && incoming().data.size() < 900000 &&
@@ -584,7 +594,33 @@ service cloud.firestore {
          ((existing().status == 'ASSIGNED' && incoming().status in ['ARRIVED', 'CANCELLED']) ||
           (existing().status == 'ARRIVED' && incoming().status in ['IN_PROGRESS', 'CANCELLED']) ||
           (existing().status == 'IN_PROGRESS' && incoming().status == 'COMPLETED')) &&
-         onlyChanged(['status', 'updatedAt', 'driverLat', 'driverLng'])) ||
+         onlyChanged(['status', 'updatedAt', 'driverLat', 'driverLng', 'cancelReason']) &&
+         (!('cancelReason' in incoming()) || incoming().status == 'CANCELLED' ||
+          ('cancelReason' in existing() && incoming().cancelReason == existing().cancelReason)) &&
+         (!('cancelReason' in incoming()) || (incoming().cancelReason is string && incoming().cancelReason.size() <= 100))) ||
+        // During the trip the passenger asks to change the route; nothing changes until the driver agrees.
+        (existing().passengerId == request.auth.uid &&
+         existing().status in ['ASSIGNED', 'ARRIVED', 'IN_PROGRESS'] &&
+         incoming().status == existing().status &&
+         onlyChanged(['routeRequest', 'updatedAt']) &&
+         isValidRouteRequest(incoming().routeRequest) &&
+         incoming().routeRequest.status == 'pending') ||
+        // The driver answers: "accepted" applies the requested address and price, "rejected" changes nothing else.
+        (isDriver() &&
+         existing().driverId == request.auth.uid &&
+         existing().status in ['ASSIGNED', 'ARRIVED', 'IN_PROGRESS'] &&
+         incoming().status == existing().status &&
+         'routeRequest' in existing() && existing().routeRequest.status == 'pending' &&
+         isValidRouteRequest(incoming().routeRequest) &&
+         incoming().routeRequest.dropoffAddress == existing().routeRequest.dropoffAddress &&
+         incoming().routeRequest.priceSom == existing().routeRequest.priceSom &&
+         ((incoming().routeRequest.status == 'rejected' && onlyChanged(['routeRequest', 'updatedAt'])) ||
+          (incoming().routeRequest.status == 'accepted' &&
+           onlyChanged(['routeRequest', 'dropoffAddress', 'dropoffLat', 'dropoffLng', 'priceSom', 'stopAddress', 'updatedAt']) &&
+           incoming().dropoffAddress == existing().routeRequest.dropoffAddress &&
+           incoming().dropoffLat == existing().routeRequest.dropoffLat &&
+           incoming().dropoffLng == existing().routeRequest.dropoffLng &&
+           incoming().priceSom == existing().routeRequest.priceSom))) ||
         // The assigned driver shares live position during the trip.
         (isDriver() &&
          existing().driverId == request.auth.uid &&
@@ -607,6 +643,17 @@ service cloud.firestore {
                          isValidTimestamp(incoming().createdAt);
         allow update, delete: if false;
       }
+    }
+
+    function isValidRouteRequest(r) {
+      return r is map &&
+             r.keys().hasAll(['dropoffAddress', 'dropoffLat', 'dropoffLng', 'priceSom', 'status']) &&
+             r.keys().hasOnly(['dropoffAddress', 'dropoffLat', 'dropoffLng', 'stopAddress', 'stopLat', 'stopLng', 'priceSom', 'status']) &&
+             r.dropoffAddress is string && r.dropoffAddress.size() <= 200 &&
+             r.dropoffLat is number && r.dropoffLng is number &&
+             (!('stopAddress' in r) || (r.stopAddress is string && r.stopAddress.size() <= 200)) &&
+             r.priceSom is int && r.priceSom >= 0 && r.priceSom <= 100000 &&
+             r.status in ['pending', 'accepted', 'rejected'];
     }
 
     function isRideParticipant(rideId) {

@@ -181,7 +181,9 @@ private fun PassengerControlSheet(
                 onDismissRideCheck = viewModel::dismissRideCheck,
                 onEditDestination = { viewModel.editDestinationInTrip(it) },
                 onCompleteNow = viewModel::completeActiveRideNow,
-                onCancelRide = { reason -> viewModel.cancelActiveRide(reason) }
+                onCancelRide = { reason -> viewModel.cancelActiveRide(reason) },
+                onRequestRouteChange = if (com.example.FeatureFlags.REAL_RIDES) { drop, stop -> viewModel.requestRouteChange(drop, stop) } else null,
+                routeRequestStatus = state.passengerRouteRequestStatus
             )
             return@Column
         }

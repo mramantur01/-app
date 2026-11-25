@@ -93,7 +93,16 @@ fun DriverCabinScreen(
                     onBookPreorder = viewModel::bookDriverPreorder,
                     onReleasePreorder = viewModel::releaseDriverPreorder,
                     onStartPreorder = viewModel::startDriverPreorder,
-                    onToggleAlertDay = viewModel::toggleDriverPreorderAlertDay
+                    onToggleAlertDay = viewModel::toggleDriverPreorderAlertDay,
+                    onCancelWithReason = viewModel::cancelDriverAcceptedOrderWithReason,
+                    onToggleDemand = viewModel::toggleDriverDemandMap,
+                    onToggleLastOrder = viewModel::toggleDriverLastOrder,
+                    onToggleHomeMode = viewModel::toggleDriverHomeMode,
+                    onAnswerRouteChange = viewModel::answerRouteChange,
+                    onSetRadius = viewModel::setDriverPickupRadius,
+                    onSetVoice = viewModel::setDriverVoice,
+                    onSetNightMap = viewModel::setDriverNightMap,
+                    onSetHome = viewModel::setDriverHome
                 )
 
                 DriverCabinTab.EARNINGS -> DriverEarningsTabContent(
@@ -382,6 +391,8 @@ private fun DriverEarningsTabContent(
             }
         }
 
+        DriverGoalCard(state = state)
+        DriverBalanceCard(state = state)
         DriverEarningsByPeriodCard(state = state)
 
         // Order history (from the database)
@@ -882,6 +893,7 @@ private fun DriverProStatusTabContent(
                 Text("Табличка в аэропорту", maxLines = 1)
             }
         }
+        DriverHelpCard(sending = state.supportSending, onSend = { viewModel.sendSupportMessage(it, null) })
     }
 }
 
@@ -1010,5 +1022,128 @@ private fun DriverEarningsByPeriodCard(state: KgTaxiUiState) {
             },
             dismissButton = { TextButton(onClick = { showPicker = false }) { Text("Отмена") } }
         ) { DatePicker(state = pickerState) }
+    }
+}
+
+
+/** Daily goal from the owner: N trips today gives a bonus (counted against the commission). */
+@Composable
+private fun DriverGoalCard(state: KgTaxiUiState) {
+    val goal = state.appConfig.goalTrips
+    val bonus = state.appConfig.goalBonusSom
+    if (goal <= 0 || bonus <= 0) return
+    val done = state.driverQuestTripsDone
+    Surface(shape = RoundedCornerShape(18.dp), color = Color(0xFFFFF8E1), modifier = Modifier.fillMaxWidth().testTag("driver_goal_card")) {
+        Column(modifier = Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Icon(Icons.Default.EmojiEvents, contentDescription = null, tint = Color(0xFFF9A825))
+                Spacer(Modifier.width(8.dp))
+                Text("Цель дня: $goal поездок → +$bonus сом", fontWeight = FontWeight.Bold, modifier = Modifier.weight(1f))
+            }
+            LinearProgressIndicator(
+                progress = { (done.toFloat() / goal).coerceIn(0f, 1f) },
+                modifier = Modifier.fillMaxWidth().height(8.dp).clip(RoundedCornerShape(4.dp)),
+                color = Color(0xFFF9A825)
+            )
+            Text(
+                if (done >= goal) "Цель выполнена! Бонус $bonus сом зачтён в счёт комиссии."
+                else "Сделано $done из $goal. Осталось ${goal - done}.",
+                style = MaterialTheme.typography.bodySmall
+            )
+        }
+    }
+}
+
+/** What the driver owes the service (commission from cash trips) and what is already paid. */
+@Composable
+private fun DriverBalanceCard(state: KgTaxiUiState) {
+    val b = state.driverBalance
+    val debt = b.debtSom
+    Surface(shape = RoundedCornerShape(18.dp), color = MaterialTheme.colorScheme.surfaceVariant, modifier = Modifier.fillMaxWidth().testTag("driver_balance_card")) {
+        Column(modifier = Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+            Text("Расчёт с сервисом", fontWeight = FontWeight.Bold)
+            Text(
+                when {
+                    debt > 0 -> "Вы должны $debt сом"
+                    debt < 0 -> "Сервис должен вам ${-debt} сом"
+                    else -> "Долга нет"
+                },
+                fontFamily = JetBrainsMono, fontSize = 24.sp, fontWeight = FontWeight.Black,
+                color = if (debt > 0) UberRed else KgTurquoiseDark
+            )
+            BalanceLine("Комиссия с поездок за наличные", "${b.commissionSom} сом")
+            if (b.cardPayoutSom > 0) BalanceLine("Вам за поездки по карте", "−${b.cardPayoutSom} сом")
+            if (b.bonusSom > 0) BalanceLine("Бонусы за цели (${b.bonusDays} дн.)", "−${b.bonusSom} сом")
+            BalanceLine("Уже оплачено", "−${b.paidSom} сом")
+            val limit = state.appConfig.debtLimitSom
+            Text(
+                if (limit > 0) "Если долг больше $limit сом, выйти на линию нельзя. Оплатите владельцу сервиса — он отметит оплату."
+                else "Оплачивайте комиссию владельцу сервиса — он отметит оплату в приложении.",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+        }
+    }
+}
+
+@Composable
+private fun BalanceLine(label: String, value: String) {
+    Row(modifier = Modifier.fillMaxWidth()) {
+        Text(label, style = MaterialTheme.typography.bodyMedium, modifier = Modifier.weight(1f))
+        Text(value, style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.SemiBold)
+    }
+}
+
+private val driverFaq = listOf(
+    "Как выйти на линию?" to "На вкладке «Заказы» нажмите большую кнопку GO. Чтобы уйти — «Уйти с линии» или включите «Последний заказ».",
+    "Почему нет заказов?" to "Проверьте тарифы и радиус подачи в настройках (кнопка справа вверху). Включите карту спроса — там видно, где ждут машину.",
+    "Как работает «Домой»?" to "Укажите дом в настройках. Включайте «Домой» до 2 раз в день — будут приходить заказы в сторону дома.",
+    "Почему нельзя выйти на линию?" to "После 12 часов на линии нужен отдых 6 часов. Также нельзя выйти, если долг по комиссии больше лимита.",
+    "Как платить комиссию?" to "Сумма видна во вкладке «Деньги» → «Расчёт с сервисом». Передайте её владельцу сервиса, он отметит оплату.",
+    "Пассажир хочет изменить маршрут" to "Появится окно с новым адресом и ценой. Нажмите «Да, поеду» или «Нет» — без вашего согласия маршрут не меняется.",
+    "Что делать при ДТП или опасности?" to "Нажмите SOS в поездке. При отмене заказа выберите причину — так мы быстрее разберёмся."
+)
+
+/** FAQ for drivers and a message to support. */
+@Composable
+private fun DriverHelpCard(sending: Boolean, onSend: (String) -> Unit) {
+    var open by remember { mutableStateOf<Int?>(null) }
+    var write by remember { mutableStateOf(false) }
+    var text by remember { mutableStateOf("") }
+    Surface(shape = RoundedCornerShape(18.dp), color = MaterialTheme.colorScheme.surfaceVariant, modifier = Modifier.fillMaxWidth().testTag("driver_help_card")) {
+        Column(modifier = Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Icon(Icons.Default.HelpOutline, contentDescription = null, tint = KgTurquoiseDark)
+                Spacer(Modifier.width(8.dp))
+                Text("Помощь водителю", fontWeight = FontWeight.Bold)
+            }
+            driverFaq.forEachIndexed { i, (q, a) ->
+                Surface(onClick = { open = if (open == i) null else i }, color = Color.Transparent, modifier = Modifier.fillMaxWidth()) {
+                    Column(Modifier.padding(vertical = 8.dp)) {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Text(q, fontWeight = FontWeight.SemiBold, modifier = Modifier.weight(1f))
+                            Icon(if (open == i) Icons.Default.ExpandLess else Icons.Default.ExpandMore, contentDescription = null)
+                        }
+                        if (open == i) Text(a, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.padding(top = 4.dp))
+                    }
+                }
+            }
+            OutlinedButton(onClick = { write = true }, modifier = Modifier.fillMaxWidth().testTag("driver_help_write")) {
+                Icon(Icons.Default.Chat, contentDescription = null, modifier = Modifier.size(18.dp))
+                Spacer(Modifier.width(6.dp))
+                Text("Написать в поддержку")
+            }
+        }
+    }
+    if (write) {
+        AlertDialog(
+            onDismissRequest = { write = false },
+            title = { Text("Написать в поддержку") },
+            text = {
+                OutlinedTextField(value = text, onValueChange = { text = it.take(1000) }, label = { Text("Опишите вопрос") }, minLines = 4, modifier = Modifier.fillMaxWidth())
+            },
+            confirmButton = { Button(onClick = { onSend(text); text = ""; write = false }, enabled = text.isNotBlank() && !sending) { Text("Отправить") } },
+            dismissButton = { TextButton(onClick = { write = false }) { Text("Отмена") } }
+        )
     }
 }

@@ -73,7 +73,11 @@ data class SharedRide(
     val paymentMethod: String = "CASH",
     val passengerRatingAvg: Double? = null,
     val passengerTrips: Int? = null,
-    val driverTrips: Int? = null
+    val driverTrips: Int? = null,
+    /** Passenger's pending/answered route change during the trip. */
+    val routeRequest: com.example.data.model.RouteRequest? = null,
+    /** Stop on the way, set when the driver accepted a route change. */
+    val stopAddress: String? = null
 ) {
     val isActive: Boolean get() = status in RideStatus.ACTIVE
 
@@ -119,7 +123,9 @@ data class SharedRide(
                 paymentMethod = snap.getString("paymentMethod") ?: "CASH",
                 passengerRatingAvg = snap.getDouble("passengerRatingAvg"),
                 passengerTrips = snap.getLong("passengerTrips")?.toInt(),
-                driverTrips = snap.getLong("driverTrips")?.toInt()
+                driverTrips = snap.getLong("driverTrips")?.toInt(),
+                routeRequest = com.example.data.model.RouteRequest.from(snap.get("routeRequest") as? Map<*, *>),
+                stopAddress = snap.getString("stopAddress")
             )
         }
     }
@@ -408,11 +414,47 @@ class RideRepository(
     }
 
     /** The assigned driver moves the trip: ARRIVED, IN_PROGRESS, COMPLETED or CANCELLED. */
-    suspend fun setStatusAsDriver(rideId: String, newStatus: String): Result<Unit> =
+    suspend fun setStatusAsDriver(rideId: String, newStatus: String, cancelReason: String? = null): Result<Unit> =
+        runWrite(OperationType.UPDATE, "rides/$rideId") {
+            val data = mutableMapOf<String, Any>("status" to newStatus, "updatedAt" to FieldValue.serverTimestamp())
+            if (newStatus == RideStatus.CANCELLED && !cancelReason.isNullOrBlank()) data["cancelReason"] = "Водитель: " + cancelReason.take(80)
+            rides.document(rideId).update(data).await()
+        }
+
+    /** How much the driver has already paid to the service (written by the owner). */
+    fun observeMyPaidSom(): Flow<Int> {
+        val uid = currentUid ?: return emptyFlow()
+        return db.collection("driver_balances").document(uid).snapshots()
+            .map { it.getLong("paidSom")?.toInt() ?: 0 }
+            .catch { e ->
+                if (e is CancellationException) throw e
+                emit(0)
+            }
+    }
+
+    /** Passenger asks to change where to go (and maybe a stop on the way). The driver must accept it. */
+    suspend fun requestRouteChange(rideId: String, req: com.example.data.model.RouteRequest): Result<Unit> =
         runWrite(OperationType.UPDATE, "rides/$rideId") {
             rides.document(rideId).update(
-                mapOf("status" to newStatus, "updatedAt" to FieldValue.serverTimestamp())
+                mapOf("routeRequest" to req.copy(status = "pending").toMap(), "updatedAt" to FieldValue.serverTimestamp())
             ).await()
+        }
+
+    /** Driver accepts (route and price change) or declines the passenger's route change. */
+    suspend fun answerRouteChange(rideId: String, req: com.example.data.model.RouteRequest, accept: Boolean): Result<Unit> =
+        runWrite(OperationType.UPDATE, "rides/$rideId") {
+            val data = mutableMapOf<String, Any>(
+                "routeRequest" to req.copy(status = if (accept) "accepted" else "rejected").toMap(),
+                "updatedAt" to FieldValue.serverTimestamp()
+            )
+            if (accept) {
+                data["dropoffAddress"] = req.dropoffAddress
+                data["dropoffLat"] = req.dropoffLat
+                data["dropoffLng"] = req.dropoffLng
+                data["priceSom"] = req.priceSom
+                if (!req.stopAddress.isNullOrBlank()) data["stopAddress"] = req.stopAddress
+            }
+            rides.document(rideId).update(data).await()
         }
 
     /** The assigned driver shares where the car is, so the passenger sees it move. */
