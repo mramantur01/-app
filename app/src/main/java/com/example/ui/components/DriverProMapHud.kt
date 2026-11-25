@@ -861,7 +861,7 @@ private fun DriverActiveOrderExecutionSheet(
             }
 
             // How the PIN check works, so both sides understand it the same way.
-            if (stage != DriverOrderStage.IN_TRIP) {
+            if (stage == DriverOrderStage.WAITING_AT_PICKUP) {
                 Text(
                     "PIN-код помогает водителю и пассажиру убедиться, что они нашли друг друга",
                     style = MaterialTheme.typography.bodySmall,

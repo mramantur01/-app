@@ -1,0 +1,29 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Sample driver avatar shown until the driver's own photo is approved. -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="96dp"
+    android:height="96dp"
+    android:viewportWidth="96"
+    android:viewportHeight="96">
+    <!-- background -->
+    <path android:fillColor="#E0F5F6" android:pathData="M0,0h96v96h-96z" />
+    <!-- shoulders / jacket -->
+    <path android:fillColor="#0097A7" android:pathData="M14,96 C14,74 30,64 48,64 C66,64 82,74 82,96 Z" />
+    <!-- shirt collar -->
+    <path android:fillColor="#FFFFFF" android:pathData="M40,64 L48,76 L56,64 Z" />
+    <!-- neck -->
+    <path android:fillColor="#E8B48A" android:pathData="M42,54h12v12h-12z" />
+    <!-- face -->
+    <path android:fillColor="#F2C29B" android:pathData="M48,24 C59,24 66,32 66,43 C66,54 58,62 48,62 C38,62 30,54 30,43 C30,32 37,24 48,24 Z" />
+    <!-- hair -->
+    <path android:fillColor="#3B2A20" android:pathData="M31,40 C31,30 38,25 48,25 C58,25 65,30 65,40 L62,36 C56,33 40,33 34,36 Z" />
+    <!-- cap -->
+    <path android:fillColor="#00727E" android:pathData="M28,34 C28,22 38,16 48,16 C58,16 68,22 68,34 Z" />
+    <path android:fillColor="#004F57" android:pathData="M26,33h44a3,3 0,0 1,3 3v1h-50v-1a3,3 0,0 1,3 -3z" />
+    <path android:fillColor="#FFFFFF" android:pathData="M44,22h8v6h-8z" />
+    <!-- eyes -->
+    <path android:fillColor="#3B2A20" android:pathData="M41,44m-2,0a2,2 0,1 1,4 0a2,2 0,1 1,-4 0" />
+    <path android:fillColor="#3B2A20" android:pathData="M55,44m-2,0a2,2 0,1 1,4 0a2,2 0,1 1,-4 0" />
+    <!-- smile -->
+    <path android:strokeColor="#9A5B3A" android:strokeWidth="2" android:strokeLineCap="round" android:pathData="M42,52 Q48,57 54,52" />
+</vector>

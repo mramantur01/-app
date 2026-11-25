@@ -133,8 +133,8 @@ fun InteractiveKgMap(
             )
         }
 
-        // Top Floating City Selector Carousel (All 8 Kyrgyzstan Cities!)
-        Row(
+        // City buttons: not during a ride (the map only shows the trip then).
+        if (activeRide == null) Row(
             modifier = Modifier
                 .align(Alignment.TopStart)
                 .fillMaxWidth()
@@ -363,8 +363,8 @@ fun InteractiveKgMap(
             }
         }
 
-        // Top-Left / Top-End Map Pick Target Toggle (Point A vs Point B) + Map Source Badge
-        Row(
+        // Point A / B pick toggle and map style: not during a ride.
+        if (activeRide == null) Row(
             modifier = Modifier
                 .align(Alignment.TopStart)
                 .padding(top = 48.dp, start = 10.dp, end = 10.dp)

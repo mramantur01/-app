@@ -309,6 +309,12 @@ fun ActiveTripCard(
                             contentDescription = "Фото водителя",
                             contentScale = androidx.compose.ui.layout.ContentScale.Crop,
                             modifier = Modifier.fillMaxSize()
+                        ) else if (ride.status != com.example.data.model.TripStatus.SEARCHING) androidx.compose.foundation.Image(
+                            // Sample picture until the driver has an approved photo.
+                            painter = androidx.compose.ui.res.painterResource(com.example.R.drawable.ic_driver_placeholder),
+                            contentDescription = "Водитель",
+                            contentScale = androidx.compose.ui.layout.ContentScale.Crop,
+                            modifier = Modifier.fillMaxSize()
                         ) else Icon(
                             Icons.Default.Person,
                             contentDescription = "Driver",
@@ -694,7 +700,7 @@ fun PostTripReceiptDialog(
                         Text("Куда: ${trip.dropoffAddress}", style = MaterialTheme.typography.bodySmall)
                         Text("Водитель: ${trip.driverName} (${trip.driverCar})", style = MaterialTheme.typography.bodySmall)
                         Text(
-                            "Оплата: ${trip.paymentMethod} • PIN: ${trip.safetyPin}" +
+                            "Оплата: ${paymentLabelRu(trip.paymentMethod)} • PIN: ${trip.safetyPin}" +
                                 if (trip.businessTrip) " • Корпоративный чек B2B" else "",
                             style = MaterialTheme.typography.labelSmall,
                             color = UberBlue
@@ -796,7 +802,7 @@ fun PostTripReceiptDialog(
                                 appendLine("Чек #${trip.id.takeLast(8)} • ${trip.city}")
                                 appendLine("Маршрут: ${trip.pickupAddress} → ${trip.dropoffAddress}")
                                 appendLine("Тариф: ${trip.tariffName} • Водитель: ${trip.driverName} (${trip.driverCar})")
-                                appendLine("Итого: $totalWithTip сом (${displayCurrency.formatShort(totalWithTip)}) • Оплата: ${trip.paymentMethod}")
+                                appendLine("Итого: $totalWithTip сом (${displayCurrency.formatShort(totalWithTip)}) • Оплата: ${paymentLabelRu(trip.paymentMethod)}")
                             }
                             val share = Intent(Intent.ACTION_SEND).apply {
                                 type = "text/plain"
@@ -856,4 +862,12 @@ fun PostTripReceiptDialog(
             onDismiss = { showQrDialog = false }
         )
     }
+}
+
+
+/** Human label for a stored payment code. */
+private fun paymentLabelRu(code: String): String = when (code.uppercase()) {
+    "CASH" -> "наличные или QR"
+    "CARD" -> "карта"
+    else -> code
 }

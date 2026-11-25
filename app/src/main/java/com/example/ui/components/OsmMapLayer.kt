@@ -115,15 +115,24 @@ fun OsmMapLayer(
     }
 
     LaunchedEffect(centerKey) {
-        mapView.controller.animateTo(org.osmdroid.util.GeoPoint(center.lat, center.lng), zoom, 600L)
+        // With a route to show, the fit below decides the view; do not jump to the city center.
+        if (fitTo.size < 2) mapView.controller.animateTo(org.osmdroid.util.GeoPoint(center.lat, center.lng), zoom, 600L)
     }
     LaunchedEffect(fitTo) {
         if (fitTo.size >= 2) {
             val lats = fitTo.map { it.lat }
             val lngs = fitTo.map { it.lng }
-            val pad = 0.004
-            val box = BoundingBox(lats.max() + pad, lngs.max() + pad, lats.min() - pad, lngs.min() - pad)
-            mapView.post { runCatching { mapView.zoomToBoundingBox(box, true, (64 * mapView.resources.displayMetrics.density).toInt()) } }
+            val margin = 0.004
+            // The bottom part of the screen is covered by the order card: keep the route in the upper half.
+            val span = (lats.max() - lats.min()).coerceAtLeast(0.005)
+            val box = BoundingBox(lats.max() + margin, lngs.max() + margin, lats.min() - margin - span * 1.1, lngs.min() - margin)
+            val pad = (64 * mapView.resources.displayMetrics.density).toInt()
+            // The map may not be laid out yet: fit after the first layout, otherwise right away.
+            if (mapView.width > 0 && mapView.height > 0) {
+                mapView.post { runCatching { mapView.zoomToBoundingBox(box, false, pad) } }
+            } else {
+                mapView.addOnFirstLayoutListener { _, _, _, _, _ -> runCatching { mapView.zoomToBoundingBox(box, false, pad) } }
+            }
         }
     }
 

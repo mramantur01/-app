@@ -789,6 +789,7 @@ class KgTaxiViewModel(
         driverHistoryJob?.cancel()
         driverHistoryJob = viewModelScope.launch {
             rides.observeMyRides(asDriver = true).collect { list ->
+                restoreDriverActiveRide(list)
                 val commission = _uiState.value.ownerBankConfig.commissionPercent
                 fun net(r: SharedRide) = OwnerPayoutGatewayClient.calculateOrderSplit(r.priceSom, commission).driverNetSom
                 val done = list.filter { it.status == RideStatus.COMPLETED }
@@ -835,6 +836,24 @@ class KgTaxiViewModel(
         _uiState.update { it.copy(driverHistory = emptyList(), driverOpenPreorders = emptyList(), driverBookedPreorders = emptyList()) }
     }
 
+    /** After the app restarts mid-trip, bring the driver's current order back on the screen. */
+    private fun restoreDriverActiveRide(list: List<SharedRide>) {
+        if (driverRideId != null || _uiState.value.driverAcceptedOrder != null) return
+        val active = list.firstOrNull { it.status in setOf(RideStatus.ASSIGNED, RideStatus.ARRIVED, RideStatus.IN_PROGRESS) } ?: return
+        driverRideId = active.id
+        if (!_uiState.value.driverOnline) toggleDriverOnline()
+        applyAcceptedDriverOrder(active.toDriverOrder(_uiState.value.pickupPoint))
+        val stage = when (active.status) {
+            RideStatus.ARRIVED -> DriverOrderStage.WAITING_AT_PICKUP
+            RideStatus.IN_PROGRESS -> DriverOrderStage.IN_TRIP
+            else -> DriverOrderStage.EN_ROUTE_TO_PICKUP
+        }
+        _uiState.update { it.copy(driverOrderStage = stage, statusBanner = "Текущий заказ восстановлен") }
+        startDriverLocationSharing(active.id)
+        watchDriverRide(active.id)
+        startDriverChat(active.id)
+    }
+
     // --- INTERCITY PRE-ORDERS ---
 
     /** Passenger: watches own pre-orders; when the driver starts one, it opens like a normal trip. */
@@ -858,8 +877,10 @@ class KgTaxiViewModel(
                 val waiting = pre.filter { it.status == RideStatus.SEARCHING || it.status == RideStatus.BOOKED }
                     .sortedBy { it.scheduledAtMillis ?: 0L }
                 _uiState.update { it.copy(passengerPreorders = waiting) }
-                val started = pre.firstOrNull {
-                    it.status in setOf(RideStatus.ASSIGNED, RideStatus.ARRIVED, RideStatus.IN_PROGRESS)
+                // Bring back an unfinished order after the app restarts (or a pre-order the driver started).
+                val started = list.firstOrNull {
+                    it.status in setOf(RideStatus.ASSIGNED, RideStatus.ARRIVED, RideStatus.IN_PROGRESS) ||
+                        (it.status == RideStatus.SEARCHING && it.scheduledAtMillis == null)
                 }
                 if (started != null && _uiState.value.activeRide == null && passengerRideId == null) {
                     attachPassengerRide(started)
@@ -875,7 +896,7 @@ class KgTaxiViewModel(
         val ride = ActiveRideState(
             tripId = shared.id,
             serviceType = if (shared.serviceType == "INTERCITY") ServiceType.INTERCITY else ServiceType.TAXI,
-            tariffName = if (shared.serviceType == "INTERCITY") "Межгород" else "Такси",
+            tariffName = shared.tariffName ?: if (shared.serviceType == "INTERCITY") "Межгород" else "Такси",
             city = shared.city,
             pickupAddress = shared.pickupAddress,
             dropoffAddress = shared.dropoffAddress,
