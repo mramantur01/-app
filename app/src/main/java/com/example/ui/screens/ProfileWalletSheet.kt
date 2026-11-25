@@ -215,6 +215,8 @@ fun ProfileWalletOverlay(
                     }
                 }
 
+                ClosePeopleSection(people = state.passengerPeople, onSave = viewModel::savePassengerPeople)
+
                 // Wallet Balance, Top-Up Ledger, ELQR & Referral Program ("Пригласи друга")
                 if (FeatureFlags.WALLET) WalletAndReferralSection(
                     walletBalanceSom = state.walletBalanceSom,
@@ -534,6 +536,73 @@ fun ProfileWalletOverlay(
             trip = lfTrip,
             onSubmitTicket = { cat, note -> viewModel.submitLostItemTicket(lfTrip, cat, note) },
             onDismiss = { lostFoundTargetTrip = null }
+        )
+    }
+}
+
+
+/** Family and trusted contacts: quick "order for them" and sending them your trips. */
+@Composable
+private fun ClosePeopleSection(people: List<com.example.util.ClosePerson>, onSave: (List<com.example.util.ClosePerson>) -> Unit) {
+    var adding by remember { mutableStateOf(false) }
+    Surface(shape = RoundedCornerShape(16.dp), color = MaterialTheme.colorScheme.surfaceVariant, modifier = Modifier.fillMaxWidth().testTag("close_people_section")) {
+        Column(modifier = Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            Text("Близкие и семья", fontWeight = FontWeight.Bold)
+            Text(
+                "Можно быстро заказать такси для них. Если включить «Получает мои поездки», в поездке появится кнопка — отправить им маршрут и машину.",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+            people.forEachIndexed { i, p ->
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Column(Modifier.weight(1f)) {
+                        Text(p.name.ifBlank { "Без имени" }, fontWeight = FontWeight.SemiBold)
+                        Text(p.phone, style = MaterialTheme.typography.bodySmall)
+                    }
+                    Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                        Switch(checked = p.shareTrips, onCheckedChange = { on -> onSave(people.mapIndexed { j, q -> if (j == i) q.copy(shareTrips = on) else q }) })
+                        Text("Получает поездки", style = MaterialTheme.typography.labelSmall)
+                    }
+                    IconButton(onClick = { onSave(people.filterIndexed { j, _ -> j != i }) }) { Icon(Icons.Default.Delete, contentDescription = "Удалить") }
+                }
+            }
+            if (people.size < com.example.util.PassengerPeople.MAX) {
+                OutlinedButton(onClick = { adding = true }, modifier = Modifier.fillMaxWidth().testTag("close_people_add")) {
+                    Icon(Icons.Default.PersonAdd, contentDescription = null, modifier = Modifier.size(18.dp))
+                    Spacer(Modifier.width(6.dp))
+                    Text("Добавить близкого")
+                }
+            }
+        }
+    }
+    if (adding) {
+        var name by remember { mutableStateOf("") }
+        var phone by remember { mutableStateOf("+996 ") }
+        var share by remember { mutableStateOf(true) }
+        AlertDialog(
+            onDismissRequest = { adding = false },
+            title = { Text("Близкий человек") },
+            text = {
+                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    OutlinedTextField(value = name, onValueChange = { name = it.take(40) }, label = { Text("Имя (мама, сын…)") }, singleLine = true)
+                    OutlinedTextField(
+                        value = phone, onValueChange = { phone = it.filter { c -> c.isDigit() || c == '+' || c == ' ' }.take(20) },
+                        label = { Text("Телефон") }, singleLine = true,
+                        keyboardOptions = androidx.compose.foundation.text.KeyboardOptions(keyboardType = androidx.compose.ui.text.input.KeyboardType.Phone)
+                    )
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Text("Получает мои поездки", modifier = Modifier.weight(1f))
+                        Switch(checked = share, onCheckedChange = { share = it })
+                    }
+                }
+            },
+            confirmButton = {
+                Button(
+                    onClick = { onSave(people + com.example.util.ClosePerson(name.trim(), phone.trim(), share)); adding = false },
+                    enabled = phone.count { it.isDigit() } >= 9
+                ) { Text("Сохранить") }
+            },
+            dismissButton = { TextButton(onClick = { adding = false }) { Text("Отмена") } }
         )
     }
 }

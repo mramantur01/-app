@@ -25,6 +25,8 @@ enum class RegPhoto(val id: String, val title: String) {
     DRIVER_FACE("driver_face", "Ваше фото (лицо) — его увидят пассажиры"),
     LICENSE("license", "Водительское удостоверение — лицевая сторона"),
     LICENSE_BACK("license_back", "Водительское удостоверение — обратная сторона"),
+    INSURANCE("insurance", "Полис ОСАГО (страховка авто)"),
+    NO_CRIMINAL("no_criminal", "Справка о несудимости (МВД / Тундук)"),
     CAR_FRONT("car_front", "Авто спереди (виден номер)"),
     CAR_BACK("car_back", "Авто сзади (виден номер)"),
     CAR_LEFT("car_left", "Авто слева"),
@@ -33,7 +35,9 @@ enum class RegPhoto(val id: String, val title: String) {
 
     companion object {
         val PASSENGER = listOf(PASSPORT, PASSPORT_BACK, SELFIE_DOC)
-        val DRIVER_DOCS = listOf(DRIVER_FACE, PASSPORT, PASSPORT_BACK, SELFIE_DOC, LICENSE, LICENSE_BACK)
+        val DRIVER_DOCS = listOf(DRIVER_FACE, PASSPORT, PASSPORT_BACK, SELFIE_DOC, LICENSE, LICENSE_BACK, INSURANCE, NO_CRIMINAL)
+        /** Monthly photo check: the car from all sides and the driver's face. */
+        val PHOTO_CHECK = listOf(DRIVER_FACE, CAR_FRONT, CAR_BACK, CAR_LEFT, CAR_RIGHT, CAR_INTERIOR)
         val CAR = listOf(CAR_FRONT, CAR_BACK, CAR_LEFT, CAR_RIGHT, CAR_INTERIOR)
     }
 }
@@ -46,7 +50,9 @@ data class RegistrationInfo(
     /** Driver application status: "pending", "approved", "rejected" (null for passengers). */
     val driverStatus: String? = null,
     val rejectReason: String? = null,
-    val phone: String = ""
+    val phone: String = "",
+    /** Last photo check of a driver (registration time if none yet). */
+    val photoCheckAt: Long? = null
 )
 
 data class DriverRegistration(
@@ -62,7 +68,13 @@ data class DriverRegistration(
     val carYear: Int,
     val carColor: String,
     val plate: String,
-    val tariffs: List<String>
+    val tariffs: List<String>,
+    /** "ДД.ММ.ГГГГ". */
+    val birthDate: String = "",
+    /** "Самозанятый", "ИП" or "Через таксопарк". */
+    val workType: String = "",
+    /** ОСАГО valid until, "ДД.ММ.ГГГГ". */
+    val insuranceUntil: String = ""
 )
 
 /**
@@ -94,7 +106,10 @@ class RegistrationRepository(
                     reason = app.getString("rejectReason")
                 }
             }
-            RegistrationInfo(type, reg.getString("fullName").orEmpty(), status, reason, reg.getString("phone").orEmpty())
+            RegistrationInfo(
+                type, reg.getString("fullName").orEmpty(), status, reason, reg.getString("phone").orEmpty(),
+                photoCheckAt = (reg.getTimestamp("photoCheckAt") ?: reg.getTimestamp("createdAt"))?.toDate()?.time
+            )
         } catch (e: CancellationException) {
             throw e
         } catch (e: Exception) {
@@ -185,6 +200,9 @@ class RegistrationRepository(
                     "carYear" to reg.carYear,
                     "carColor" to reg.carColor.take(30),
                     "tariffs" to reg.tariffs.take(25),
+                    "birthDate" to reg.birthDate.take(10),
+                    "workType" to reg.workType.take(30),
+                    "insuranceUntil" to reg.insuranceUntil.take(10),
                     "status" to "pending",
                     "createdAt" to FieldValue.serverTimestamp()
                 )
@@ -199,6 +217,16 @@ class RegistrationRepository(
                     "createdAt" to FieldValue.serverTimestamp()
                 )
             ).await()
+        }
+    }
+
+    /** Monthly photo check: new photos of the car and the driver, and the date of the check. */
+    suspend fun submitPhotoCheck(photos: Map<RegPhoto, String>): Result<Unit> {
+        val id = uid ?: return Result.failure(IllegalStateException("Войдите в аккаунт"))
+        return runCatchingFs("registrations/$id") {
+            savePhotos(id, photos)
+            db.collection("registrations").document(id)
+                .update(mapOf("photoCheckAt" to FieldValue.serverTimestamp())).await()
         }
     }
 

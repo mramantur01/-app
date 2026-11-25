@@ -83,6 +83,9 @@ fun DriverLineMapCockpit(
     onSetVoice: (Boolean) -> Unit = {},
     onSetNightMap: (Boolean) -> Unit = {},
     onSetHome: (GeoPoint) -> Unit = {},
+    onSetMinRating: (Double) -> Unit = {},
+    /** Take an order from the list (or as the next one while on a trip). */
+    onTakeOrder: (DriverIncomingOrder) -> Unit = onAcceptOrder,
     modifier: Modifier = Modifier
 ) {
     val context = LocalContext.current
@@ -90,6 +93,7 @@ fun DriverLineMapCockpit(
     var showPreorders by remember { mutableStateOf(false) }
     var showEarnings by remember { mutableStateOf(false) }
     var showCancelReasons by remember { mutableStateOf(false) }
+    var showRadar by remember { mutableStateOf(false) }
 
     // Sort incoming offers so home-bound orders appear first when Destination Filter is active
     val targetKey = state.driverHomeTargetDistrict.substringBefore(" /").trim()
@@ -381,7 +385,14 @@ fun DriverLineMapCockpit(
                             )
                         }
                     }
-                    DriverLastOrderChip(on = state.driverLastOrder, onClick = onToggleLastOrder)
+                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        DriverLastOrderChip(on = state.driverLastOrder, onClick = onToggleLastOrder)
+                        if (com.example.FeatureFlags.REAL_RIDES && state.driverQueuedNextOrder == null) {
+                            val near = nextOrdersNear(state, activeOrder)
+                            if (near.isNotEmpty()) DriverRadarChip("Следующий рядом (${near.size})") { showRadar = true }
+                        }
+                    }
+                    activeOrder.passengerWishes?.let { w -> DriverWishesNote(w) }
                     DriverActiveOrderExecutionSheet(
                         order = activeOrder,
                         stage = state.driverOrderStage,
@@ -449,7 +460,7 @@ fun DriverLineMapCockpit(
                 // STATE A2: ONLINE — waiting for orders. Clean screen, one big button to leave the line.
                 state.driverOnline -> {
                     Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                        DriverLineQuickChips(state = state, onToggleLastOrder = onToggleLastOrder, onToggleHomeMode = onToggleHomeMode)
+                        DriverLineQuickChips(state = state, onToggleLastOrder = onToggleLastOrder, onToggleHomeMode = onToggleHomeMode, onOpenRadar = { showRadar = true })
                         DriverWaitingForOrdersCard(
                             city = state.selectedCity.name,
                             todayEarningsSom = state.driverTodayEarningsSom,
@@ -490,6 +501,17 @@ fun DriverLineMapCockpit(
         )
     }
 
+    if (showRadar) {
+        DriverRadarSheet(
+            state = state,
+            onTake = { o ->
+                showRadar = false
+                onTakeOrder(o)
+            },
+            onDismiss = { showRadar = false }
+        )
+    }
+
     state.driverRouteRequest?.let { req ->
         DriverRouteRequestDialog(req = req, oldPrice = state.driverAcceptedOrder?.grossFareSom, onAnswer = onAnswerRouteChange)
     }
@@ -503,6 +525,7 @@ fun DriverLineMapCockpit(
             onSetVoice = onSetVoice,
             onSetNightMap = onSetNightMap,
             onSetHome = onSetHome,
+            onSetMinRating = onSetMinRating,
             onDismiss = { showLineSettings = false }
         )
     }
@@ -713,6 +736,8 @@ private fun DriverIncomingOfferSheet(
                     }
                 }
             }
+
+            order.passengerWishes?.let { w -> DriverWishesNote(w) }
 
             // Action Buttons: Skip (-4) & Big ACCEPT
             Row(
@@ -1214,6 +1239,8 @@ private fun DriverOfflineGo(state: KgTaxiUiState, onGoOnline: () -> Unit) {
         val rest = state.driverRestUntil?.takeIf { it > System.currentTimeMillis() }
         val limit = state.appConfig.debtLimitSom
         val warn = when {
+            state.registration?.type == "driver" && (state.registration.photoCheckAt ?: Long.MAX_VALUE) < System.currentTimeMillis() - com.example.ui.PHOTO_CHECK_DAYS * 24 * 3600_000L ->
+                "Пройдите фотоконтроль во вкладке «Авто»"
             rest != null -> "Отдых после 12 часов на линии до " + java.text.SimpleDateFormat("HH:mm", Locale.US).format(java.util.Date(rest))
             limit > 0 && state.driverBalance.debtSom > limit -> "Долг сервису ${state.driverBalance.debtSom} сом — оплатите, чтобы выйти на линию"
             else -> null
@@ -1519,6 +1546,7 @@ private fun DriverLineSettingsSheet(
     onSetVoice: (Boolean) -> Unit = {},
     onSetNightMap: (Boolean) -> Unit = {},
     onSetHome: (GeoPoint) -> Unit = {},
+    onSetMinRating: (Double) -> Unit = {},
     onDismiss: () -> Unit
 ) {
     var pickHome by remember { mutableStateOf(false) }
@@ -1596,6 +1624,14 @@ private fun DriverLineSettingsSheet(
                 }
             }
             HorizontalDivider()
+            Text("Рейтинг пассажира", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
+            Text("Не показывать заказы от пассажиров с рейтингом ниже. Новые пассажиры видны всегда.", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            Row(modifier = Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                listOf(0.0 to "Любой", 4.0 to "4.0+", 4.5 to "4.5+", 4.8 to "4.8+").forEach { (v, label) ->
+                    FilterChip(selected = state.driverMinPassengerRating == v, onClick = { onSetMinRating(v) }, label = { Text(label) })
+                }
+            }
+            HorizontalDivider()
             Text("Дом", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
             Text(
                 if (state.driverHomeAddress.isBlank()) "Укажите адрес — включайте «Домой» 2 раза в день и берите заказы по пути к дому."
@@ -1666,7 +1702,7 @@ private fun DriverDemandFab(on: Boolean, count: Int, onClick: () -> Unit) {
 
 /** On the line: time on the line, "Последний заказ" and "Домой". */
 @Composable
-private fun DriverLineQuickChips(state: KgTaxiUiState, onToggleLastOrder: () -> Unit, onToggleHomeMode: () -> Unit) {
+private fun DriverLineQuickChips(state: KgTaxiUiState, onToggleLastOrder: () -> Unit, onToggleHomeMode: () -> Unit, onOpenRadar: () -> Unit = {}) {
     val h = state.driverOnlineMinutes24h / 60
     val m = state.driverOnlineMinutes24h % 60
     Row(
@@ -1681,6 +1717,7 @@ private fun DriverLineQuickChips(state: KgTaxiUiState, onToggleLastOrder: () -> 
                 Text("${h} ч ${m} мин из 12", style = MaterialTheme.typography.labelLarge, color = Color(0xFF263238))
             }
         }
+        if (state.driverRadarOrders.isNotEmpty()) DriverRadarChip("Все заказы (${state.driverRadarOrders.size})", onOpenRadar)
         DriverLastOrderChip(on = state.driverLastOrder, onClick = onToggleLastOrder)
         Surface(
             onClick = onToggleHomeMode,
@@ -1776,4 +1813,71 @@ private fun DriverRouteRequestDialog(req: RouteRequest, oldPrice: Int?, onAnswer
             TextButton(onClick = { onAnswer(false) }, modifier = Modifier.testTag("route_request_no")) { Text("Нет") }
         }
     )
+}
+
+
+/** Passenger's wishes and special needs, shown to the driver. */
+@Composable
+private fun DriverWishesNote(text: String) {
+    Surface(shape = RoundedCornerShape(14.dp), color = Color(0xFFFFF8E1), modifier = Modifier.fillMaxWidth().testTag("driver_passenger_wishes")) {
+        Row(Modifier.padding(horizontal = 12.dp, vertical = 8.dp), verticalAlignment = Alignment.CenterVertically) {
+            Icon(Icons.Default.Info, contentDescription = null, tint = Color(0xFFF9A825), modifier = Modifier.size(18.dp))
+            Spacer(Modifier.width(8.dp))
+            Text(text, style = MaterialTheme.typography.bodySmall, color = Color(0xFF5D4037))
+        }
+    }
+}
+
+
+/** Open orders whose pickup is close to where the current trip ends (to take next). */
+private fun nextOrdersNear(state: KgTaxiUiState, active: DriverIncomingOrder): List<DriverIncomingOrder> =
+    state.driverRadarOrders.filter { it.id != active.id && KgGeoCatalog.haversineKm(active.dropoffPoint, it.pickupPoint) <= 3.0 }
+        .sortedBy { KgGeoCatalog.haversineKm(active.dropoffPoint, it.pickupPoint) }
+
+@Composable
+private fun DriverRadarChip(label: String, onClick: () -> Unit) {
+    Surface(onClick = onClick, shape = RoundedCornerShape(18.dp), color = UberBlue, shadowElevation = 4.dp, modifier = Modifier.testTag("driver_radar_chip")) {
+        Row(Modifier.padding(horizontal = 12.dp, vertical = 8.dp), verticalAlignment = Alignment.CenterVertically) {
+            Icon(Icons.Default.FormatListBulleted, contentDescription = null, tint = Color.White, modifier = Modifier.size(16.dp))
+            Spacer(Modifier.width(4.dp))
+            Text(label, style = MaterialTheme.typography.labelLarge, color = Color.White)
+        }
+    }
+}
+
+/** All open orders to choose from; during a trip — the ones near the drop-off, to take next. */
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun DriverRadarSheet(state: KgTaxiUiState, onTake: (DriverIncomingOrder) -> Unit, onDismiss: () -> Unit) {
+    val active = state.driverAcceptedOrder
+    val list = if (active != null) nextOrdersNear(state, active) else state.driverRadarOrders.sortedBy { it.pickupDistanceKm }
+    ModalBottomSheet(onDismissRequest = onDismiss) {
+        Column(
+            modifier = Modifier.fillMaxWidth().verticalScroll(rememberScrollState()).padding(horizontal = 16.dp).padding(bottom = 24.dp),
+            verticalArrangement = Arrangement.spacedBy(10.dp)
+        ) {
+            Text(if (active != null) "Следующий заказ рядом с высадкой" else "Заказы рядом", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.ExtraBold)
+            if (active != null) Text("Заказ начнётся сразу после текущей поездки. Пассажир увидит, что вы приедете после неё.", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            if (list.isEmpty()) Text("Сейчас подходящих заказов нет.", color = MaterialTheme.colorScheme.onSurfaceVariant)
+            list.forEach { o ->
+                Surface(shape = RoundedCornerShape(16.dp), color = MaterialTheme.colorScheme.surfaceVariant, modifier = Modifier.fillMaxWidth()) {
+                    Column(Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Text("+${o.upfrontNetEarningsSom} сом", fontWeight = FontWeight.Black, color = UberGreen, modifier = Modifier.weight(1f))
+                            Text(o.tariffName, style = MaterialTheme.typography.labelMedium)
+                        }
+                        Text("Подача ${o.pickupDistanceKm} км • ${o.passengerName} ${ratingLabel(o.passengerRating, o.passengerTrips)}", style = MaterialTheme.typography.bodySmall)
+                        Text(o.pickupAddress, fontWeight = FontWeight.SemiBold, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                        Text("→ ${o.dropoffAddress}", maxLines = 1, overflow = TextOverflow.Ellipsis)
+                        o.passengerWishes?.let { Text(it, style = MaterialTheme.typography.bodySmall, color = Color(0xFF8D6E00)) }
+                        Button(
+                            onClick = { onTake(o) },
+                            colors = ButtonDefaults.buttonColors(containerColor = KgTurquoise),
+                            modifier = Modifier.align(Alignment.End).testTag("radar_take_${o.id}")
+                        ) { Text(if (active != null) "Взять следующим" else "Взять") }
+                    }
+                }
+            }
+        }
+    }
 }

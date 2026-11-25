@@ -48,7 +48,9 @@ fun ActiveTripCard(
     modifier: Modifier = Modifier,
     /** Real rides: ask the driver to change the route (new address and optional stop). */
     onRequestRouteChange: ((com.example.data.model.GeoPoint, com.example.data.model.GeoPoint?) -> Unit)? = null,
-    routeRequestStatus: String? = null
+    routeRequestStatus: String? = null,
+    /** Phones of close people who should get the trip. */
+    closePhones: List<String> = emptyList()
 ) {
     val context = LocalContext.current
     var showEditDestDialog by remember { mutableStateOf(false) }
@@ -563,6 +565,26 @@ fun ActiveTripCard(
                     Icon(Icons.Default.Share, contentDescription = null, modifier = Modifier.size(18.dp))
                     Spacer(Modifier.width(4.dp))
                     Text("Поделиться", maxLines = 1)
+                }
+            }
+
+            if (closePhones.isNotEmpty()) {
+                OutlinedButton(
+                    onClick = {
+                        val text = "Я еду на KG Taxi: ${ride.pickupAddress} → ${ride.dropoffAddress}. " +
+                            (if (ride.driverCar.isNotBlank()) "Водитель ${ride.driverName}, ${ride.driverCar}. " else "") +
+                            "Маршрут: https://www.google.com/maps/dir/?api=1&destination=${ride.dropoffPoint.lat},${ride.dropoffPoint.lng}"
+                        val sms = Intent(Intent.ACTION_SENDTO, android.net.Uri.parse("smsto:" + closePhones.joinToString(";"))).apply {
+                            putExtra("sms_body", text)
+                        }
+                        runCatching { context.startActivity(sms) }
+                    },
+                    shape = RoundedCornerShape(12.dp),
+                    modifier = Modifier.fillMaxWidth().testTag("send_trip_to_close")
+                ) {
+                    Icon(Icons.Default.FamilyRestroom, contentDescription = null, modifier = Modifier.size(18.dp))
+                    Spacer(Modifier.width(6.dp))
+                    Text("Отправить поездку близким (${closePhones.size})")
                 }
             }
 

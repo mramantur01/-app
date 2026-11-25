@@ -27,7 +27,10 @@ data class OwnerApplication(
     val payPhone: String,
     val tariffs: List<String>,
     val status: String,
-    val createdAtMillis: Long
+    val createdAtMillis: Long,
+    val birthDate: String = "",
+    val workType: String = "",
+    val insuranceUntil: String = ""
 )
 
 data class OwnerDriver(
@@ -95,7 +98,10 @@ class OwnerRepository(context: Context) {
                         payPhone = d.getString("payPhone").orEmpty(),
                         tariffs = (d.get("tariffs") as? List<String>).orEmpty(),
                         status = d.getString("status") ?: "pending",
-                        createdAtMillis = d.getTimestamp("createdAt")?.toDate()?.time ?: 0L
+                        createdAtMillis = d.getTimestamp("createdAt")?.toDate()?.time ?: 0L,
+                        birthDate = d.getString("birthDate").orEmpty(),
+                        workType = d.getString("workType").orEmpty(),
+                        insuranceUntil = d.getString("insuranceUntil").orEmpty()
                     )
                 }
             }

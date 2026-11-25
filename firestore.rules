@@ -391,7 +391,8 @@ service cloud.firestore {
       allow get: if isOwner(uid) || isAdmin();
       allow list: if isAdmin();
       allow create, update: if isOwner(uid) &&
-                               incoming().keys().hasOnly(['userId', 'type', 'fullName', 'phone', 'passportNumber', 'createdAt']) &&
+                               incoming().keys().hasOnly(['userId', 'type', 'fullName', 'phone', 'passportNumber', 'createdAt', 'photoCheckAt']) &&
+                               (!('photoCheckAt' in incoming()) || isValidTimestamp(incoming().photoCheckAt)) &&
                                incoming().userId == uid &&
                                incoming().type in ['passenger', 'driver'] &&
                                incoming().fullName is string && incoming().fullName.size() >= 2 && incoming().fullName.size() <= 80 &&
@@ -404,7 +405,7 @@ service cloud.firestore {
       match /photos/{kind} {
         allow read: if isOwner(uid) || isAdmin();
         allow create, update: if isOwner(uid) &&
-                                 kind in ['passport', 'passport_back', 'selfie_passport', 'license', 'license_back', 'driver_face', 'car_front', 'car_back', 'car_left', 'car_right', 'car_interior'] &&
+                                 kind in ['passport', 'passport_back', 'selfie_passport', 'license', 'license_back', 'insurance', 'no_criminal', 'driver_face', 'car_front', 'car_back', 'car_left', 'car_right', 'car_interior'] &&
                                  incoming().keys().hasOnly(['kind', 'data', 'createdAt']) &&
                                  incoming().kind == kind &&
                                  incoming().data is string && incoming().data.size() > 100 && incoming().data.size() < 900000 &&
@@ -437,7 +438,11 @@ service cloud.firestore {
                                incoming().keys().hasOnly(['userId', 'fullName', 'phone', 'city', 'car', 'plate',
                                                           'licenseNumber', 'experienceYears', 'payPhone',
                                                           'passportNumber', 'carMake', 'carModel', 'carYear',
-                                                          'carColor', 'tariffs', 'status', 'createdAt']) &&
+                                                          'carColor', 'tariffs', 'status', 'createdAt',
+                                                          'birthDate', 'workType', 'insuranceUntil']) &&
+                               (!('birthDate' in incoming()) || (incoming().birthDate is string && incoming().birthDate.size() <= 10)) &&
+                               (!('workType' in incoming()) || (incoming().workType is string && incoming().workType.size() <= 30)) &&
+                               (!('insuranceUntil' in incoming()) || (incoming().insuranceUntil is string && incoming().insuranceUntil.size() <= 10)) &&
                                (!('carYear' in incoming()) || (incoming().carYear is int && incoming().carYear >= 1990 && incoming().carYear <= 2100)) &&
                                (!('tariffs' in incoming()) || (incoming().tariffs is list && incoming().tariffs.size() <= 25)) &&
                                incoming().userId == uid &&

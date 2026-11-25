@@ -102,7 +102,9 @@ fun DriverCabinScreen(
                     onSetRadius = viewModel::setDriverPickupRadius,
                     onSetVoice = viewModel::setDriverVoice,
                     onSetNightMap = viewModel::setDriverNightMap,
-                    onSetHome = viewModel::setDriverHome
+                    onSetHome = viewModel::setDriverHome,
+                    onSetMinRating = viewModel::setDriverMinPassengerRating,
+                    onTakeOrder = viewModel::acceptNextDriverOrder
                 )
 
                 DriverCabinTab.EARNINGS -> DriverEarningsTabContent(
@@ -559,6 +561,8 @@ private fun DriverVehicleAndDocsTabContent(
             }
         }
 
+        DriverPhotoCheckCard(state = state, viewModel = viewModel)
+
         // Vehicle Documents & Insurance (ОСАГО / Техосмотр / Права)
         Text("Документы и страховка", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
         DriverDocDatesCard(
@@ -893,6 +897,7 @@ private fun DriverProStatusTabContent(
                 Text("Табличка в аэропорту", maxLines = 1)
             }
         }
+        DriverQualityCard(state = state)
         DriverHelpCard(sending = state.supportSending, onSend = { viewModel.sendSupportMessage(it, null) })
     }
 }
@@ -1145,5 +1150,114 @@ private fun DriverHelpCard(sending: Boolean, onSend: (String) -> Unit) {
             confirmButton = { Button(onClick = { onSend(text); text = ""; write = false }, enabled = text.isNotBlank() && !sending) { Text("Отправить") } },
             dismissButton = { TextButton(onClick = { write = false }) { Text("Отмена") } }
         )
+    }
+}
+
+
+/** Photo check every 30 days: the car from all sides, the interior and the driver's face. */
+@Composable
+private fun DriverPhotoCheckCard(state: KgTaxiUiState, viewModel: KgTaxiViewModel) {
+    val reg = state.registration
+    if (reg?.type != "driver") return
+    val at = reg.photoCheckAt
+    val next = at?.plus(com.example.ui.PHOTO_CHECK_DAYS * 24 * 3600_000L)
+    val overdue = viewModel.photoCheckOverdue()
+    val daysLeft = next?.let { ((it - System.currentTimeMillis()) / (24 * 3600_000L)).toInt() }
+    var open by remember { mutableStateOf(false) }
+    val fmt = remember { java.text.SimpleDateFormat("dd.MM.yyyy", Locale.US) }
+    Surface(
+        shape = RoundedCornerShape(18.dp),
+        color = if (overdue) Color(0xFFFFEBEE) else MaterialTheme.colorScheme.surfaceVariant,
+        modifier = Modifier.fillMaxWidth().testTag("driver_photo_check_card")
+    ) {
+        Column(modifier = Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Icon(Icons.Default.PhotoCamera, contentDescription = null, tint = if (overdue) UberRed else KgTurquoiseDark)
+                Spacer(Modifier.width(8.dp))
+                Text("Фотоконтроль", fontWeight = FontWeight.Bold, modifier = Modifier.weight(1f))
+            }
+            Text(
+                when {
+                    overdue -> "Срок прошёл. Пока не пройдёте фотоконтроль, выйти на линию нельзя."
+                    at != null && daysLeft != null -> "Пройден ${fmt.format(java.util.Date(at))}. Следующий до ${fmt.format(java.util.Date(next))} (осталось $daysLeft дн.)"
+                    else -> "Раз в 30 дней: машина со всех сторон, салон и ваше лицо."
+                },
+                style = MaterialTheme.typography.bodySmall,
+                color = if (overdue) UberRed else MaterialTheme.colorScheme.onSurfaceVariant
+            )
+            Button(
+                onClick = { open = true },
+                colors = ButtonDefaults.buttonColors(containerColor = if (overdue) UberRed else KgTurquoise),
+                modifier = Modifier.fillMaxWidth().testTag("driver_photo_check_open")
+            ) { Text(if (overdue) "Пройти фотоконтроль" else "Пройти заранее") }
+        }
+    }
+    if (open) {
+        val photos = remember { mutableStateMapOf<com.example.data.firebase.RegPhoto, android.net.Uri>() }
+        androidx.compose.ui.window.Dialog(
+            onDismissRequest = { if (!state.driverPhotoCheckSending) open = false },
+            properties = androidx.compose.ui.window.DialogProperties(usePlatformDefaultWidth = false)
+        ) {
+            Surface(color = MaterialTheme.colorScheme.background, modifier = Modifier.fillMaxSize()) {
+                Column(Modifier.fillMaxSize().statusBarsPadding().navigationBarsPadding()) {
+                    Row(Modifier.padding(8.dp), verticalAlignment = Alignment.CenterVertically) {
+                        IconButton(onClick = { open = false }, enabled = !state.driverPhotoCheckSending) { Icon(Icons.Default.Close, contentDescription = "Закрыть") }
+                        Text("Фотоконтроль", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
+                    }
+                    Column(
+                        Modifier.weight(1f).verticalScroll(rememberScrollState()).padding(horizontal = 16.dp),
+                        verticalArrangement = Arrangement.spacedBy(12.dp)
+                    ) {
+                        Text("Снимите камерой прямо сейчас: номер должен быть виден спереди и сзади.", style = MaterialTheme.typography.bodySmall)
+                        com.example.data.firebase.RegPhoto.PHOTO_CHECK.forEach { k ->
+                            PhotoSlot(k, photos[k]) { photos[k] = it }
+                        }
+                    }
+                    Button(
+                        onClick = {
+                            viewModel.submitDriverPhotoCheck(photos.toMap())
+                            open = false
+                        },
+                        enabled = !state.driverPhotoCheckSending && com.example.data.firebase.RegPhoto.PHOTO_CHECK.all { photos[it] != null },
+                        colors = ButtonDefaults.buttonColors(containerColor = KgTurquoise),
+                        modifier = Modifier.fillMaxWidth().padding(16.dp).height(52.dp).testTag("driver_photo_check_send")
+                    ) { Text("Отправить на проверку", fontWeight = FontWeight.Bold) }
+                }
+            }
+        }
+    }
+}
+
+
+/** Rating, trips and how often the driver cancels (last 100 orders). */
+@Composable
+private fun DriverQualityCard(state: KgTaxiUiState) {
+    val trips = state.driverHistory.count { it.status == com.example.data.firebase.RideStatus.COMPLETED }
+    val rate = state.driverCancelRatePercent
+    Surface(shape = RoundedCornerShape(18.dp), color = MaterialTheme.colorScheme.surfaceVariant, modifier = Modifier.fillMaxWidth().testTag("driver_quality_card")) {
+        Column(Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            Text("Качество работы", fontWeight = FontWeight.Bold)
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                QualityTile("Рейтинг", state.driverRatingAvg?.let { String.format(Locale.US, "%.2f", it) } ?: "новый", Modifier.weight(1f))
+                QualityTile("Поездок", "$trips", Modifier.weight(1f))
+                QualityTile("Отмены", "$rate%", Modifier.weight(1f), if (rate > 10) UberRed else null)
+            }
+            Text(
+                if (rate > 10) "Много отмен. Отменяйте только по серьёзной причине — пассажиры ждут."
+                else "Отмены считаются по последним 100 заказам. Держите меньше 10%.",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+        }
+    }
+}
+
+@Composable
+private fun QualityTile(label: String, value: String, modifier: Modifier, color: Color? = null) {
+    Surface(shape = RoundedCornerShape(12.dp), color = MaterialTheme.colorScheme.surface, modifier = modifier) {
+        Column(Modifier.padding(10.dp)) {
+            Text(label, style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            Text(value, fontWeight = FontWeight.Bold, color = color ?: MaterialTheme.colorScheme.onSurface)
+        }
     }
 }

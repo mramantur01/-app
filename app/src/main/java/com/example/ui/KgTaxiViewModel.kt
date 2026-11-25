@@ -196,6 +196,16 @@ data class KgTaxiUiState(
     val driverRouteRequest: com.example.data.model.RouteRequest? = null,
     /** Passenger side: "pending", "accepted", "rejected" or null. */
     val passengerRouteRequestStatus: String? = null,
+    val driverPhotoCheckSending: Boolean = false,
+    /** All open orders that pass the driver's filters (to choose from a list). */
+    val driverRadarOrders: List<DriverIncomingOrder> = emptyList(),
+    val driverMinPassengerRating: Double = 0.0,
+    /** Share of accepted orders the driver cancelled (last 100), percent. */
+    val driverCancelRatePercent: Int = 0,
+    /** Special needs chosen for the next order (keys of ACCESSIBILITY_OPTIONS). */
+    val passengerAccessibility: Set<String> = emptySet(),
+    /** Family and trusted contacts. */
+    val passengerPeople: List<com.example.util.ClosePerson> = emptyList(),
     /** Owner panel: each driver's balance, by uid. */
     val ownerDriverBalances: Map<String, com.example.data.model.DriverBalance> = emptyMap(),
     val selectedVenueId: String = KgGeoCatalog.foodVenues.first().id,
@@ -433,6 +443,9 @@ data class KgTaxiUiState(
         }
 }
 
+/** Drivers repeat the photo check of the car and themselves this often. */
+const val PHOTO_CHECK_DAYS = 30
+
 class KgTaxiViewModel(
     private val appContext: Context,
     private val dao: KgTaxiDao,
@@ -483,6 +496,7 @@ class KgTaxiViewModel(
     private var cloudObserverJobs: MutableList<Job> = mutableListOf()
 
     init {
+        _uiState.update { it.copy(passengerPeople = com.example.util.PassengerPeople.load(appContext)) }
         SoundAndNotificationManager.ensureChannels(appContext)
         seedAndObserveLocalDatabase()
         observePreferences()
@@ -993,7 +1007,75 @@ class KgTaxiViewModel(
         val b = com.example.data.model.DriverBalance.compute(
             driverHistoryCache, s.ownerBankConfig.commissionPercent, s.appConfig.goalTrips, s.appConfig.goalBonusSom, driverPaidSom
         )
-        _uiState.update { it.copy(driverBalance = b) }
+        val mine = driverHistoryCache.filter { it.status != RideStatus.SEARCHING && it.status != RideStatus.BOOKED }.take(100)
+        val byDriver = mine.count { it.status == RideStatus.CANCELLED && it.cancelReason?.startsWith("Водитель") == true }
+        val rate = if (mine.isEmpty()) 0 else (byDriver * 100 / mine.size)
+        _uiState.update { it.copy(driverBalance = b, driverCancelRatePercent = rate) }
+    }
+
+    fun setDriverMinPassengerRating(v: Double) {
+        DriverWorkPrefs.setMinRating(appContext, v)
+        _uiState.update { it.copy(driverMinPassengerRating = v) }
+    }
+
+    private var queuedRideId: String? = null
+    private var queuedWatchJob: Job? = null
+
+    /** Take one more order while on a trip: it starts right after the current one ("цепочка"). */
+    fun acceptNextDriverOrder(order: DriverIncomingOrder) {
+        if (driverRideId == null || _uiState.value.driverAcceptedOrder == null) {
+            acceptDriverOrder(order)
+            return
+        }
+        if (queuedRideId != null) {
+            _uiState.update { it.copy(statusBanner = "Следующий заказ уже взят") }
+            return
+        }
+        viewModelScope.launch {
+            val res = rides.acceptAsDriver(
+                rideId = order.id,
+                driverName = _uiState.value.profile.displayName,
+                driverCar = verifiedDriverCar,
+                driverPlate = verifiedDriverPlate,
+                driverPayPhone = verifiedDriverPayPhone,
+                driverRatingAvg = _uiState.value.driverRatingAvg,
+                driverTrips = _uiState.value.driverHistory.count { it.status == RideStatus.COMPLETED }
+            )
+            res.onSuccess {
+                queuedRideId = order.id
+                _uiState.update {
+                    it.copy(
+                        driverQueuedNextOrder = order,
+                        driverRadarOrders = it.driverRadarOrders.filterNot { o -> o.id == order.id },
+                        driverIncomingOrders = it.driverIncomingOrders.filterNot { o -> o.id == order.id },
+                        statusBanner = "Следующий заказ взят: начнётся после этой поездки"
+                    )
+                }
+                queuedWatchJob?.cancel()
+                queuedWatchJob = viewModelScope.launch {
+                    rides.observeRide(order.id).collect { shared ->
+                        if (shared?.status == RideStatus.CANCELLED && queuedRideId == order.id) {
+                            queuedRideId = null
+                            _uiState.update { it.copy(driverQueuedNextOrder = null, statusBanner = "Пассажир следующего заказа отменил его") }
+                            queuedWatchJob?.cancel()
+                        }
+                    }
+                }
+            }.onFailure { e ->
+                _uiState.update { it.copy(statusBanner = e.message ?: "Не удалось взять заказ") }
+            }
+        }
+    }
+
+    /** After the current ride ends, the queued ride becomes the current one. */
+    private fun promoteQueuedRide() {
+        val next = queuedRideId ?: return
+        queuedRideId = null
+        queuedWatchJob?.cancel()
+        driverRideId = next
+        startDriverLocationSharing(next)
+        watchDriverRide(next)
+        startDriverChat(next)
     }
 
     private fun loadDriverWorkPrefs() {
@@ -1002,6 +1084,7 @@ class KgTaxiViewModel(
         _uiState.update {
             it.copy(
                 driverPickupRadiusKm = DriverWorkPrefs.radiusKm(c),
+                driverMinPassengerRating = DriverWorkPrefs.minRating(c),
                 driverVoiceAnnounce = DriverWorkPrefs.voice(c),
                 driverNightMapAuto = DriverWorkPrefs.nightMap(c),
                 driverHomePoint = home?.first,
@@ -1019,6 +1102,49 @@ class KgTaxiViewModel(
                 }
             }
         }
+    }
+
+    /** Driver photo check: needed every 30 days (only for drivers registered in the app). */
+    fun photoCheckOverdue(now: Long = System.currentTimeMillis()): Boolean {
+        val reg = _uiState.value.registration ?: return false
+        if (reg.type != "driver") return false
+        val at = reg.photoCheckAt ?: return false
+        return now - at > PHOTO_CHECK_DAYS * 24 * 3600_000L
+    }
+
+    fun submitDriverPhotoCheck(photos: Map<com.example.data.firebase.RegPhoto, android.net.Uri>) {
+        _uiState.update { it.copy(driverPhotoCheckSending = true) }
+        viewModelScope.launch {
+            val encoded = mutableMapOf<com.example.data.firebase.RegPhoto, String>()
+            for ((kind, uri) in photos) {
+                val data = registrationRepo.encodePhoto(uri)
+                if (data == null) {
+                    _uiState.update { it.copy(driverPhotoCheckSending = false, statusBanner = "Не удалось прочитать фото «${kind.title}». Снимите ещё раз.") }
+                    return@launch
+                }
+                encoded[kind] = data
+            }
+            val res = registrationRepo.submitPhotoCheck(encoded)
+            _uiState.update {
+                it.copy(
+                    driverPhotoCheckSending = false,
+                    registration = if (res.isSuccess) it.registration?.copy(photoCheckAt = System.currentTimeMillis()) else it.registration,
+                    statusBanner = if (res.isSuccess) "Фотоконтроль пройден. Следующий — через $PHOTO_CHECK_DAYS дней." else "Не удалось отправить фото. Проверьте интернет."
+                )
+            }
+        }
+    }
+
+    fun togglePassengerAccessibility(key: String) {
+        _uiState.update {
+            val cur = it.passengerAccessibility
+            it.copy(passengerAccessibility = if (key in cur) cur - key else cur + key)
+        }
+    }
+
+    fun savePassengerPeople(list: List<com.example.util.ClosePerson>) {
+        com.example.util.PassengerPeople.save(appContext, list)
+        _uiState.update { it.copy(passengerPeople = list.take(com.example.util.PassengerPeople.MAX)) }
     }
 
     fun setDriverPickupRadius(km: Int) {
@@ -2503,6 +2629,8 @@ class KgTaxiViewModel(
                 "помочь с багажом".takeIf { s.preferences.luggageHelp },
                 "с животным".takeIf { s.preferences.petFriendly }
             ).takeIf { it.isNotEmpty() }?.joinToString(", ", prefix = "Пожелания: "),
+            com.example.util.ACCESSIBILITY_OPTIONS.filter { it.first in s.passengerAccessibility }.map { it.second.lowercase() }
+                .takeIf { it.isNotEmpty() }?.joinToString(", ", prefix = "Нужна помощь: "),
             "PIN $pin"
         ).joinToString(" • ")
 
@@ -2910,6 +3038,10 @@ class KgTaxiViewModel(
                 _uiState.update { it.copy(driverRestUntil = rest, statusBanner = "Вы были на линии 12 часов. Отдых до $t.") }
                 return
             }
+            if (FeatureFlags.REAL_RIDES && photoCheckOverdue()) {
+                _uiState.update { it.copy(statusBanner = "Пройдите фотоконтроль во вкладке «Авто» — раз в 30 дней, это 2 минуты.") }
+                return
+            }
             val limit = _uiState.value.appConfig.debtLimitSom
             val debt = _uiState.value.driverBalance.debtSom
             if (FeatureFlags.REAL_RIDES && limit > 0 && debt > limit) {
@@ -3016,13 +3148,14 @@ class KgTaxiViewModel(
                 val home = st.driverHomePoint
                 val orders = open.map { it.toDriverOrder(myPoint) }
                     .filter { o -> st.driverPickupRadiusKm <= 0 || o.serviceType == ServiceType.INTERCITY || o.pickupDistanceKm <= st.driverPickupRadiusKm }
+                    .filter { o -> st.driverMinPassengerRating <= 0.0 || o.passengerTrips <= 0 || o.passengerRating <= 0.0 || o.passengerRating >= st.driverMinPassengerRating }
                     .filter { o ->
                         !st.driverHomeModeOn || home == null ||
                             KgGeoCatalog.haversineKm(o.dropoffPoint, home) < KgGeoCatalog.haversineKm(myPoint, home) - 1.0
                     }
                 val fresh = orders.map { it.id }.toSet() - knownIds
                 knownIds = orders.map { it.id }.toSet()
-                _uiState.update { it.copy(driverIncomingOrders = orders) }
+                _uiState.update { it.copy(driverIncomingOrders = orders.filterNot { o -> o.id == queuedRideId }, driverRadarOrders = orders.filterNot { o -> o.id == queuedRideId }) }
                 if (fresh.isNotEmpty() && _uiState.value.driverAcceptedOrder == null) {
                     SoundAndNotificationManager.playCue(SoundCue.DRIVER_ASSIGNED, _uiState.value.soundEnabled)
                     SoundAndNotificationManager.vibrateNewOrder(appContext)
@@ -3076,7 +3209,9 @@ class KgTaxiViewModel(
             paymentMethodLabel = if (paymentMethod == "CARD") "Оплата по карте" else "Наличные или QR",
             passengerPin = pin.ifBlank { "—" },
             passengerPhone = passengerPhone,
-            meetAndGreetSign = comment?.substringBefore(" • PIN")?.takeIf { it.isNotBlank() && !it.startsWith("PIN") }
+            meetAndGreetSign = comment?.substringBefore(" • PIN")?.takeIf { it.isNotBlank() && !it.startsWith("PIN") },
+            passengerWishes = comment?.split(" • ")?.filter { it.startsWith("Пожелания:") || it.startsWith("Нужна помощь:") }
+                ?.joinToString("\n")?.takeIf { it.isNotBlank() }
         )
     }
 
@@ -3201,7 +3336,7 @@ class KgTaxiViewModel(
             it.copy(
                 driverActivityScore = (it.driverActivityScore - 4).coerceAtLeast(0),
                 driverIncomingOrders = remaining,
-                statusBanner = "Заказ пропущен (-4 Активность)"
+                statusBanner = "Заказ пропущен"
             )
         }
         if (_uiState.value.driverIncomingOrders.isEmpty()) {
@@ -3310,16 +3445,19 @@ class KgTaxiViewModel(
 
     private fun applyDriverCancel() {
         driverWaitingTimerJob?.cancel()
+        val queued = _uiState.value.driverQueuedNextOrder
         _uiState.update {
             it.copy(
-                driverAcceptedOrder = null,
+                driverAcceptedOrder = queued,
+                driverQueuedNextOrder = null,
                 driverBackToBackOffer = null,
                 driverOrderStage = DriverOrderStage.EN_ROUTE_TO_PICKUP,
                 driverOrderWaitingSeconds = 0,
                 driverActivityScore = (it.driverActivityScore - 8).coerceAtLeast(0),
-                statusBanner = "Заказ отменён (-8 Активность)"
+                statusBanner = if (queued != null) "Заказ отменён. Едем к следующему пассажиру." else "Заказ отменён"
             )
         }
+        if (queued != null) promoteQueuedRide()
         generateDriverIncomingOrders(_uiState.value.selectedCity)
     }
 
@@ -3329,6 +3467,7 @@ class KgTaxiViewModel(
                 if (pushDriverStatus(RideStatus.COMPLETED)) {
                     finishDriverRealRide()
                     applyDriverComplete()
+                    promoteQueuedRide()
                 }
             }
             return
@@ -3385,7 +3524,7 @@ class KgTaxiViewModel(
         if (queuedNext == null) {
             generateDriverIncomingOrders(_uiState.value.selectedCity)
         }
-        if (_uiState.value.driverLastOrder && _uiState.value.driverOnline) {
+        if (_uiState.value.driverLastOrder && _uiState.value.driverOnline && queuedNext == null) {
             toggleDriverOnline()
             _uiState.update { it.copy(statusBanner = "Последний заказ выполнен. Вы ушли с линии.") }
         }

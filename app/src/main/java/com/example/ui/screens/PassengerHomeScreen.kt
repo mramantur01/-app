@@ -183,7 +183,8 @@ private fun PassengerControlSheet(
                 onCompleteNow = viewModel::completeActiveRideNow,
                 onCancelRide = { reason -> viewModel.cancelActiveRide(reason) },
                 onRequestRouteChange = if (com.example.FeatureFlags.REAL_RIDES) { drop, stop -> viewModel.requestRouteChange(drop, stop) } else null,
-                routeRequestStatus = state.passengerRouteRequestStatus
+                routeRequestStatus = state.passengerRouteRequestStatus,
+                closePhones = state.passengerPeople.filter { it.shareTrips }.map { it.phone }
             )
             return@Column
         }
@@ -731,7 +732,16 @@ private fun PassengerControlSheet(
                         onClick = { viewModel.updatePreferences { it.copy(petFriendly = !it.petFriendly) } },
                         label = { Text(strings.prefPet) }
                     )
-                    FilterChip(
+                    com.example.util.ACCESSIBILITY_OPTIONS.forEach { (key, label) ->
+                        FilterChip(
+                            selected = key in state.passengerAccessibility,
+                            onClick = { viewModel.togglePassengerAccessibility(key) },
+                            label = { Text(label.substringBefore(" —")) },
+                            leadingIcon = if (key == "wheelchair") ({ Icon(Icons.Default.Accessible, contentDescription = null, modifier = Modifier.size(16.dp)) }) else null,
+                            modifier = Modifier.testTag("access_$key")
+                        )
+                    }
+                    if (com.example.FeatureFlags.DEMO_EXTRAS) FilterChip(
                         selected = state.splitCount > 1,
                         onClick = { viewModel.setSplitCount(if (state.splitCount >= 4) 1 else state.splitCount + 1) },
                         label = { Text("${strings.splitFare}: ÷${state.splitCount}") },
@@ -1237,6 +1247,14 @@ private fun PassengerControlSheet(
             text = {
                 Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                     Text("Водитель увидит имя получателя, а PIN безопасности можно переслать ему в 1 клик.", style = MaterialTheme.typography.bodySmall)
+                    if (state.passengerPeople.isNotEmpty()) {
+                        Text("Близкие", style = MaterialTheme.typography.labelMedium)
+                        Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                            state.passengerPeople.forEach { p ->
+                                AssistChip(onClick = { rName = p.name; rPhone = p.phone }, label = { Text(p.name.ifBlank { p.phone }) })
+                            }
+                        }
+                    }
                     OutlinedTextField(value = rName, onValueChange = { rName = it }, label = { Text("Имя получателя") }, singleLine = true, modifier = Modifier.fillMaxWidth())
                     OutlinedTextField(value = rPhone, onValueChange = { rPhone = it }, label = { Text("Телефон (+996...)") }, singleLine = true, modifier = Modifier.fillMaxWidth())
                 }

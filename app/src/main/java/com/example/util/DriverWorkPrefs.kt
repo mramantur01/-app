@@ -21,6 +21,10 @@ object DriverWorkPrefs {
     fun radiusKm(c: Context): Int = p(c).getInt("radius", 0)
     fun setRadiusKm(c: Context, km: Int) = p(c).edit().putInt("radius", km).apply()
 
+    /** Minimal passenger rating (0 = any). New passengers without trips always pass. */
+    fun minRating(c: Context): Double = p(c).getFloat("min_rating", 0f).toDouble()
+    fun setMinRating(c: Context, v: Double) = p(c).edit().putFloat("min_rating", v.toFloat()).apply()
+
     fun voice(c: Context): Boolean = p(c).getBoolean("voice", true)
     fun setVoice(c: Context, on: Boolean) = p(c).edit().putBoolean("voice", on).apply()
 

@@ -324,7 +324,9 @@ data class DriverIncomingOrder(
     /** Passenger phone for a call (real rides, if the passenger filled it in). */
     val passengerPhone: String = "",
     /** Completed trips of the passenger (0 = new passenger). */
-    val passengerTrips: Int = 0
+    val passengerTrips: Int = 0,
+    /** Passenger's wishes and special needs (from the order comment). */
+    val passengerWishes: String? = null
 )
 
 data class FoodCartEntry(

@@ -2,6 +2,7 @@ package com.example.ui.screens
 
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
@@ -336,17 +337,24 @@ private fun MyRidesSheet(
     }
     complainRide?.let { ride ->
         var text by androidx.compose.runtime.remember { androidx.compose.runtime.mutableStateOf("") }
+        var reason by androidx.compose.runtime.remember { androidx.compose.runtime.mutableStateOf<String?>(null) }
         AlertDialog(
             onDismissRequest = { complainRide = null },
             title = { Text("Жалоба на поездку") },
             text = {
                 Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                     Text("${ride.pickupAddress} → ${ride.dropoffAddress}", style = MaterialTheme.typography.bodySmall)
+                    Text("Что не так?", style = MaterialTheme.typography.labelMedium)
+                    Row(Modifier.horizontalScroll(androidx.compose.foundation.rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                        listOf("Цена выше обычной", "Водитель", "Машина", "Маршрут", "Забыл вещи", "Безопасность").forEach { r ->
+                            FilterChip(selected = reason == r, onClick = { reason = r }, label = { Text(r) })
+                        }
+                    }
                     OutlinedTextField(value = text, onValueChange = { text = it.take(1000) }, label = { Text("Что случилось?") }, minLines = 3, modifier = Modifier.fillMaxWidth())
                 }
             },
             confirmButton = {
-                Button(onClick = { viewModel.sendSupportMessage(text, ride.id); complainRide = null }, enabled = text.isNotBlank()) { Text(com.example.i18n.t("Отправить", "Жөнөтүү")) }
+                Button(onClick = { viewModel.sendSupportMessage(listOfNotNull(reason?.let { "[$it]" }, text.trim().ifBlank { null }).joinToString(" "), ride.id); complainRide = null }, enabled = reason != null || text.isNotBlank()) { Text(com.example.i18n.t("Отправить", "Жөнөтүү")) }
             },
             dismissButton = { TextButton(onClick = { complainRide = null }) { Text(com.example.i18n.t("Отмена", "Жокко чыгаруу")) } }
         )

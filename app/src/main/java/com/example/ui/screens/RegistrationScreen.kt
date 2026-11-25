@@ -85,6 +85,9 @@ fun RegistrationScreen(
     var passport by rememberSaveable { mutableStateOf("") }
     var license by rememberSaveable { mutableStateOf("") }
     var experience by rememberSaveable { mutableStateOf("") }
+    var birthDate by rememberSaveable { mutableStateOf("") }
+    var workType by rememberSaveable { mutableStateOf("Самозанятый") }
+    var insuranceUntil by rememberSaveable { mutableStateOf("") }
     var payPhone by rememberSaveable { mutableStateOf("") }
     var city by rememberSaveable { mutableStateOf(defaultCity) }
     var vehicleType by rememberSaveable { mutableStateOf(com.example.data.model.VehicleType.CAR) }
@@ -181,6 +184,13 @@ fun RegistrationScreen(
                         )
                         RegField(fullName, { fullName = it }, "ФИО (как в паспорте)", "reg_full_name")
                         RegField(phone, { phone = it.filter { c -> c.isDigit() || c == '+' } }, "Телефон", "reg_phone", KeyboardType.Phone)
+                        RegField(birthDate, { birthDate = formatRuDateInput(it) }, "Дата рождения (ДД.ММ.ГГГГ)", "reg_birth", KeyboardType.Number)
+                        val age = ageFromRuDate(birthDate)
+                        if (birthDate.length == 10 && (age == null || age < MIN_DRIVER_AGE)) {
+                            Text("Водителем можно стать с $MIN_DRIVER_AGE лет", color = Color(0xFFC62828), style = MaterialTheme.typography.bodySmall)
+                        }
+                        Text("Как вы работаете", fontWeight = FontWeight.SemiBold, color = KgInk)
+                        ChipRow(listOf("Самозанятый", "ИП", "Через таксопарк"), workType) { workType = it }
                         Text("Город работы", fontWeight = FontWeight.SemiBold, color = KgInk)
                         ChipRow(KgGeoCatalog.cities.map { it.name }, city) { city = it }
                         CameraOnlyNote()
@@ -192,7 +202,16 @@ fun RegistrationScreen(
                         RegField(license, { license = it.uppercase().take(30) }, "Номер водительского удостоверения (ВУ)", "reg_license")
                         PhotoSlot(RegPhoto.LICENSE, photos[RegPhoto.LICENSE]) { photos[RegPhoto.LICENSE] = it }
                         PhotoSlot(RegPhoto.LICENSE_BACK, photos[RegPhoto.LICENSE_BACK]) { photos[RegPhoto.LICENSE_BACK] = it }
+                        PhotoSlot(RegPhoto.INSURANCE, photos[RegPhoto.INSURANCE]) { photos[RegPhoto.INSURANCE] = it }
+                        RegField(insuranceUntil, { insuranceUntil = formatRuDateInput(it) }, "ОСАГО действует до (ДД.ММ.ГГГГ)", "reg_insurance_until", KeyboardType.Number)
+                        if (insuranceUntil.length == 10 && (parseRuDate(insuranceUntil) ?: 0L) < System.currentTimeMillis()) {
+                            Text("Срок ОСАГО закончился — продлите полис", color = Color(0xFFC62828), style = MaterialTheme.typography.bodySmall)
+                        }
+                        PhotoSlot(RegPhoto.NO_CRIMINAL, photos[RegPhoto.NO_CRIMINAL]) { photos[RegPhoto.NO_CRIMINAL] = it }
                         RegField(experience, { experience = it.filter { c -> c.isDigit() }.take(2) }, "Стаж вождения, лет", "reg_experience", KeyboardType.Number)
+                        if (experience.isNotBlank() && (experience.toIntOrNull() ?: 0) < MIN_DRIVER_EXPERIENCE) {
+                            Text("Нужен стаж от $MIN_DRIVER_EXPERIENCE лет", color = Color(0xFFC62828), style = MaterialTheme.typography.bodySmall)
+                        }
                         RegField(payPhone, { payPhone = it.filter { c -> c.isDigit() || c == '+' } }, "Номер для переводов (MBank / O!Деньги), необязательно", "reg_pay_phone", KeyboardType.Phone)
                     }
 
@@ -257,7 +276,9 @@ fun RegistrationScreen(
                 RegStep.PASSENGER -> fullName.trim().length >= 3 && phone.count { it.isDigit() } >= 9 &&
                     passport.length >= 6 && RegPhoto.PASSENGER.all { photos[it] != null }
                 RegStep.DRIVER_DOCS -> fullName.trim().length >= 3 && phone.count { it.isDigit() } >= 9 &&
-                    passport.length >= 6 && license.length >= 6 && experience.isNotBlank() &&
+                    passport.length >= 6 && license.length >= 6 && (experience.toIntOrNull() ?: 0) >= MIN_DRIVER_EXPERIENCE &&
+                    (ageFromRuDate(birthDate) ?: 0) >= MIN_DRIVER_AGE &&
+                    (parseRuDate(insuranceUntil) ?: 0L) > System.currentTimeMillis() &&
                     RegPhoto.DRIVER_DOCS.all { photos[it] != null }
                 RegStep.DRIVER_CAR -> make.isNotBlank() && model.isNotBlank() && year != null && color.isNotBlank() &&
                     plate.length >= 5 && CarCatalog.tariffsFor(make, model, year ?: 0, vehicleType, com.example.data.model.DriverOptions(childSeat, ladyDriver, soberDriver, courier, wheelchair, loaders)).isNotEmpty()
@@ -271,7 +292,7 @@ fun RegistrationScreen(
                                 when (step) {
                                     RegStep.DRIVER_PHOTOS -> "Нужны все 5 фото"
                                     RegStep.PASSENGER -> "Заполните поля и снимите паспорт с двух сторон и селфи с паспортом"
-                                    RegStep.DRIVER_DOCS -> "Заполните поля и снимите все документы: обе стороны паспорта и прав, селфи с паспортом"
+                                    RegStep.DRIVER_DOCS -> "Нужно: возраст от $MIN_DRIVER_AGE лет, стаж от $MIN_DRIVER_EXPERIENCE лет, действующее ОСАГО и фото всех документов"
                                     RegStep.DRIVER_CAR -> "Выберите марку, модель, год, цвет и введите номер"
                                     else -> "Заполните все поля и добавьте фото документов"
                                 },
@@ -300,7 +321,10 @@ fun RegistrationScreen(
                                             carYear = year ?: 0,
                                             carColor = color,
                                             plate = plate,
-                                            tariffs = CarCatalog.tariffsFor(make, model, year ?: 0, vehicleType, com.example.data.model.DriverOptions(childSeat, ladyDriver, soberDriver, courier, wheelchair, loaders))
+                                            tariffs = CarCatalog.tariffsFor(make, model, year ?: 0, vehicleType, com.example.data.model.DriverOptions(childSeat, ladyDriver, soberDriver, courier, wheelchair, loaders)),
+                                            birthDate = birthDate,
+                                            workType = workType,
+                                            insuranceUntil = insuranceUntil
                                         ),
                                         photos.toMap()
                                     )
@@ -553,7 +577,7 @@ private fun CameraOnlyNote() {
 }
 
 @Composable
-private fun PhotoSlot(kind: RegPhoto, uri: Uri?, onPicked: (Uri) -> Unit) {
+internal fun PhotoSlot(kind: RegPhoto, uri: Uri?, onPicked: (Uri) -> Unit) {
     val context = LocalContext.current
     var pendingUri by remember { mutableStateOf<Uri?>(null) }
     val camera = rememberLauncherForActivityResult(ActivityResultContracts.TakePicture()) { ok ->
@@ -635,4 +659,38 @@ private fun OptionCheck(text: String, checked: Boolean, onChange: (Boolean) -> U
         )
         Text(text, color = KgInk, style = MaterialTheme.typography.bodyMedium)
     }
+}
+
+
+const val MIN_DRIVER_AGE = 21
+const val MIN_DRIVER_EXPERIENCE = 3
+
+/** Typing helper: keeps digits and puts dots, "01011990" -> "01.01.1990". */
+fun formatRuDateInput(raw: String): String {
+    val d = raw.filter { it.isDigit() }.take(8)
+    return buildString {
+        d.forEachIndexed { i, ch ->
+            if (i == 2 || i == 4) append('.')
+            append(ch)
+        }
+    }
+}
+
+/** "ДД.ММ.ГГГГ" -> millis at the start of that day, or null. */
+fun parseRuDate(s: String): Long? {
+    if (s.length != 10) return null
+    return runCatching {
+        val f = java.text.SimpleDateFormat("dd.MM.yyyy", java.util.Locale.US).apply { isLenient = false }
+        f.parse(s)?.time
+    }.getOrNull()
+}
+
+/** Full years from a birth date "ДД.ММ.ГГГГ". */
+fun ageFromRuDate(s: String): Int? {
+    val born = parseRuDate(s) ?: return null
+    val b = java.util.Calendar.getInstance().apply { timeInMillis = born }
+    val now = java.util.Calendar.getInstance()
+    var age = now.get(java.util.Calendar.YEAR) - b.get(java.util.Calendar.YEAR)
+    if (now.get(java.util.Calendar.DAY_OF_YEAR) < b.get(java.util.Calendar.DAY_OF_YEAR)) age--
+    return age.takeIf { it in 0..120 }
 }
