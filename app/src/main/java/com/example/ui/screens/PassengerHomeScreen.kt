@@ -1337,7 +1337,7 @@ private fun PassengerPreordersCard(
                     )
                     Text(
                         "${r.scheduledAtMillis?.let { com.example.util.formatDeparture(it) }.orEmpty()} • " +
-                            "${r.seats ?: 1} мест. • ${r.priceSom} сом",
+                            listOfNotNull(if (r.serviceType == "INTERCITY") "${r.seats ?: 1} мест." else r.tariffName, "${r.priceSom} сом").joinToString(" • "),
                         style = MaterialTheme.typography.bodyMedium
                     )
                     Text(

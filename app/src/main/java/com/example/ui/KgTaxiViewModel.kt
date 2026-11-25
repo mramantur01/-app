@@ -787,6 +787,10 @@ class KgTaxiViewModel(
         }
     }
 
+    /** Roles not loaded yet after sign-in: a tap on "Водитель" waits for them instead of opening registration. */
+    private var rolesLoaded = false
+    private var pendingRole: AppRole? = null
+
     private fun refreshAllowedRoles() {
         viewModelScope.launch {
             val info = firestoreSync.fetchRoleInfo()
@@ -820,6 +824,8 @@ class KgTaxiViewModel(
                     role = if (it.role in allowed) it.role else AppRole.PASSENGER
                 )
             }
+            rolesLoaded = true
+            pendingRole?.let { p -> pendingRole = null; setRole(p) }
         }
     }
 
@@ -1913,6 +1919,10 @@ class KgTaxiViewModel(
         }
         val message = when {
             !s.isSignedIn -> "Войдите в аккаунт, чтобы открыть этот режим."
+            !rolesLoaded -> {
+                pendingRole = role
+                "Проверяем ваш аккаунт…"
+            }
             role == AppRole.DRIVER -> {
                 openDriverApplication()
                 return

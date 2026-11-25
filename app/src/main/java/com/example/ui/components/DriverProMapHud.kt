@@ -1449,7 +1449,7 @@ private fun PreorderRow(r: com.example.data.firebase.SharedRide, actions: @Compo
                 color = MaterialTheme.colorScheme.onSurfaceVariant
             )
             Text(
-                "${r.passengerName} • ${r.seats ?: 1} мест. • ${r.priceSom} сом",
+                listOfNotNull(r.passengerName, if (r.serviceType == "INTERCITY") "${r.seats ?: 1} мест." else r.tariffName, "${r.priceSom} сом").joinToString(" • "),
                 style = MaterialTheme.typography.bodyMedium
             )
             Row(
