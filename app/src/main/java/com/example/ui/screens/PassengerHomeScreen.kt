@@ -155,6 +155,16 @@ private fun PassengerControlSheet(
     var showReserveDialog by remember { mutableStateOf(false) }
     var showWaypointDialog by remember { mutableStateOf(false) }
     var showForOtherDialog by remember { mutableStateOf(false) }
+    var pickStopOnMap by remember { mutableStateOf(false) }
+    if (pickStopOnMap) {
+        com.example.ui.components.MapPointPickerDialog(
+            title = "Где остановиться по пути?",
+            start = state.dropoffPoint,
+            pinColor = UberAmber,
+            onPicked = { p -> pickStopOnMap = false; viewModel.addWaypointPoint(p) },
+            onDismiss = { pickStopOnMap = false }
+        )
+    }
     var showVoiceDialog by remember { mutableStateOf(false) }
 
     val scrollState = rememberScrollState()
@@ -631,9 +641,9 @@ private fun PassengerControlSheet(
                     }
                 }
 
-                // Pickup Speed Selector (Wait & Save -15% / Standard / Priority +30s)
-                // Hidden until it can be guaranteed (no real matching for pickup speed / shared rides).
-                if (FeatureFlags.DEMO_EXTRAS) {
+                // Pickup speed: "Подождать" (cheaper, drivers see it 3 min later) / "Обычно" / "Приоритет" (shown to drivers first).
+                Text("Скорость подачи", style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                run {
                 Row(
                     modifier = Modifier.horizontalScroll(rememberScrollState()),
                     horizontalArrangement = Arrangement.spacedBy(6.dp)
@@ -1004,6 +1014,7 @@ private fun PassengerControlSheet(
                 modifier = Modifier.fillMaxWidth().padding(horizontal = 14.dp, vertical = 10.dp),
                 verticalArrangement = Arrangement.spacedBy(8.dp)
             ) {
+        if (state.serviceType == ServiceType.TAXI) ScheduleRow(scheduled = state.taxiScheduledMillis, onSet = viewModel::setTaxiSchedule)
         PaymentMethodRow(selected = state.ridePayment, onSelect = viewModel::setRidePayment)
         // Bottom CTA Row: Bidding ("Предложить цену") + Primary Uber Black Order CTA
         Row(
@@ -1207,7 +1218,15 @@ private fun PassengerControlSheet(
                     modifier = Modifier.verticalScroll(rememberScrollState()),
                     verticalArrangement = Arrangement.spacedBy(8.dp)
                 ) {
-                    Text("Выберите до 2 промежуточных точек в г. ${state.selectedCity.name}:", style = MaterialTheme.typography.bodySmall)
+                    OutlinedButton(
+                        onClick = { showWaypointDialog = false; pickStopOnMap = true },
+                        modifier = Modifier.fillMaxWidth().testTag("waypoint_on_map")
+                    ) {
+                        Icon(Icons.Default.Map, contentDescription = null, modifier = Modifier.size(16.dp))
+                        Spacer(Modifier.width(6.dp))
+                        Text("Указать остановку на карте")
+                    }
+                    Text("Или выберите место в г. ${state.selectedCity.name} (до 2 остановок):", style = MaterialTheme.typography.bodySmall)
                     state.selectedCity.landmarks.forEach { place ->
                         val added = state.waypoints.any { it.id == place.id }
                         Surface(
@@ -1506,6 +1525,49 @@ private fun PaymentOption(
                 Text(subtitle, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
             }
             if (selected) Icon(Icons.Default.CheckCircle, contentDescription = null, tint = MaterialTheme.colorScheme.primary)
+        }
+    }
+}
+
+
+/** "Когда ехать": now or a chosen date and time (up to 30 days ahead). */
+@Composable
+private fun ScheduleRow(scheduled: Long?, onSet: (Long?) -> Unit) {
+    val context = androidx.compose.ui.platform.LocalContext.current
+    fun pick() {
+        val cal = java.util.Calendar.getInstance().apply { timeInMillis = scheduled ?: (System.currentTimeMillis() + 60 * 60_000L) }
+        android.app.DatePickerDialog(context, { _, y, m, d ->
+            android.app.TimePickerDialog(context, { _, h, min ->
+                val c = java.util.Calendar.getInstance().apply { set(y, m, d, h, min, 0) }
+                val t = c.timeInMillis
+                val now = System.currentTimeMillis()
+                when {
+                    t < now + 30 * 60_000L -> android.widget.Toast.makeText(context, "Выберите время минимум через 30 минут", android.widget.Toast.LENGTH_LONG).show()
+                    t > now + 30L * 24 * 3600_000L -> android.widget.Toast.makeText(context, "Заказать можно не дальше чем на 30 дней", android.widget.Toast.LENGTH_LONG).show()
+                    else -> onSet(t)
+                }
+            }, cal.get(java.util.Calendar.HOUR_OF_DAY), cal.get(java.util.Calendar.MINUTE), true).show()
+        }, cal.get(java.util.Calendar.YEAR), cal.get(java.util.Calendar.MONTH), cal.get(java.util.Calendar.DAY_OF_MONTH)).apply {
+            datePicker.minDate = System.currentTimeMillis() - 1000
+            datePicker.maxDate = System.currentTimeMillis() + 30L * 24 * 3600_000L
+        }.show()
+    }
+    Surface(
+        onClick = { pick() },
+        shape = RoundedCornerShape(16.dp),
+        color = if (scheduled != null) KgTurquoise.copy(alpha = 0.12f) else MaterialTheme.colorScheme.surfaceVariant,
+        modifier = Modifier.fillMaxWidth().testTag("schedule_row")
+    ) {
+        Row(Modifier.padding(horizontal = 14.dp, vertical = 10.dp), verticalAlignment = Alignment.CenterVertically) {
+            Icon(Icons.Default.Schedule, contentDescription = null, tint = KgTurquoiseDark)
+            Spacer(Modifier.width(10.dp))
+            Text(
+                if (scheduled == null) "Когда: сейчас" else "Когда: ${com.example.util.formatDeparture(scheduled)}",
+                fontWeight = FontWeight.SemiBold,
+                modifier = Modifier.weight(1f)
+            )
+            if (scheduled != null) TextButton(onClick = { onSet(null) }) { Text("Сейчас") }
+            else Text("Запланировать", color = KgTurquoiseDark, fontWeight = FontWeight.Bold)
         }
     }
 }

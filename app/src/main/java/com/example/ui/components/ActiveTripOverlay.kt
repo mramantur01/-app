@@ -4,6 +4,7 @@ import android.content.Intent
 import android.net.Uri
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
@@ -437,6 +438,16 @@ fun ActiveTripCard(
                 )
             }
 
+            if (ride.driverDeaf) {
+                Surface(shape = RoundedCornerShape(12.dp), color = Color(0xFFFFF8E1), modifier = Modifier.fillMaxWidth().testTag("driver_deaf_notice")) {
+                    Row(Modifier.padding(10.dp), verticalAlignment = Alignment.CenterVertically) {
+                        Icon(Icons.Default.HearingDisabled, contentDescription = null, tint = Color(0xFFF9A825))
+                        Spacer(Modifier.width(8.dp))
+                        Text("Водитель плохо слышит — пишите ему в чат, а не звоните.", style = MaterialTheme.typography.bodySmall)
+                    }
+                }
+            }
+
             // Driver Chat + AI Auto-Translate Button
             FilledTonalButton(
                 onClick = onOpenDriverChat,
@@ -703,11 +714,14 @@ fun PostTripReceiptDialog(
     onExportPdf: (LocalTripEntity) -> Unit,
     onConfirmElqrPaid: (Int, String) -> Unit,
     onSubmitReview: (rating: Int, tipSom: Int, lostItemNote: String) -> Unit,
+    onTagsChanged: (List<String>) -> Unit = {},
     onDismiss: () -> Unit
 ) {
     val context = LocalContext.current
     var rating by remember { mutableIntStateOf(5) }
     var tipSom by remember { mutableIntStateOf(0) }
+    var tags by remember { mutableStateOf(setOf<String>()) }
+    LaunchedEffect(tags) { onTagsChanged(tags.toList()) }
     var showLostItem by remember { mutableStateOf(false) }
     var lostItemNote by remember { mutableStateOf("") }
     var showQrDialog by remember { mutableStateOf(false) }
@@ -775,6 +789,20 @@ fun PostTripReceiptDialog(
                                 modifier = Modifier.size(32.dp)
                             )
                         }
+                    }
+                }
+
+                // Compliments (4-5 stars) or what went wrong (1-3 stars)
+                val tagOptions = if (rating >= 4) DRIVER_COMPLIMENTS else DRIVER_COMPLAINTS
+                Text(if (rating >= 4) "Что понравилось?" else "Что пошло не так?", style = MaterialTheme.typography.titleSmall)
+                Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                    tagOptions.forEach { t ->
+                        FilterChip(
+                            selected = t in tags,
+                            onClick = { tags = if (t in tags) tags - t else (tags.filter { it in tagOptions }.toSet() + t) },
+                            label = { Text(t) },
+                            modifier = Modifier.testTag("rate_tag_$t")
+                        )
                     }
                 }
 
@@ -981,3 +1009,7 @@ private fun RouteChangeDialog(
         dismissButton = { TextButton(onClick = onDismiss) { Text("Отмена") } }
     )
 }
+
+
+val DRIVER_COMPLIMENTS = listOf("Вежливый", "Аккуратное вождение", "Чистый салон", "Знает город", "Помог с багажом", "Приятная музыка")
+val DRIVER_COMPLAINTS = listOf("Опоздал", "Грубил", "Опасно ехал", "Грязно в машине", "Не тот маршрут", "Говорил по телефону")

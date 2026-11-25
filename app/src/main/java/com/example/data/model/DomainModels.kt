@@ -283,7 +283,9 @@ data class ActiveRideState(
     /** Completed trips of the driver (shown with the rating). */
     val driverTrips: Int = 0,
     /** Driver face photo (base64 JPEG), loaded after a driver takes the order. */
-    val driverPhoto: String? = null
+    val driverPhoto: String? = null,
+    /** Driver is deaf or hard of hearing. */
+    val driverDeaf: Boolean = false
 )
 
 data class NearbyDriverMarker(

@@ -506,8 +506,9 @@ service cloud.firestore {
              data.paymentMethod in ['CASH', 'CARD'] &&
              // Intercity pre-order: departure from now up to 14 days ahead, 1..6 seats.
              (!('scheduledAt' in data) ||
-              (data.serviceType == 'INTERCITY' && data.scheduledAt is timestamp &&
-               data.scheduledAt > request.time && data.scheduledAt < request.time + duration.value(14, 'd'))) &&
+              (data.scheduledAt is timestamp && data.scheduledAt > request.time &&
+               ((data.serviceType == 'INTERCITY' && data.scheduledAt < request.time + duration.value(14, 'd')) ||
+                (data.serviceType == 'TAXI' && data.scheduledAt < request.time + duration.value(30, 'd'))))) &&
              (!('seats' in data) || (data.seats is int && data.seats >= 1 && data.seats <= 6)) &&
              (!('tariffId' in data) || (data.tariffId is string && data.tariffId.size() <= 30)) &&
              (!('tariffName' in data) || (data.tariffName is string && data.tariffName.size() <= 30)) &&
@@ -554,7 +555,8 @@ service cloud.firestore {
         (existing().passengerId == request.auth.uid &&
          existing().status == 'COMPLETED' &&
          !('driverRating' in existing()) &&
-         onlyChanged(['driverRating', 'tipSom', 'updatedAt']) &&
+         onlyChanged(['driverRating', 'tipSom', 'driverTags', 'updatedAt']) &&
+         (!('driverTags' in incoming()) || (incoming().driverTags is list && incoming().driverTags.size() <= 6)) &&
          incoming().driverRating is int && incoming().driverRating >= 1 && incoming().driverRating <= 5 &&
          (!('tipSom' in incoming()) || (incoming().tipSom is int && incoming().tipSom >= 0 && incoming().tipSom <= 100000))) ||
         // The driver rates the passenger once after the trip.
@@ -569,7 +571,8 @@ service cloud.firestore {
          existing().driverId == null &&
          incoming().status == 'ASSIGNED' &&
          incoming().driverId == request.auth.uid &&
-         onlyChanged(['status', 'driverId', 'driverName', 'driverCar', 'driverPlate', 'driverPayPhone', 'driverRatingAvg', 'driverTrips', 'updatedAt']) &&
+         onlyChanged(['status', 'driverId', 'driverName', 'driverCar', 'driverPlate', 'driverPayPhone', 'driverRatingAvg', 'driverTrips', 'driverDeaf', 'updatedAt']) &&
+         (!('driverDeaf' in incoming()) || incoming().driverDeaf is bool) &&
          (!('driverRatingAvg' in incoming()) || (incoming().driverRatingAvg is number && incoming().driverRatingAvg >= 0 && incoming().driverRatingAvg <= 5))) ||
         // A driver books an intercity pre-order for later.
         (isDriver() &&

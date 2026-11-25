@@ -77,7 +77,11 @@ data class SharedRide(
     /** Passenger's pending/answered route change during the trip. */
     val routeRequest: com.example.data.model.RouteRequest? = null,
     /** Stop on the way, set when the driver accepted a route change. */
-    val stopAddress: String? = null
+    val stopAddress: String? = null,
+    /** Compliments (or complaints) the passenger chose with the rating. */
+    val driverTags: List<String> = emptyList(),
+    /** Driver is deaf or hard of hearing: write in chat instead of calling. */
+    val driverDeaf: Boolean = false
 ) {
     val isActive: Boolean get() = status in RideStatus.ACTIVE
 
@@ -125,7 +129,9 @@ data class SharedRide(
                 passengerTrips = snap.getLong("passengerTrips")?.toInt(),
                 driverTrips = snap.getLong("driverTrips")?.toInt(),
                 routeRequest = com.example.data.model.RouteRequest.from(snap.get("routeRequest") as? Map<*, *>),
-                stopAddress = snap.getString("stopAddress")
+                stopAddress = snap.getString("stopAddress"),
+                driverTags = (snap.get("driverTags") as? List<*>).orEmpty().filterIsInstance<String>(),
+                driverDeaf = snap.getBoolean("driverDeaf") == true
             )
         }
     }
@@ -191,7 +197,7 @@ class RideRepository(
             "createdAt" to FieldValue.serverTimestamp(),
             "updatedAt" to FieldValue.serverTimestamp()
         )
-        if (!comment.isNullOrBlank()) payload["comment"] = comment.take(200)
+        if (!comment.isNullOrBlank()) payload["comment"] = comment.take(400)
         if (passengerPhone.isNotBlank()) payload["passengerPhone"] = passengerPhone.take(20)
         if (scheduledAtMillis != null) {
             payload["scheduledAt"] = com.google.firebase.Timestamp(java.util.Date(scheduledAtMillis))
@@ -290,15 +296,15 @@ class RideRepository(
         }
 
     /** Passenger rates the driver once after a completed ride. */
-    suspend fun rateDriver(rideId: String, stars: Int, tipSom: Int): Result<Unit> =
+    suspend fun rateDriver(rideId: String, stars: Int, tipSom: Int, tags: List<String> = emptyList()): Result<Unit> =
         runWrite(OperationType.UPDATE, "rides/$rideId") {
-            rides.document(rideId).update(
-                mapOf(
-                    "driverRating" to stars.coerceIn(1, 5),
-                    "tipSom" to tipSom.coerceIn(0, 100000),
-                    "updatedAt" to FieldValue.serverTimestamp()
-                )
-            ).await()
+            val data = mutableMapOf<String, Any>(
+                "driverRating" to stars.coerceIn(1, 5),
+                "tipSom" to tipSom.coerceIn(0, 100000),
+                "updatedAt" to FieldValue.serverTimestamp()
+            )
+            if (tags.isNotEmpty()) data["driverTags"] = tags.take(6).map { it.take(40) }
+            rides.document(rideId).update(data).await()
         }
 
     /** Driver rates the passenger once after a completed ride. */
@@ -320,7 +326,8 @@ class RideRepository(
         driverPlate: String,
         driverPayPhone: String = "",
         driverRatingAvg: Double? = null,
-        driverTrips: Int = 0
+        driverTrips: Int = 0,
+        driverDeaf: Boolean = false
     ): Result<Unit> {
         val uid = currentUid ?: return Result.failure(IllegalStateException("Войдите в аккаунт"))
         val ref = rides.document(rideId)
@@ -341,6 +348,7 @@ class RideRepository(
                         "driverPayPhone" to driverPayPhone.take(20),
                         "driverRatingAvg" to (driverRatingAvg ?: 0.0),
                         "driverTrips" to driverTrips.coerceIn(0, 100000),
+                        "driverDeaf" to driverDeaf,
                         "updatedAt" to FieldValue.serverTimestamp()
                     )
                 )

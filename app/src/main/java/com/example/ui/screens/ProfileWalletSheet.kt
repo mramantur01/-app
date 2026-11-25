@@ -125,6 +125,7 @@ fun ProfileWalletOverlay(
                 if (section == "safety") SafetySection(state = state, onOpenFamily = { section = "family" })
                 if (section == "support") SupportSection(sending = state.supportSending, onSend = { viewModel.sendSupportMessage(it, null) })
                 if (section == "info") InfoSection()
+                if (section == "settings") GeneralSettingsSection(state = state, viewModel = viewModel)
                 if (section == "settings") {
                 // Google Cloud Account Card (Works without login + Google Sign-In for cloud sync!)
                 Surface(
@@ -679,6 +680,11 @@ private fun PassengerProfileMenu(state: KgTaxiUiState, onOpen: (String) -> Unit,
         Spacer(Modifier.height(10.dp))
         Text(name, style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
         Text(state.profile.phone.ifBlank { "Телефон не указан" }, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        val myStars = state.passengerRides.mapNotNull { it.passengerRating }
+        Text(
+            if (myStars.isEmpty()) "Мой рейтинг: появится после первых оценок" else "Мой рейтинг ★ ${String.format(java.util.Locale.US, "%.2f", myStars.average())} (${myStars.size})",
+            style = MaterialTheme.typography.labelLarge, color = KgTurquoiseDark, modifier = Modifier.testTag("profile_my_rating")
+        )
         Spacer(Modifier.height(18.dp))
         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceEvenly) {
             ProfileRoundButton(Icons.Default.Schedule, "Заказы") { onOpen("orders") }
@@ -821,6 +827,39 @@ private fun InfoSection() {
         ProfileMenuGroup {
             ProfileMenuItem(Icons.Default.Policy, "Политика конфиденциальности", null) { open("https://mramantur01.github.io/-app/privacy.html") }
             ProfileMenuItem(Icons.Default.Language, "Сайт и последняя версия", null) { open("https://mramantur01.github.io/-app/") }
+        }
+    }
+}
+
+
+/** Language, sounds and notifications. */
+@Composable
+private fun GeneralSettingsSection(state: KgTaxiUiState, viewModel: KgTaxiViewModel) {
+    val context = LocalContext.current
+    val prefs = remember { context.getSharedPreferences("app_settings", android.content.Context.MODE_PRIVATE) }
+    var promoNotes by remember { mutableStateOf(prefs.getBoolean("promo_notifications", true)) }
+    Surface(shape = RoundedCornerShape(16.dp), color = MaterialTheme.colorScheme.surfaceVariant, modifier = Modifier.fillMaxWidth().testTag("general_settings")) {
+        Column(Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Text("Язык", fontWeight = FontWeight.Bold, modifier = Modifier.weight(1f))
+                TextButton(onClick = viewModel::cycleLanguage) { Text(if (com.example.i18n.Lang.kg) "Кыргызча" else "Русский") }
+            }
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Text("Звуки в приложении", modifier = Modifier.weight(1f))
+                Switch(checked = state.soundEnabled, onCheckedChange = { viewModel.toggleSound() })
+            }
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Column(Modifier.weight(1f)) {
+                    Text("Акции и скидки")
+                    Text("Уведомления о промокодах", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                }
+                Switch(checked = promoNotes, onCheckedChange = { promoNotes = it; prefs.edit().putBoolean("promo_notifications", it).apply() })
+            }
+            TextButton(onClick = {
+                runCatching {
+                    context.startActivity(android.content.Intent(android.provider.Settings.ACTION_APP_NOTIFICATION_SETTINGS).putExtra(android.provider.Settings.EXTRA_APP_PACKAGE, context.packageName))
+                }
+            }) { Text("Настройки уведомлений телефона") }
         }
     }
 }

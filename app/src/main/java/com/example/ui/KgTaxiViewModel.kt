@@ -200,6 +200,11 @@ data class KgTaxiUiState(
     /** All open orders that pass the driver's filters (to choose from a list). */
     val driverRadarOrders: List<DriverIncomingOrder> = emptyList(),
     val driverMinPassengerRating: Double = 0.0,
+    val driverMinTripKm: Int = 0,
+    val driverDeafMode: Boolean = false,
+    val driverAcceptancePercent: Int? = null,
+    /** Taxi ordered for later (millis), null = now. */
+    val taxiScheduledMillis: Long? = null,
     /** Share of accepted orders the driver cancelled (last 100), percent. */
     val driverCancelRatePercent: Int = 0,
     /** Special needs chosen for the next order (keys of ACCESSIBILITY_OPTIONS). */
@@ -442,6 +447,10 @@ data class KgTaxiUiState(
             )
         }
 }
+
+/** Order marks in the ride comment (the driver sees them). */
+const val PRIORITY_MARK = "Приоритет: подача быстрее"
+const val WAIT_SAVE_MARK = "Подождать: дешевле, подача позже"
 
 /** Drivers repeat the photo check of the car and themselves this often. */
 const val PHOTO_CHECK_DAYS = 30
@@ -1013,6 +1022,33 @@ class KgTaxiViewModel(
         _uiState.update { it.copy(driverBalance = b, driverCancelRatePercent = rate) }
     }
 
+    fun setDriverMinTripKm(km: Int) {
+        DriverWorkPrefs.setMinTripKm(appContext, km)
+        _uiState.update { it.copy(driverMinTripKm = km) }
+    }
+
+    fun setDriverDeafMode(on: Boolean) {
+        DriverWorkPrefs.setDeaf(appContext, on)
+        _uiState.update { it.copy(driverDeafMode = on) }
+    }
+
+    fun setTaxiSchedule(millis: Long?) {
+        _uiState.update {
+            it.copy(
+                taxiScheduledMillis = millis,
+                statusBanner = millis?.let { m -> "Заказ на ${formatDeparture(m)}" } ?: "Заказ на сейчас"
+            )
+        }
+    }
+
+    /** Stop on the way picked on the map. */
+    fun addWaypointPoint(point: GeoPoint) {
+        viewModelScope.launch {
+            val address = LocationAndVoiceHelper.reverseGeocode(appContext, _uiState.value.selectedCity, point)
+            addWaypoint(KgPlace("map_${System.currentTimeMillis()}", address, address, _uiState.value.selectedCity.name, point, "Остановка", 0.0, 0, 1))
+        }
+    }
+
     fun setDriverMinPassengerRating(v: Double) {
         DriverWorkPrefs.setMinRating(appContext, v)
         _uiState.update { it.copy(driverMinPassengerRating = v) }
@@ -1085,6 +1121,9 @@ class KgTaxiViewModel(
             it.copy(
                 driverPickupRadiusKm = DriverWorkPrefs.radiusKm(c),
                 driverMinPassengerRating = DriverWorkPrefs.minRating(c),
+                driverMinTripKm = DriverWorkPrefs.minTripKm(c),
+                driverDeafMode = DriverWorkPrefs.deaf(c),
+                driverAcceptancePercent = DriverWorkPrefs.acceptanceRate(c),
                 driverVoiceAnnounce = DriverWorkPrefs.voice(c),
                 driverNightMapAuto = DriverWorkPrefs.nightMap(c),
                 driverHomePoint = home?.first,
@@ -2198,7 +2237,6 @@ class KgTaxiViewModel(
     }
 
     fun setPickupSpeed(speed: PickupSpeed) {
-        if (!FeatureFlags.DEMO_EXTRAS && speed != PickupSpeed.STANDARD) return
         _uiState.update { it.copy(pickupSpeed = speed) }
     }
 
@@ -2631,11 +2669,14 @@ class KgTaxiViewModel(
             ).takeIf { it.isNotEmpty() }?.joinToString(", ", prefix = "Пожелания: "),
             com.example.util.ACCESSIBILITY_OPTIONS.filter { it.first in s.passengerAccessibility }.map { it.second.lowercase() }
                 .takeIf { it.isNotEmpty() }?.joinToString(", ", prefix = "Нужна помощь: "),
+            s.waypoints.takeIf { it.isNotEmpty() && !isIntercity }?.joinToString("; ", prefix = "Остановки: ") { it.name.take(60) },
+            PRIORITY_MARK.takeIf { !isIntercity && s.pickupSpeed == PickupSpeed.PRIORITY },
+            WAIT_SAVE_MARK.takeIf { !isIntercity && s.pickupSpeed == PickupSpeed.WAIT_AND_SAVE },
             "PIN $pin"
         ).joinToString(" • ")
 
-        val departure = s.intercityDepartureMillis
-        if (isIntercity && departure != null && departure > System.currentTimeMillis() + 30 * 60_000L) {
+        val departure = if (isIntercity) s.intercityDepartureMillis else s.taxiScheduledMillis
+        if (departure != null && departure > System.currentTimeMillis() + 30 * 60_000L) {
             _uiState.update { it.copy(statusBanner = "Отправляем предзаказ водителям…") }
             viewModelScope.launch {
                 val created = rides.createRide(
@@ -2652,11 +2693,16 @@ class KgTaxiViewModel(
                     comment = comment,
                     passengerPhone = s.profile.phone,
                     scheduledAtMillis = departure,
-                    seats = s.selectedIntercitySeats.size.coerceIn(1, 6)
+                    seats = if (isIntercity) s.selectedIntercitySeats.size.coerceIn(1, 6) else null,
+                    tariffId = if (isIntercity) null else s.selectedTariff.id,
+                    tariffName = if (isIntercity) "Межгород" else s.selectedTariff.nameRu,
+                    paymentMethod = s.ridePayment,
+                    passengerRatingAvg = s.passengerRides.mapNotNull { it.passengerRating }.takeIf { it.isNotEmpty() }?.average(),
+                    passengerTrips = s.passengerRides.count { it.status == RideStatus.COMPLETED }
                 )
                 _uiState.update {
                     created.fold(
-                        { _ -> it.copy(intercityDepartureMillis = null, statusBanner = "Предзаказ на ${formatDeparture(departure)} создан. Сообщим, когда водитель его возьмёт.") },
+                        { _ -> it.copy(intercityDepartureMillis = null, taxiScheduledMillis = null, statusBanner = "Заказ на ${formatDeparture(departure)} создан. Сообщим, когда водитель его возьмёт.") },
                         { e -> it.copy(statusBanner = "Не удалось создать предзаказ: ${e.message ?: "нет интернета"}") }
                     )
                 }
@@ -2800,6 +2846,7 @@ class KgTaxiViewModel(
                     driverName = shared.driverName ?: r.driverName,
                     driverRating = shared.driverRatingAvg?.takeIf { it > 0 } ?: r.driverRating,
                     driverTrips = shared.driverTrips ?: r.driverTrips,
+                    driverDeaf = shared.driverDeaf,
                     driverPayPhone = shared.driverPayPhone?.takeIf { it.isNotBlank() } ?: r.driverPayPhone,
                     driverPoint = if (shared.driverLat != null && shared.driverLng != null) GeoPoint(shared.driverLat, shared.driverLng) else r.driverPoint,
                     driverEtaMin = pickupEtaMinutes(shared, status, r.pickupPoint) ?: r.driverEtaMin,
@@ -2941,6 +2988,9 @@ class KgTaxiViewModel(
         )
     }
 
+    /** Compliments chosen in the rating dialog, sent with the next review. */
+    var pendingDriverTags: List<String> = emptyList()
+
     fun submitPostTripReview(trip: LocalTripEntity, rating: Int, tipSom: Int, lostItemNote: String) {
         val updated = trip.copy(rating = rating, tipSom = tipSom, lostItemNote = lostItemNote)
         _uiState.update {
@@ -2953,7 +3003,8 @@ class KgTaxiViewModel(
             dao.upsertTrip(updated)
             if (_uiState.value.isSignedIn) {
                 firestoreSync.syncTripPostUpdate(updated.id, rating, tipSom, lostItemNote)
-                if (FeatureFlags.REAL_RIDES && rating in 1..5) rides.rateDriver(updated.id, rating, tipSom)
+                if (FeatureFlags.REAL_RIDES && rating in 1..5) rides.rateDriver(updated.id, rating, tipSom, pendingDriverTags)
+                pendingDriverTags = emptyList()
             }
         }
     }
@@ -3149,6 +3200,14 @@ class KgTaxiViewModel(
                 val orders = open.map { it.toDriverOrder(myPoint) }
                     .filter { o -> st.driverPickupRadiusKm <= 0 || o.serviceType == ServiceType.INTERCITY || o.pickupDistanceKm <= st.driverPickupRadiusKm }
                     .filter { o -> st.driverMinPassengerRating <= 0.0 || o.passengerTrips <= 0 || o.passengerRating <= 0.0 || o.passengerRating >= st.driverMinPassengerRating }
+                    .filter { o -> st.driverMinTripKm <= 0 || o.serviceType == ServiceType.INTERCITY || o.distanceKm >= st.driverMinTripKm }
+                    .filter { o ->
+                        // "Подождать": cheaper order, shown to drivers 3 minutes later.
+                        val r = open.firstOrNull { it.id == o.id }
+                        r == null || r.comment?.contains(WAIT_SAVE_MARK) != true || r.createdAtMillis <= 0L ||
+                            System.currentTimeMillis() - r.createdAtMillis > 3 * 60_000L
+                    }
+                    .sortedByDescending { o -> open.firstOrNull { it.id == o.id }?.comment?.contains(PRIORITY_MARK) == true }
                     .filter { o ->
                         !st.driverHomeModeOn || home == null ||
                             KgGeoCatalog.haversineKm(o.dropoffPoint, home) < KgGeoCatalog.haversineKm(myPoint, home) - 1.0
@@ -3210,7 +3269,10 @@ class KgTaxiViewModel(
             passengerPin = pin.ifBlank { "—" },
             passengerPhone = passengerPhone,
             meetAndGreetSign = comment?.substringBefore(" • PIN")?.takeIf { it.isNotBlank() && !it.startsWith("PIN") },
-            passengerWishes = comment?.split(" • ")?.filter { it.startsWith("Пожелания:") || it.startsWith("Нужна помощь:") }
+            passengerWishes = comment?.split(" • ")?.filter {
+                it.startsWith("Пожелания:") || it.startsWith("Нужна помощь:") || it.startsWith("Остановки:") ||
+                    it.startsWith(PRIORITY_MARK) || it.startsWith(WAIT_SAVE_MARK)
+            }
                 ?.joinToString("\n")?.takeIf { it.isNotBlank() }
         )
     }
@@ -3285,9 +3347,12 @@ class KgTaxiViewModel(
                 driverPlate = verifiedDriverPlate,
                 driverPayPhone = verifiedDriverPayPhone,
                 driverRatingAvg = _uiState.value.driverRatingAvg,
-                driverTrips = _uiState.value.driverHistory.count { it.status == RideStatus.COMPLETED }
+                driverTrips = _uiState.value.driverHistory.count { it.status == RideStatus.COMPLETED },
+                driverDeaf = _uiState.value.driverDeafMode
             )
             res.onSuccess {
+                DriverWorkPrefs.countOffer(appContext, accepted = true)
+                _uiState.update { it.copy(driverAcceptancePercent = DriverWorkPrefs.acceptanceRate(appContext)) }
                 driverRideId = order.id
                 applyAcceptedDriverOrder(order)
                 startDriverLocationSharing(order.id)
@@ -3331,6 +3396,8 @@ class KgTaxiViewModel(
     }
 
     fun skipDriverOrder(order: DriverIncomingOrder) {
+        DriverWorkPrefs.countOffer(appContext, accepted = false)
+        _uiState.update { it.copy(driverAcceptancePercent = DriverWorkPrefs.acceptanceRate(appContext)) }
         _uiState.update {
             val remaining = it.driverIncomingOrders.filterNot { o -> o.id == order.id }
             it.copy(

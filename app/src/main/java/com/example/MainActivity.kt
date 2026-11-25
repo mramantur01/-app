@@ -409,6 +409,7 @@ fun KgTaxiAppRoot() {
                         pdfCreateLauncher.launch("KG_Taxi_Receipt_${tripToExport.id}.pdf")
                     },
                     onConfirmElqrPaid = viewModel::markElqrPaymentDone,
+                    onTagsChanged = { viewModel.pendingDriverTags = it },
                     onSubmitReview = { rating, tip, lostNote ->
                         viewModel.submitPostTripReview(receipt, rating, tip, lostNote)
                     },

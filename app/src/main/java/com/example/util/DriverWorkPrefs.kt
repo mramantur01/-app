@@ -25,6 +25,25 @@ object DriverWorkPrefs {
     fun minRating(c: Context): Double = p(c).getFloat("min_rating", 0f).toDouble()
     fun setMinRating(c: Context, v: Double) = p(c).edit().putFloat("min_rating", v.toFloat()).apply()
 
+    /** Minimal trip length in km (0 = any). */
+    fun minTripKm(c: Context): Int = p(c).getInt("min_trip_km", 0)
+    fun setMinTripKm(c: Context, km: Int) = p(c).edit().putInt("min_trip_km", km).apply()
+
+    /** Deaf or hard of hearing driver: passengers write instead of calling, new orders flash the screen. */
+    fun deaf(c: Context): Boolean = p(c).getBoolean("deaf", false)
+    fun setDeaf(c: Context, on: Boolean) = p(c).edit().putBoolean("deaf", on).apply()
+
+    /** Offers accepted / skipped, for the acceptance rate. */
+    fun countOffer(c: Context, accepted: Boolean) {
+        val key = if (accepted) "offers_accepted" else "offers_skipped"
+        p(c).edit().putInt(key, p(c).getInt(key, 0) + 1).apply()
+    }
+    fun acceptanceRate(c: Context): Int? {
+        val a = p(c).getInt("offers_accepted", 0)
+        val s = p(c).getInt("offers_skipped", 0)
+        return if (a + s == 0) null else a * 100 / (a + s)
+    }
+
     fun voice(c: Context): Boolean = p(c).getBoolean("voice", true)
     fun setVoice(c: Context, on: Boolean) = p(c).edit().putBoolean("voice", on).apply()
 

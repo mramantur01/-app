@@ -84,6 +84,8 @@ fun DriverLineMapCockpit(
     onSetNightMap: (Boolean) -> Unit = {},
     onSetHome: (GeoPoint) -> Unit = {},
     onSetMinRating: (Double) -> Unit = {},
+    onSetMinTripKm: (Int) -> Unit = {},
+    onSetDeaf: (Boolean) -> Unit = {},
     /** Take an order from the list (or as the next one while on a trip). */
     onTakeOrder: (DriverIncomingOrder) -> Unit = onAcceptOrder,
     modifier: Modifier = Modifier
@@ -477,6 +479,10 @@ fun DriverLineMapCockpit(
             }
         }
 
+        if (state.driverDeafMode && state.driverOnline && state.driverAcceptedOrder == null && currentOffer != null) {
+            DriverOfferFlash(key = currentOffer.id)
+        }
+
         DriverPreordersSidePanel(
             visible = showPreorders,
             state = state,
@@ -526,6 +532,8 @@ fun DriverLineMapCockpit(
             onSetNightMap = onSetNightMap,
             onSetHome = onSetHome,
             onSetMinRating = onSetMinRating,
+            onSetMinTripKm = onSetMinTripKm,
+            onSetDeaf = onSetDeaf,
             onDismiss = { showLineSettings = false }
         )
     }
@@ -1547,6 +1555,8 @@ private fun DriverLineSettingsSheet(
     onSetNightMap: (Boolean) -> Unit = {},
     onSetHome: (GeoPoint) -> Unit = {},
     onSetMinRating: (Double) -> Unit = {},
+    onSetMinTripKm: (Int) -> Unit = {},
+    onSetDeaf: (Boolean) -> Unit = {},
     onDismiss: () -> Unit
 ) {
     var pickHome by remember { mutableStateOf(false) }
@@ -1624,6 +1634,13 @@ private fun DriverLineSettingsSheet(
                 }
             }
             HorizontalDivider()
+            Text("Длина поездки", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
+            Row(modifier = Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                listOf(0 to "Любая", 3 to "от 3 км", 5 to "от 5 км", 10 to "от 10 км").forEach { (km, label) ->
+                    FilterChip(selected = state.driverMinTripKm == km, onClick = { onSetMinTripKm(km) }, label = { Text(label) }, modifier = Modifier.testTag("line_min_trip_$km"))
+                }
+            }
+            HorizontalDivider()
             Text("Рейтинг пассажира", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
             Text("Не показывать заказы от пассажиров с рейтингом ниже. Новые пассажиры видны всегда.", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
             Row(modifier = Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -1651,6 +1668,13 @@ private fun DriverLineSettingsSheet(
                     Text("«Новый заказ, подача 5 минут, 250 сом»", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                 }
                 Switch(checked = state.driverVoiceAnnounce, onCheckedChange = onSetVoice, modifier = Modifier.testTag("line_voice"))
+            }
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Column(Modifier.weight(1f)) {
+                    Text("Я плохо слышу", fontWeight = FontWeight.Bold)
+                    Text("Новый заказ мигает экраном; пассажиры пишут в чат, а не звонят", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                }
+                Switch(checked = state.driverDeafMode, onCheckedChange = onSetDeaf, modifier = Modifier.testTag("line_deaf"))
             }
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Column(Modifier.weight(1f)) {
@@ -1879,5 +1903,18 @@ private fun DriverRadarSheet(state: KgTaxiUiState, onTake: (DriverIncomingOrder)
                 }
             }
         }
+    }
+}
+
+
+/** Visual alert for deaf drivers: the screen edge flashes when a new order comes. */
+@Composable
+private fun DriverOfferFlash(key: String) {
+    var flashes by remember(key) { mutableIntStateOf(6) }
+    LaunchedEffect(key) {
+        while (flashes > 0) { delay(350); flashes-- }
+    }
+    if (flashes > 0 && flashes % 2 == 0) {
+        Box(Modifier.fillMaxSize().border(10.dp, Color(0xFFFFC107)).testTag("driver_offer_flash"))
     }
 }

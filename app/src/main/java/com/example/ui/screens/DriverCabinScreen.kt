@@ -104,6 +104,8 @@ fun DriverCabinScreen(
                     onSetNightMap = viewModel::setDriverNightMap,
                     onSetHome = viewModel::setDriverHome,
                     onSetMinRating = viewModel::setDriverMinPassengerRating,
+                    onSetMinTripKm = viewModel::setDriverMinTripKm,
+                    onSetDeaf = viewModel::setDriverDeafMode,
                     onTakeOrder = viewModel::acceptNextDriverOrder
                 )
 
@@ -434,6 +436,10 @@ private fun DriverEarningsTabContent(
                     }
                     Column(horizontalAlignment = Alignment.End) {
                         Text("${ride.priceSom} ${strings.currencySom}", fontWeight = FontWeight.Bold)
+                        if (ride.status == com.example.data.firebase.RideStatus.COMPLETED) {
+                            val split = com.example.util.OwnerPayoutGatewayClient.calculateOrderSplit(ride.priceSom, state.ownerBankConfig.commissionPercent)
+                            Text("вам ${split.driverNetSom} • комиссия ${ride.priceSom - split.driverNetSom}", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        }
                         Text(statusText, style = MaterialTheme.typography.labelSmall, color = statusColor, fontWeight = FontWeight.Bold)
                     }
                 }
@@ -1241,7 +1247,22 @@ private fun DriverQualityCard(state: KgTaxiUiState) {
                 QualityTile("Рейтинг", state.driverRatingAvg?.let { String.format(Locale.US, "%.2f", it) } ?: "новый", Modifier.weight(1f))
                 QualityTile("Поездок", "$trips", Modifier.weight(1f))
                 QualityTile("Отмены", "$rate%", Modifier.weight(1f), if (rate > 10) UberRed else null)
+                QualityTile("Принято", state.driverAcceptancePercent?.let { "$it%" } ?: "—", Modifier.weight(1f))
             }
+            val tags = state.driverHistory.flatMap { it.driverTags }.filter { it in com.example.ui.components.DRIVER_COMPLIMENTS }
+                .groupingBy { it }.eachCount().toList().sortedByDescending { it.second }
+            if (tags.isNotEmpty()) {
+                Text("Комплименты пассажиров", fontWeight = FontWeight.SemiBold)
+                Text(tags.take(5).joinToString("  •  ") { "${it.first} ×${it.second}" }, style = MaterialTheme.typography.bodySmall)
+            }
+            val ctx = androidx.compose.ui.platform.LocalContext.current
+            OutlinedButton(onClick = {
+                val send = android.content.Intent(android.content.Intent.ACTION_SEND).apply {
+                    type = "text/plain"
+                    putExtra(android.content.Intent.EXTRA_TEXT, "Работай водителем в KG Taxi: регистрация прямо в приложении, тариф подбирается сам. Скачать: https://mramantur01.github.io/-app/")
+                }
+                ctx.startActivity(android.content.Intent.createChooser(send, "Пригласить водителя"))
+            }, modifier = Modifier.fillMaxWidth()) { Text("Пригласить знакомого водителя") }
             Text(
                 if (rate > 10) "Много отмен. Отменяйте только по серьёзной причине — пассажиры ждут."
                 else "Отмены считаются по последним 100 заказам. Держите меньше 10%.",
