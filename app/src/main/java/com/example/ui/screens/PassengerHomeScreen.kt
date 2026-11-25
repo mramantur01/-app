@@ -732,6 +732,13 @@ private fun PassengerControlSheet(
                         onClick = { viewModel.updatePreferences { it.copy(petFriendly = !it.petFriendly) } },
                         label = { Text(strings.prefPet) }
                     )
+                }
+                // Special needs: the driver sees them in the order.
+                Text("Нужна помощь водителя?", style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                Row(
+                    modifier = Modifier.horizontalScroll(rememberScrollState()),
+                    horizontalArrangement = Arrangement.spacedBy(6.dp)
+                ) {
                     com.example.util.ACCESSIBILITY_OPTIONS.forEach { (key, label) ->
                         FilterChip(
                             selected = key in state.passengerAccessibility,

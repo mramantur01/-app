@@ -10,8 +10,10 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.*
+import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -49,7 +51,9 @@ fun ProfileWalletOverlay(
     onReopenOnboarding: () -> Unit,
     onDismiss: () -> Unit
 ) {
-    BackHandler { onDismiss() }
+    // null = main menu (like Yandex Go); otherwise one section is open.
+    var section by rememberSaveable { mutableStateOf<String?>(null) }
+    BackHandler { if (section != null) section = null else onDismiss() }
     val context = LocalContext.current
 
     var nameInput by remember(state.profile.displayName) { mutableStateOf(state.profile.displayName) }
@@ -83,12 +87,12 @@ fun ProfileWalletOverlay(
                 horizontalArrangement = Arrangement.SpaceBetween
             ) {
                 Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    IconButton(onClick = onDismiss, modifier = Modifier.testTag("close_profile_button")) {
-                        Icon(Icons.Default.Close, contentDescription = "Close profile")
+                    IconButton(onClick = { if (section != null) section = null else onDismiss() }, modifier = Modifier.testTag("close_profile_button")) {
+                        Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Назад")
                     }
-                    Text(strings.profile, style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.ExtraBold)
+                    Text(profileSectionTitle(section), style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.ExtraBold)
                 }
-                FilledTonalButton(
+                if (section == "orders") FilledTonalButton(
                     onClick = onExportAllPdf,
                     modifier = Modifier.testTag("profile_export_pdf_button")
                 ) {
@@ -105,6 +109,23 @@ fun ProfileWalletOverlay(
                     .padding(horizontal = 16.dp, vertical = 8.dp),
                 verticalArrangement = Arrangement.spacedBy(14.dp)
             ) {
+                if (section == null) {
+                    PassengerProfileMenu(
+                        state = state,
+                        onOpen = { section = it },
+                        onWorkInTaxi = {
+                            if (com.example.data.model.AppRole.DRIVER in state.allowedRoles) viewModel.setRole(com.example.data.model.AppRole.DRIVER)
+                            else viewModel.openRegistration(asDriver = true)
+                            onDismiss()
+                        }
+                    )
+                }
+                if (section == "family") ClosePeopleSection(people = state.passengerPeople, onSave = viewModel::savePassengerPeople)
+                if (section == "promo") PromoSection(state = state, viewModel = viewModel)
+                if (section == "safety") SafetySection(state = state, onOpenFamily = { section = "family" })
+                if (section == "support") SupportSection(sending = state.supportSending, onSend = { viewModel.sendSupportMessage(it, null) })
+                if (section == "info") InfoSection()
+                if (section == "settings") {
                 // Google Cloud Account Card (Works without login + Google Sign-In for cloud sync!)
                 Surface(
                     shape = RoundedCornerShape(18.dp),
@@ -171,12 +192,16 @@ fun ProfileWalletOverlay(
                         }
                     }
                 }
+                }
 
+                if (section == "orders") {
                 // My rides (real orders), support and account deletion.
                 if (state.isSignedIn) {
                     AccountExtrasSection(state = state, viewModel = viewModel, onClose = onDismiss)
                 }
+                }
 
+                if (section == "addresses") {
                 // Editable Profile & Home/Work Addresses (Auto-saved locally + synced to Firestore)
                 Surface(
                     shape = RoundedCornerShape(16.dp),
@@ -214,9 +239,9 @@ fun ProfileWalletOverlay(
                         }
                     }
                 }
+                }
 
-                ClosePeopleSection(people = state.passengerPeople, onSave = viewModel::savePassengerPeople)
-
+                if (section == "promo") {
                 // Wallet Balance, Top-Up Ledger, ELQR & Referral Program ("Пригласи друга")
                 if (FeatureFlags.WALLET) WalletAndReferralSection(
                     walletBalanceSom = state.walletBalanceSom,
@@ -237,7 +262,9 @@ fun ProfileWalletOverlay(
                     },
                     onClaimReferralBonus = viewModel::claimReferralBonus
                 )
+                }
 
+                if (section == "payment") {
                 // Kyrgyzstan Payment Methods (Наличные, MBank, O!Деньги, Элкарт, Visa/Mastercard)
                 Text(strings.paymentMethods, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
                 Row(
@@ -254,7 +281,9 @@ fun ProfileWalletOverlay(
                         )
                     }
                 }
+                }
 
+                if (section == "payment") {
                 // KG Plus subscription: paid, so hidden until there is a real payment provider.
                 if (FeatureFlags.WALLET)
                 Surface(
@@ -289,7 +318,9 @@ fun ProfileWalletOverlay(
                         )
                     }
                 }
+                }
 
+                if (section == "settings") {
                 // Theme (Auto / Light / Dark) & Map Style (Standard / Satellite / Night)
                 ThemeAndMapAppearanceCard(
                     themeMode = state.themeMode,
@@ -297,7 +328,9 @@ fun ProfileWalletOverlay(
                     onSelectThemeMode = viewModel::setThemeMode,
                     onSelectMapLayerStyle = viewModel::setMapLayerStyle
                 )
+                }
 
+                if (section == "business") {
                 // Business Profile (Uber for Business)
                 Surface(
                     shape = RoundedCornerShape(16.dp),
@@ -334,7 +367,9 @@ fun ProfileWalletOverlay(
                         }
                     }
                 }
+                }
 
+                if (section == "support") {
                 // Lost & Found Support Tickets + Favorite & Blocked Drivers Management
                 LostFoundAndFavoriteDriversSection(
                     tickets = state.lostItemTickets,
@@ -343,7 +378,9 @@ fun ProfileWalletOverlay(
                     onToggleFavoriteDriver = viewModel::toggleFavoriteDriver,
                     onToggleBlockedDriver = viewModel::toggleBlockedDriver
                 )
+                }
 
+                if (section == "family" && FeatureFlags.FAMILY_LIMITS) {
                 // Upgraded Family Profile with Shared Balance & Live Ride Tracking
                 FamilyLiveTrackingCard(
                     members = state.familyMembers,
@@ -355,7 +392,9 @@ fun ProfileWalletOverlay(
                         onDismiss()
                     }
                 )
+                }
 
+                if (section == "addresses") {
                 // Saved Places & Offline Routes
                 Row(
                     modifier = Modifier.fillMaxWidth(),
@@ -404,7 +443,9 @@ fun ProfileWalletOverlay(
                         }
                     }
                 }
+                }
 
+                if (section == "orders") {
                 // Trip History + B2B Filter + Lost & Found + Receipt Export
                 Row(
                     modifier = Modifier.fillMaxWidth(),
@@ -472,7 +513,9 @@ fun ProfileWalletOverlay(
                         }
                     }
                 }
+                }
 
+                if (section == "info") {
                 // Replay Interactive Onboarding Guide
                 OutlinedButton(
                     onClick = {
@@ -484,6 +527,7 @@ fun ProfileWalletOverlay(
                     Icon(Icons.Default.HelpOutline, contentDescription = null, modifier = Modifier.size(18.dp))
                     Spacer(Modifier.width(6.dp))
                     Text("Показать интерактивный гид KG Taxi")
+                }
                 }
             }
         }
@@ -604,5 +648,179 @@ private fun ClosePeopleSection(people: List<com.example.util.ClosePerson>, onSav
             },
             dismissButton = { TextButton(onClick = { adding = false }) { Text("Отмена") } }
         )
+    }
+}
+
+
+private fun profileSectionTitle(section: String?): String = when (section) {
+    "orders" -> "Заказы"
+    "support" -> "Поддержка"
+    "addresses" -> "Адреса"
+    "settings" -> "Настройки"
+    "promo" -> "Скидки и промокод"
+    "payment" -> "Способы оплаты"
+    "business" -> "Бизнес-аккаунт"
+    "family" -> "Близкие и семья"
+    "safety" -> "Безопасность"
+    "info" -> "Информация"
+    else -> "Профиль"
+}
+
+/** Main profile screen: photo, name, phone, 4 round buttons and a list (like Yandex Go). */
+@Composable
+private fun PassengerProfileMenu(state: KgTaxiUiState, onOpen: (String) -> Unit, onWorkInTaxi: () -> Unit) {
+    Column(horizontalAlignment = Alignment.CenterHorizontally, modifier = Modifier.fillMaxWidth().testTag("profile_menu")) {
+        val name = state.profile.displayName.ifBlank { "Пассажир" }
+        Surface(shape = androidx.compose.foundation.shape.CircleShape, color = KgTurquoiseLight, modifier = Modifier.size(92.dp)) {
+            Box(contentAlignment = Alignment.Center) {
+                Text(name.take(1).uppercase(), style = MaterialTheme.typography.headlineLarge, fontWeight = FontWeight.Bold, color = KgTurquoiseDark)
+            }
+        }
+        Spacer(Modifier.height(10.dp))
+        Text(name, style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
+        Text(state.profile.phone.ifBlank { "Телефон не указан" }, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        Spacer(Modifier.height(18.dp))
+        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceEvenly) {
+            ProfileRoundButton(Icons.Default.Schedule, "Заказы") { onOpen("orders") }
+            ProfileRoundButton(Icons.Default.SupportAgent, "Поддержка") { onOpen("support") }
+            ProfileRoundButton(Icons.Default.Place, "Адреса") { onOpen("addresses") }
+            ProfileRoundButton(Icons.Default.Settings, "Настройки") { onOpen("settings") }
+        }
+        Spacer(Modifier.height(18.dp))
+        ProfileMenuGroup {
+            ProfileMenuItem(Icons.Default.CardGiftcard, "Скидки и промокод", "Ввести промокод, пригласить друга") { onOpen("promo") }
+            ProfileMenuItem(Icons.Default.Payments, "Способы оплаты", "Наличные или QR") { onOpen("payment") }
+        }
+        Spacer(Modifier.height(12.dp))
+        ProfileMenuGroup {
+            ProfileMenuItem(Icons.Default.DirectionsCar, "Работа в такси", if (com.example.data.model.AppRole.DRIVER in state.allowedRoles) "Перейти в режим водителя" else "Стать водителем KG Taxi", onWorkInTaxi)
+            ProfileMenuItem(Icons.Default.BusinessCenter, "Бизнес-аккаунт", "Поездки на компанию и чеки") { onOpen("business") }
+            ProfileMenuItem(Icons.Default.FamilyRestroom, "Близкие и семья", if (state.passengerPeople.isEmpty()) "Заказывать для близких" else "${state.passengerPeople.size} чел.") { onOpen("family") }
+            ProfileMenuItem(Icons.Default.Shield, "Безопасность", "SOS, PIN-код, поездка близким") { onOpen("safety") }
+        }
+        Spacer(Modifier.height(12.dp))
+        ProfileMenuGroup {
+            ProfileMenuItem(Icons.Default.Info, "Информация", "О приложении, правила") { onOpen("info") }
+        }
+    }
+}
+
+@Composable
+private fun ProfileRoundButton(icon: androidx.compose.ui.graphics.vector.ImageVector, label: String, onClick: () -> Unit) {
+    Column(horizontalAlignment = Alignment.CenterHorizontally, modifier = Modifier.width(82.dp)) {
+        Surface(onClick = onClick, shape = androidx.compose.foundation.shape.CircleShape, color = MaterialTheme.colorScheme.surfaceVariant, modifier = Modifier.size(58.dp).testTag("profile_btn_$label")) {
+            Box(contentAlignment = Alignment.Center) { Icon(icon, contentDescription = label, tint = KgInk, modifier = Modifier.size(26.dp)) }
+        }
+        Spacer(Modifier.height(6.dp))
+        Text(label, style = MaterialTheme.typography.labelLarge, fontWeight = FontWeight.SemiBold)
+    }
+}
+
+@Composable
+private fun ProfileMenuGroup(content: @Composable ColumnScope.() -> Unit) {
+    Surface(shape = RoundedCornerShape(20.dp), color = MaterialTheme.colorScheme.surfaceVariant, modifier = Modifier.fillMaxWidth()) {
+        Column(content = content)
+    }
+}
+
+@Composable
+private fun ProfileMenuItem(icon: androidx.compose.ui.graphics.vector.ImageVector, title: String, subtitle: String?, onClick: () -> Unit) {
+    Surface(onClick = onClick, color = Color.Transparent, modifier = Modifier.fillMaxWidth().testTag("profile_item_$title")) {
+        Row(Modifier.padding(horizontal = 16.dp, vertical = 14.dp), verticalAlignment = Alignment.CenterVertically) {
+            Icon(icon, contentDescription = null, tint = KgInk, modifier = Modifier.size(24.dp))
+            Spacer(Modifier.width(16.dp))
+            Column(Modifier.weight(1f)) {
+                Text(title, style = MaterialTheme.typography.bodyLarge)
+                if (!subtitle.isNullOrBlank()) Text(subtitle, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            }
+            Icon(Icons.Default.ChevronRight, contentDescription = null, tint = MaterialTheme.colorScheme.onSurfaceVariant)
+        }
+    }
+}
+
+/** Promo code and "invite a friend" code. */
+@Composable
+private fun PromoSection(state: KgTaxiUiState, viewModel: KgTaxiViewModel) {
+    val context = LocalContext.current
+    Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+        Text("Промокод", fontWeight = FontWeight.Bold)
+        OutlinedTextField(
+            value = state.promoCodeInput,
+            onValueChange = { viewModel.setPromoInput(it.uppercase().take(20)) },
+            label = { Text("Введите промокод") },
+            singleLine = true,
+            modifier = Modifier.fillMaxWidth().testTag("profile_promo_input")
+        )
+        Button(onClick = viewModel::applyPromoCode, enabled = state.promoCodeInput.isNotBlank(), modifier = Modifier.fillMaxWidth()) { Text("Применить") }
+        Text("Скидка применится к следующему заказу.", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        val code = viewModel.myInviteCode()
+        if (code != null) {
+            HorizontalDivider()
+            Text("Пригласите друга", fontWeight = FontWeight.Bold)
+            Text("Друг получит скидку ${state.appConfig.referralPercent}% на первую поездку по вашему коду.", style = MaterialTheme.typography.bodySmall)
+            Text(code, style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Black, color = KgTurquoiseDark)
+            OutlinedButton(onClick = {
+                val send = Intent(Intent.ACTION_SEND).apply {
+                    type = "text/plain"
+                    putExtra(Intent.EXTRA_TEXT, "Мой код в KG Taxi: $code — скидка на первую поездку. Скачать: https://mramantur01.github.io/-app/")
+                }
+                context.startActivity(Intent.createChooser(send, "Поделиться кодом"))
+            }, modifier = Modifier.fillMaxWidth()) { Text("Поделиться кодом") }
+        }
+    }
+}
+
+/** Safety: SOS, PIN code, sending the trip to close people. */
+@Composable
+private fun SafetySection(state: KgTaxiUiState, onOpenFamily: () -> Unit) {
+    Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+        listOf(
+            Icons.Default.VerifiedUser to "Все водители проверены: паспорт, права, справка о несудимости, ОСАГО и фотоконтроль машины каждые 30 дней.",
+            Icons.Default.Pin to "PIN-код в поездке помогает пассажиру и водителю убедиться, что они нашли друг друга.",
+            Icons.Default.Sos to "Кнопка SOS в поездке — быстрый звонок 112 и сигнал диспетчеру.",
+            Icons.Default.Share to "«Поделиться» в поездке — отправьте маршрут и машину кому угодно."
+        ).forEach { (icon, text) ->
+            Row(verticalAlignment = Alignment.Top) {
+                Icon(icon, contentDescription = null, tint = KgTurquoiseDark, modifier = Modifier.size(22.dp))
+                Spacer(Modifier.width(12.dp))
+                Text(text, style = MaterialTheme.typography.bodyMedium)
+            }
+        }
+        HorizontalDivider()
+        Text("Доверенные контакты", fontWeight = FontWeight.Bold)
+        val sharing = state.passengerPeople.filter { it.shareTrips }
+        Text(
+            if (sharing.isEmpty()) "Добавьте близких — в поездке появится кнопка «Отправить поездку близким»."
+            else "Получают ваши поездки: ${sharing.joinToString { it.name.ifBlank { it.phone } }}",
+            style = MaterialTheme.typography.bodySmall
+        )
+        OutlinedButton(onClick = onOpenFamily, modifier = Modifier.fillMaxWidth()) { Text("Близкие и семья") }
+    }
+}
+
+/** Message to support (answers come to the owner panel). */
+@Composable
+private fun SupportSection(sending: Boolean, onSend: (String) -> Unit) {
+    var text by remember { mutableStateOf("") }
+    Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+        Text("Напишите нам: поможем с поездкой, оплатой или забытыми вещами. Ответим в ближайшее время.", style = MaterialTheme.typography.bodyMedium)
+        OutlinedTextField(value = text, onValueChange = { text = it.take(1000) }, label = { Text("Ваш вопрос") }, minLines = 4, modifier = Modifier.fillMaxWidth().testTag("profile_support_text"))
+        Button(onClick = { onSend(text); text = "" }, enabled = text.isNotBlank() && !sending, modifier = Modifier.fillMaxWidth()) { Text("Отправить") }
+        Text("Жалоба на конкретную поездку — в «Заказы» → «Пожаловаться».", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+    }
+}
+
+/** About the app. */
+@Composable
+private fun InfoSection() {
+    val context = LocalContext.current
+    fun open(url: String) = runCatching { context.startActivity(Intent(Intent.ACTION_VIEW, android.net.Uri.parse(url))) }
+    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        Text("KG Taxi • версия ${com.example.BuildConfig.VERSION_NAME}", fontWeight = FontWeight.Bold)
+        Text("Такси и межгород по Кыргызстану.", style = MaterialTheme.typography.bodySmall)
+        ProfileMenuGroup {
+            ProfileMenuItem(Icons.Default.Policy, "Политика конфиденциальности", null) { open("https://mramantur01.github.io/-app/privacy.html") }
+            ProfileMenuItem(Icons.Default.Language, "Сайт и последняя версия", null) { open("https://mramantur01.github.io/-app/") }
+        }
     }
 }
