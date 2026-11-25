@@ -168,6 +168,8 @@ data class KgTaxiUiState(
     val driverOpenPreorders: List<SharedRide> = emptyList(),
     /** Pre-orders this driver has booked. */
     val driverBookedPreorders: List<SharedRide> = emptyList(),
+    /** Week days (Calendar.DAY_OF_WEEK) the driver wants pre-order alerts for. */
+    val driverPreorderAlertDays: Set<Int> = emptySet(),
     val selectedVenueId: String = KgGeoCatalog.foodVenues.first().id,
     val foodCart: List<FoodCartEntry> = emptyList(),
     // Active Trip, Driver Chat & Post-Trip
@@ -937,14 +939,24 @@ class KgTaxiViewModel(
     private fun startDriverPreorders(city: String) {
         if (!FeatureFlags.REAL_RIDES) return
         driverPreordersJob?.cancel()
+        com.example.util.PreorderAlerts.setCity(appContext, city)
+        _uiState.update { it.copy(driverPreorderAlertDays = com.example.util.PreorderAlerts.days(appContext)) }
+        com.example.util.PreorderAlerts.schedule(appContext)
         driverPreordersJob = viewModelScope.launch {
             rides.observeOpenRides(city).collect { open ->
-                _uiState.update {
-                    it.copy(driverOpenPreorders = open.filter { r -> r.scheduledAtMillis != null }
-                        .sortedBy { r -> r.scheduledAtMillis ?: 0L })
-                }
+                val pre = open.filter { r -> r.scheduledAtMillis != null }.sortedBy { r -> r.scheduledAtMillis ?: 0L }
+                _uiState.update { it.copy(driverOpenPreorders = pre) }
+                com.example.util.PreorderAlerts.check(appContext, pre)
             }
         }
+    }
+
+    /** Driver: turn pre-order alerts on/off for a week day. */
+    fun toggleDriverPreorderAlertDay(day: Int) {
+        val now = _uiState.value.driverPreorderAlertDays
+        val next = if (day in now) now - day else now + day
+        com.example.util.PreorderAlerts.setDays(appContext, next)
+        _uiState.update { it.copy(driverPreorderAlertDays = next) }
     }
 
     fun bookDriverPreorder(rideId: String) {

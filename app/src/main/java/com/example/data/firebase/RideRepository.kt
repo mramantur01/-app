@@ -228,6 +228,21 @@ class RideRepository(
             }
     }
 
+    /** One-time read of open pre-orders in a city (for the background alert check). */
+    suspend fun fetchOpenPreorders(city: String): List<SharedRide> {
+        if (currentUid == null) return emptyList()
+        return rides
+            .whereEqualTo("status", RideStatus.SEARCHING)
+            .whereEqualTo("city", city)
+            .orderBy("createdAt", Query.Direction.DESCENDING)
+            .limit(30)
+            .get()
+            .await()
+            .documents
+            .mapNotNull { SharedRide.from(it) }
+            .filter { it.scheduledAtMillis != null }
+    }
+
     /** All active rides (searching or on the way), newest first — the dispatcher's board. */
     fun observeActiveRides(): Flow<List<SharedRide>> {
         if (currentUid == null) return emptyFlow()

@@ -92,7 +92,8 @@ fun DriverCabinScreen(
                     onToggleTariff = viewModel::toggleDriverTariff,
                     onBookPreorder = viewModel::bookDriverPreorder,
                     onReleasePreorder = viewModel::releaseDriverPreorder,
-                    onStartPreorder = viewModel::startDriverPreorder
+                    onStartPreorder = viewModel::startDriverPreorder,
+                    onToggleAlertDay = viewModel::toggleDriverPreorderAlertDay
                 )
 
                 DriverCabinTab.EARNINGS -> DriverEarningsTabContent(
@@ -380,6 +381,8 @@ private fun DriverEarningsTabContent(
                 }
             }
         }
+
+        DriverEarningsByPeriodCard(state = state)
 
         // Order history (from the database)
         Text("История заказов", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
@@ -933,5 +936,79 @@ private fun DriverDocDatesCard(osagoUntil: Long?, inspectionUntil: Long?, onSet:
                 color = MaterialTheme.colorScheme.onSurfaceVariant
             )
         }
+    }
+}
+
+
+private enum class EarningsPeriod(val label: String) { DAY("День"), WEEK("Неделя"), MONTH("Месяц"), DATE("Дата") }
+
+/** Earnings for today, this week, this month or any chosen date — counted from completed trips. */
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun DriverEarningsByPeriodCard(state: KgTaxiUiState) {
+    var period by remember { mutableStateOf(EarningsPeriod.DAY) }
+    var pickedDay by remember { mutableStateOf<Long?>(null) }
+    var showPicker by remember { mutableStateOf(false) }
+    val commission = state.ownerBankConfig.commissionPercent
+    fun startOf(millis: Long, field: Int? = null): Long = java.util.Calendar.getInstance().apply {
+        timeInMillis = millis
+        if (field == java.util.Calendar.WEEK_OF_YEAR) { firstDayOfWeek = java.util.Calendar.MONDAY; set(java.util.Calendar.DAY_OF_WEEK, java.util.Calendar.MONDAY) }
+        if (field == java.util.Calendar.MONTH) set(java.util.Calendar.DAY_OF_MONTH, 1)
+        set(java.util.Calendar.HOUR_OF_DAY, 0); set(java.util.Calendar.MINUTE, 0)
+        set(java.util.Calendar.SECOND, 0); set(java.util.Calendar.MILLISECOND, 0)
+    }.timeInMillis
+    val now = System.currentTimeMillis()
+    val (from, to) = when (period) {
+        EarningsPeriod.DAY -> startOf(now) to Long.MAX_VALUE
+        EarningsPeriod.WEEK -> startOf(now, java.util.Calendar.WEEK_OF_YEAR) to Long.MAX_VALUE
+        EarningsPeriod.MONTH -> startOf(now, java.util.Calendar.MONTH) to Long.MAX_VALUE
+        EarningsPeriod.DATE -> (pickedDay ?: startOf(now)).let { it to it + 24 * 60 * 60 * 1000L }
+    }
+    val trips = state.driverHistory.filter {
+        it.status == com.example.data.firebase.RideStatus.COMPLETED && it.createdAtMillis >= from && it.createdAtMillis < to
+    }
+    val sum = trips.sumOf { com.example.util.OwnerPayoutGatewayClient.calculateOrderSplit(it.priceSom, commission).driverNetSom }
+    val title = when (period) {
+        EarningsPeriod.DAY -> "Сегодня"
+        EarningsPeriod.WEEK -> "С понедельника"
+        EarningsPeriod.MONTH -> "С 1-го числа"
+        EarningsPeriod.DATE -> java.text.SimpleDateFormat("d MMMM yyyy", Locale("ru")).format(java.util.Date(from))
+    }
+    Surface(shape = RoundedCornerShape(18.dp), color = MaterialTheme.colorScheme.surfaceVariant, modifier = Modifier.fillMaxWidth().testTag("driver_earnings_periods")) {
+        Column(modifier = Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+            Text("Заработок по периодам", fontWeight = FontWeight.Bold)
+            Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                EarningsPeriod.values().forEach { p ->
+                    FilterChip(
+                        selected = period == p,
+                        onClick = { period = p; if (p == EarningsPeriod.DATE) showPicker = true },
+                        label = { Text(p.label) },
+                        leadingIcon = if (p == EarningsPeriod.DATE) ({ Icon(Icons.Default.CalendarMonth, contentDescription = null, modifier = Modifier.size(16.dp)) }) else null
+                    )
+                }
+            }
+            Text(title, style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            Text("$sum сом", fontFamily = JetBrainsMono, fontSize = 26.sp, fontWeight = FontWeight.Black, color = KgTurquoiseDark)
+            Text("Поездок: ${trips.size}", style = MaterialTheme.typography.bodySmall)
+        }
+    }
+    if (showPicker) {
+        val pickerState = rememberDatePickerState(initialSelectedDateMillis = pickedDay ?: now)
+        DatePickerDialog(
+            onDismissRequest = { showPicker = false },
+            confirmButton = {
+                TextButton(onClick = {
+                    // The picker gives UTC midnight; turn it into the local start of that day.
+                    pickerState.selectedDateMillis?.let { utc ->
+                        val u = java.util.Calendar.getInstance(java.util.TimeZone.getTimeZone("UTC")).apply { timeInMillis = utc }
+                        pickedDay = java.util.Calendar.getInstance().apply {
+                            clear(); set(u.get(java.util.Calendar.YEAR), u.get(java.util.Calendar.MONTH), u.get(java.util.Calendar.DAY_OF_MONTH))
+                        }.timeInMillis
+                    }
+                    showPicker = false
+                }) { Text("Готово") }
+            },
+            dismissButton = { TextButton(onClick = { showPicker = false }) { Text("Отмена") } }
+        ) { DatePicker(state = pickerState) }
     }
 }

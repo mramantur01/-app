@@ -2,6 +2,7 @@ package com.example.ui.components
 
 import android.content.Intent
 import android.net.Uri
+import androidx.compose.animation.animateContentSize
 import androidx.compose.animation.core.*
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
@@ -71,12 +72,14 @@ fun DriverLineMapCockpit(
     onToggleTariff: (String) -> Unit = {},
     onBookPreorder: (String) -> Unit = {},
     onReleasePreorder: (String) -> Unit = {},
+    onToggleAlertDay: (Int) -> Unit = {},
     onStartPreorder: (com.example.data.firebase.SharedRide) -> Unit = {},
     modifier: Modifier = Modifier
 ) {
     val context = LocalContext.current
     var showLineSettings by remember { mutableStateOf(false) }
     var showPreorders by remember { mutableStateOf(false) }
+    var showEarnings by remember { mutableStateOf(false) }
 
     // Sort incoming offers so home-bound orders appear first when Destination Filter is active
     val targetKey = state.driverHomeTargetDistrict.substringBefore(" /").trim()
@@ -132,90 +135,49 @@ fun DriverLineMapCockpit(
                 .padding(horizontal = 12.dp, vertical = 10.dp),
             verticalArrangement = Arrangement.spacedBy(8.dp)
         ) {
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                // Left: Yandex Pro Activity & Rating Pill
-                Surface(
+            Box(modifier = Modifier.fillMaxWidth()) {
+                // Left: driver profile
+                DriverRoundHudButton(
                     onClick = onOpenProTab,
-                    shape = RoundedCornerShape(24.dp),
-                    color = com.example.ui.theme.KgTurquoise,
-                    shadowElevation = 6.dp,
-                    modifier = Modifier.testTag("driver_hud_activity_pill")
-                ) {
-                    Row(
-                        modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp),
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(6.dp)
-                    ) {
-                        Icon(
-                            Icons.Default.Bolt,
-                            contentDescription = "Activity",
-                            tint = Color.White,
-                            modifier = Modifier.size(16.dp)
-                        )
-                        Text(
-                            text = "${state.driverActivityScore}",
-                            fontFamily = JetBrainsMono,
-                            fontWeight = FontWeight.ExtraBold,
-                            color = Color.White,
-                            fontSize = 14.sp
-                        )
-                        Text("•", color = Color.White.copy(alpha = 0.45f))
-                        Text(
-                            text = state.driverRatingAvg?.let { "★ " + String.format(java.util.Locale.US, "%.2f", it) } ?: "★ новый",
-                            fontFamily = JetBrainsMono,
-                            fontWeight = FontWeight.Bold,
-                            color = Color.White,
-                            fontSize = 13.sp
-                        )
-                    }
-                }
+                    modifier = Modifier.align(Alignment.CenterStart).testTag("driver_hud_profile")
+                ) { Icon(Icons.Default.Person, contentDescription = "Профиль водителя", tint = KgTurquoiseDark) }
 
-                // Center: Iconic Uber Driver Earnings Pill
+                // Center: "$" — tap and today's earnings appear in its place; tap again to hide.
                 Surface(
-                    onClick = onOpenEarningsTab,
-                    shape = RoundedCornerShape(24.dp),
+                    onClick = { showEarnings = !showEarnings },
+                    shape = RoundedCornerShape(29.dp),
                     color = com.example.ui.theme.KgTurquoise,
                     shadowElevation = 8.dp,
+                    border = androidx.compose.foundation.BorderStroke(3.dp, Color.White),
                     modifier = Modifier
-                        .border(1.dp, Color.White.copy(alpha = 0.18f), RoundedCornerShape(24.dp))
+                        .align(Alignment.Center)
+                        .height(58.dp)
+                        .defaultMinSize(minWidth = 58.dp)
+                        .animateContentSize()
                         .testTag("driver_hud_earnings_pill")
                 ) {
-                    Row(
-                        modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp),
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(6.dp)
-                    ) {
-                        Text(
-                            text = "${state.driverTodayEarningsSom} с",
-                            fontFamily = JetBrainsMono,
-                            fontWeight = FontWeight.Black,
-                            color = Color.White,
-                            fontSize = 16.sp
-                        )
-                        Icon(
-                            Icons.Default.KeyboardArrowRight,
-                            contentDescription = "Open earnings",
-                            tint = UberGreen,
-                            modifier = Modifier.size(16.dp)
-                        )
+                    Box(contentAlignment = Alignment.Center, modifier = Modifier.padding(horizontal = if (showEarnings) 20.dp else 0.dp)) {
+                        if (showEarnings) {
+                            Text("${state.driverTodayEarningsSom} сом", color = Color.White, fontSize = 22.sp, fontWeight = FontWeight.Black)
+                        } else {
+                            Text("$", color = Color.White, fontSize = 28.sp, fontWeight = FontWeight.Black)
+                        }
                     }
                 }
 
-                // Right: Hands-Free Voice Control Button (only when voice commands are switched on)
-                if (com.example.FeatureFlags.VOICE_COMMANDS) Surface(
-                    onClick = onOpenVoiceControl,
-                    shape = CircleShape,
-                    color = Color(0xFF121212).copy(alpha = 0.92f),
-                    shadowElevation = 6.dp,
-                    modifier = Modifier.size(44.dp).testTag("driver_voice_command_button")
+                // Right: line settings (tariffs and city) and, if switched on, voice control
+                Row(
+                    modifier = Modifier.align(Alignment.CenterEnd),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
                 ) {
-                    Box(contentAlignment = Alignment.Center) {
-                        Icon(Icons.Default.Mic, contentDescription = "Голосовое управление", tint = Color.White, modifier = Modifier.size(20.dp))
-                    }
+                    if (com.example.FeatureFlags.VOICE_COMMANDS) DriverRoundHudButton(
+                        onClick = onOpenVoiceControl,
+                        modifier = Modifier.testTag("driver_voice_command_button")
+                    ) { Icon(Icons.Default.Mic, contentDescription = "Голосовое управление", tint = KgTurquoiseDark) }
+                    DriverRoundHudButton(
+                        onClick = { showLineSettings = true },
+                        modifier = Modifier.testTag("driver_line_settings_button")
+                    ) { Icon(Icons.Default.Tune, contentDescription = "Тарифы и город", tint = KgTurquoiseDark) }
                 }
             }
 
@@ -361,6 +323,15 @@ fun DriverLineMapCockpit(
             }
         }
 
+        // Preorders: small calendar button on the right side of the map (not during an order or an offer).
+        if (com.example.FeatureFlags.REAL_RIDES && state.driverAcceptedOrder == null && !(state.driverOnline && currentOffer != null)) {
+            DriverPreordersFab(
+                state = state,
+                onClick = { showPreorders = true },
+                modifier = Modifier.align(Alignment.CenterEnd).padding(end = 12.dp)
+            )
+        }
+
         // 3. FLOATING BOTTOM DRIVER COCKPIT PANEL (3 Authentic States: Offline GO / Live Offer / Active Execution)
         Column(
             modifier = Modifier
@@ -463,7 +434,6 @@ fun DriverLineMapCockpit(
                 // STATE A2: ONLINE — waiting for orders. Clean screen, one big button to leave the line.
                 state.driverOnline -> {
                     Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                        DriverPreordersButton(state = state, onClick = { showPreorders = true })
                         DriverWaitingForOrdersCard(
                             city = state.selectedCity.name,
                             todayEarningsSom = state.driverTodayEarningsSom,
@@ -475,21 +445,13 @@ fun DriverLineMapCockpit(
 
                 // STATE A: OFFLINE — ICONIC BIG ROUND UBER "НА ЛИНИЮ" (GO) BUTTON + DEMAND CARD
                 else -> {
-                    Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                        DriverPreordersButton(state = state, onClick = { showPreorders = true })
-                        DriverOfflineCard(
-                            state = state,
-                            onOpenSettings = { showLineSettings = true },
-                            onGoOnline = onToggleOnline
-                        )
-                    }
+                    DriverOfflineGo(state = state, onGoOnline = onToggleOnline)
                 }
             }
         }
-    }
 
-    if (showPreorders) {
-        DriverPreordersSheet(
+        DriverPreordersSidePanel(
+            visible = showPreorders,
             state = state,
             onBook = onBookPreorder,
             onRelease = onReleasePreorder,
@@ -497,6 +459,7 @@ fun DriverLineMapCockpit(
                 showPreorders = false
                 onStartPreorder(ride)
             },
+            onToggleAlertDay = onToggleAlertDay,
             onDismiss = { showPreorders = false }
         )
     }
@@ -1173,99 +1136,212 @@ private fun DriverNavigationMapSurface(
 
 
 /** Driver is on the line and waiting: nothing else on screen, so it is easy to use while driving. */
-/** Small button above the line card: intercity pre-orders (free ones and mine). */
+/** Round white button for the top bar. */
 @Composable
-private fun DriverPreordersButton(state: KgTaxiUiState, onClick: () -> Unit) {
-    if (!com.example.FeatureFlags.REAL_RIDES) return
-    val free = state.driverOpenPreorders.size
-    val mine = state.driverBookedPreorders.size
-    Surface(
-        onClick = onClick,
-        shape = RoundedCornerShape(16.dp),
-        color = MaterialTheme.colorScheme.surface,
-        shadowElevation = 8.dp,
-        modifier = Modifier.fillMaxWidth().testTag("driver_preorders_button")
-    ) {
-        Row(
-            modifier = Modifier.padding(horizontal = 16.dp, vertical = 12.dp),
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(10.dp)
+private fun DriverRoundHudButton(onClick: () -> Unit, modifier: Modifier = Modifier, content: @Composable () -> Unit) {
+    Surface(onClick = onClick, shape = CircleShape, color = Color.White, shadowElevation = 6.dp, modifier = modifier.size(46.dp)) {
+        Box(contentAlignment = Alignment.Center) { content() }
+    }
+}
+
+/** Offline: just the big round GO over the map and a small status line under it. */
+@Composable
+private fun DriverOfflineGo(state: KgTaxiUiState, onGoOnline: () -> Unit) {
+    Column(horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(12.dp)) {
+        Surface(
+            onClick = onGoOnline,
+            shape = CircleShape,
+            color = com.example.ui.theme.KgTurquoise,
+            shadowElevation = 12.dp,
+            border = androidx.compose.foundation.BorderStroke(6.dp, Color.White),
+            modifier = Modifier.size(132.dp).testTag("driver_online_toggle_button")
         ) {
-            Icon(Icons.Default.Event, contentDescription = null, tint = UberBlue)
-            Column(modifier = Modifier.weight(1f)) {
-                Text("Предзаказы межгорода", fontWeight = FontWeight.Bold)
+            Column(horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.Center) {
+                Text("GO", color = Color.White, fontSize = 40.sp, fontWeight = FontWeight.Black)
+                Text("В путь", color = Color.White, style = MaterialTheme.typography.labelLarge)
+            }
+        }
+        Surface(shape = RoundedCornerShape(20.dp), color = Color.White, shadowElevation = 4.dp, modifier = Modifier.testTag("driver_offline_card")) {
+            Row(
+                modifier = Modifier.padding(horizontal = 14.dp, vertical = 7.dp),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(6.dp)
+            ) {
+                Box(Modifier.size(8.dp).clip(CircleShape).background(Color(0xFF9AA5A7)))
                 Text(
-                    "Свободных: $free • Моих: $mine",
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                    "Не на линии • ${state.selectedCity.name}",
+                    style = MaterialTheme.typography.labelLarge,
+                    fontWeight = FontWeight.SemiBold,
+                    color = Color(0xFF263238)
                 )
             }
-            Icon(Icons.Default.ChevronRight, contentDescription = null)
         }
     }
 }
 
-/** List of my booked pre-orders and free ones in the city. */
-@OptIn(ExperimentalMaterial3Api::class)
+/** Round calendar button on the right of the map with the number of free pre-orders. */
 @Composable
-private fun DriverPreordersSheet(
+private fun DriverPreordersFab(state: KgTaxiUiState, onClick: () -> Unit, modifier: Modifier = Modifier) {
+    val free = state.driverOpenPreorders.size
+    val mine = state.driverBookedPreorders.size
+    Box(modifier = modifier) {
+        Surface(
+            onClick = onClick,
+            shape = CircleShape,
+            color = Color.White,
+            shadowElevation = 8.dp,
+            modifier = Modifier.size(54.dp).testTag("driver_preorders_button")
+        ) {
+            Box(contentAlignment = Alignment.Center) {
+                Icon(Icons.Default.Event, contentDescription = "Предзаказы", tint = KgTurquoiseDark, modifier = Modifier.size(26.dp))
+            }
+        }
+        val badge = free + mine
+        if (badge > 0) {
+            Surface(
+                shape = CircleShape,
+                color = UberRed,
+                modifier = Modifier.align(Alignment.TopEnd).offset(x = 4.dp, y = (-4).dp).defaultMinSize(minWidth = 22.dp, minHeight = 22.dp)
+            ) {
+                Box(contentAlignment = Alignment.Center, modifier = Modifier.padding(horizontal = 5.dp)) {
+                    Text("$badge", color = Color.White, fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                }
+            }
+        }
+    }
+}
+
+private val weekDays = listOf(
+    java.util.Calendar.MONDAY to "Пн", java.util.Calendar.TUESDAY to "Вт", java.util.Calendar.WEDNESDAY to "Ср",
+    java.util.Calendar.THURSDAY to "Чт", java.util.Calendar.FRIDAY to "Пт", java.util.Calendar.SATURDAY to "Сб",
+    java.util.Calendar.SUNDAY to "Вс"
+)
+
+/** Pre-orders slide in from the right: alert days, my pre-orders and free ones. */
+@Composable
+private fun DriverPreordersSidePanel(
+    visible: Boolean,
     state: KgTaxiUiState,
     onBook: (String) -> Unit,
     onRelease: (String) -> Unit,
     onStart: (com.example.data.firebase.SharedRide) -> Unit,
+    onToggleAlertDay: (Int) -> Unit,
     onDismiss: () -> Unit
 ) {
     val context = LocalContext.current
-    ModalBottomSheet(onDismissRequest = onDismiss) {
-        Column(
-            modifier = Modifier
-                .fillMaxWidth()
-                .verticalScroll(rememberScrollState())
-                .padding(horizontal = 18.dp)
-                .padding(bottom = 24.dp),
-            verticalArrangement = Arrangement.spacedBy(12.dp)
+    if (visible) androidx.activity.compose.BackHandler(onBack = onDismiss)
+    Box(modifier = Modifier.fillMaxSize()) {
+        androidx.compose.animation.AnimatedVisibility(
+            visible = visible,
+            enter = androidx.compose.animation.fadeIn(),
+            exit = androidx.compose.animation.fadeOut()
         ) {
-            Text("Мои предзаказы", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
-            if (state.driverBookedPreorders.isEmpty()) {
-                Text(
-                    "Пока нет. Возьмите заказ из списка ниже.",
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
-            }
-            state.driverBookedPreorders.forEach { r ->
-                PreorderRow(r) {
-                    Button(onClick = { onStart(r) }, modifier = Modifier.testTag("preorder_start_${r.id}")) {
-                        Text("Начать поездку")
+            Box(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .background(Color.Black.copy(alpha = 0.35f))
+                    .clickable(onClick = onDismiss)
+            )
+        }
+        androidx.compose.animation.AnimatedVisibility(
+            visible = visible,
+            enter = androidx.compose.animation.slideInHorizontally { it },
+            exit = androidx.compose.animation.slideOutHorizontally { it },
+            modifier = Modifier.align(Alignment.CenterEnd)
+        ) {
+            Surface(
+                shape = RoundedCornerShape(topStart = 24.dp, bottomStart = 24.dp),
+                color = MaterialTheme.colorScheme.surface,
+                shadowElevation = 16.dp,
+                modifier = Modifier.fillMaxHeight().fillMaxWidth(0.86f).testTag("driver_preorders_panel")
+            ) {
+                Column(
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .verticalScroll(rememberScrollState())
+                        .padding(horizontal = 16.dp, vertical = 14.dp),
+                    verticalArrangement = Arrangement.spacedBy(12.dp)
+                ) {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Icon(Icons.Default.Event, contentDescription = null, tint = KgTurquoiseDark)
+                        Spacer(Modifier.width(8.dp))
+                        Text("Предзаказы", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.ExtraBold, modifier = Modifier.weight(1f))
+                        IconButton(onClick = onDismiss) { Icon(Icons.Default.Close, contentDescription = "Закрыть") }
                     }
-                    if (r.passengerPhone.isNotBlank()) {
-                        OutlinedButton(onClick = {
-                            runCatching {
-                                context.startActivity(
-                                    android.content.Intent(
-                                        android.content.Intent.ACTION_DIAL,
-                                        android.net.Uri.parse("tel:${r.passengerPhone}")
-                                    )
-                                )
+
+                    // Alert days: a notification comes when a pre-order for one of these days appears.
+                    Surface(shape = RoundedCornerShape(16.dp), color = KgTurquoise.copy(alpha = 0.10f), modifier = Modifier.fillMaxWidth()) {
+                        Column(modifier = Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                Icon(Icons.Default.NotificationsActive, contentDescription = null, tint = KgTurquoiseDark, modifier = Modifier.size(18.dp))
+                                Spacer(Modifier.width(6.dp))
+                                Text("Уведомлять о предзаказах на дни", fontWeight = FontWeight.Bold, style = MaterialTheme.typography.bodyMedium)
                             }
-                        }) { Icon(Icons.Default.Call, contentDescription = "Позвонить пассажиру") }
+                            Row(horizontalArrangement = Arrangement.spacedBy(4.dp), modifier = Modifier.fillMaxWidth()) {
+                                weekDays.forEach { (day, label) ->
+                                    val on = day in state.driverPreorderAlertDays
+                                    Surface(
+                                        onClick = { onToggleAlertDay(day) },
+                                        shape = CircleShape,
+                                        color = if (on) KgTurquoise else Color.White,
+                                        border = androidx.compose.foundation.BorderStroke(1.dp, if (on) KgTurquoise else Color(0xFFCFD8DC)),
+                                        modifier = Modifier.weight(1f).aspectRatio(1f).testTag("preorder_alert_day_$day")
+                                    ) {
+                                        Box(contentAlignment = Alignment.Center) {
+                                            Text(label, fontSize = 12.sp, fontWeight = FontWeight.Bold, color = if (on) Color.White else Color(0xFF455A64))
+                                        }
+                                    }
+                                }
+                            }
+                            Text(
+                                if (state.driverPreorderAlertDays.isEmpty()) "Отметьте дни — пришлём уведомление, когда появится заказ."
+                                else "Пришлём уведомление, когда появится предзаказ на отмеченный день.",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
                     }
-                    TextButton(onClick = { onRelease(r.id) }) { Text("Отказаться") }
-                }
-            }
-            HorizontalDivider()
-            Text("Свободные • ${state.selectedCity.name}", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
-            if (state.driverOpenPreorders.isEmpty()) {
-                Text(
-                    "Сейчас свободных предзаказов нет.",
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
-            }
-            state.driverOpenPreorders.forEach { r ->
-                PreorderRow(r) {
-                    Button(onClick = { onBook(r.id) }, modifier = Modifier.testTag("preorder_book_${r.id}")) {
-                        Text("Взять предзаказ")
+
+                    Text("Мои предзаказы", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
+                    if (state.driverBookedPreorders.isEmpty()) {
+                        Text(
+                            "Пока нет. Возьмите заказ из списка ниже.",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+                    state.driverBookedPreorders.forEach { r ->
+                        PreorderRow(r) {
+                            Button(onClick = { onStart(r) }, modifier = Modifier.testTag("preorder_start_${r.id}")) {
+                                Text("Начать")
+                            }
+                            if (r.passengerPhone.isNotBlank()) {
+                                OutlinedButton(onClick = {
+                                    runCatching {
+                                        context.startActivity(Intent(Intent.ACTION_DIAL, Uri.parse("tel:${r.passengerPhone}")))
+                                    }
+                                }) { Icon(Icons.Default.Call, contentDescription = "Позвонить пассажиру") }
+                            }
+                            TextButton(onClick = { onRelease(r.id) }) { Text("Отказаться") }
+                        }
+                    }
+                    HorizontalDivider()
+                    Text("Свободные • ${state.selectedCity.name}", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
+                    if (state.driverOpenPreorders.isEmpty()) {
+                        Text(
+                            "Сейчас свободных предзаказов нет.",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+                    state.driverOpenPreorders.forEach { r ->
+                        PreorderRow(r) {
+                            Button(
+                                onClick = { onBook(r.id) },
+                                colors = ButtonDefaults.buttonColors(containerColor = KgTurquoise),
+                                modifier = Modifier.testTag("preorder_book_${r.id}")
+                            ) { Text("Взять") }
+                        }
                     }
                 }
             }
@@ -1290,7 +1366,7 @@ private fun PreorderRow(r: com.example.data.firebase.SharedRide, actions: @Compo
                 color = MaterialTheme.colorScheme.onSurfaceVariant
             )
             Text(
-                "${r.passengerName} • ${r.seats ?: 1} мест. • ${r.priceSom} сом наличными",
+                "${r.passengerName} • ${r.seats ?: 1} мест. • ${r.priceSom} сом",
                 style = MaterialTheme.typography.bodyMedium
             )
             Row(
@@ -1373,67 +1449,6 @@ private fun DriverWaitingForOrdersCard(
     }
 }
 
-
-/** Offline: who/where, today's result, a settings button and a swipe to go on the line. */
-@Composable
-private fun DriverOfflineCard(
-    state: KgTaxiUiState,
-    onOpenSettings: () -> Unit,
-    onGoOnline: () -> Unit
-) {
-    Surface(
-        shape = RoundedCornerShape(22.dp),
-        color = MaterialTheme.colorScheme.surface,
-        shadowElevation = 12.dp,
-        modifier = Modifier.fillMaxWidth().testTag("driver_offline_card")
-    ) {
-        Column(
-            modifier = Modifier.padding(horizontal = 16.dp, vertical = 14.dp),
-            verticalArrangement = Arrangement.spacedBy(12.dp)
-        ) {
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                Column(modifier = Modifier.weight(1f)) {
-                    Text("Не на линии", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.ExtraBold)
-                    Text(
-                        "Поиск заказов выключен • ${state.selectedCity.name}",
-                        style = MaterialTheme.typography.bodyMedium,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
-                }
-                FilledTonalIconButton(
-                    onClick = onOpenSettings,
-                    modifier = Modifier.size(48.dp).testTag("driver_line_settings_button")
-                ) {
-                    Icon(Icons.Default.Tune, contentDescription = "Тарифы и город")
-                }
-            }
-            Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                StatTile("Сегодня", "${state.driverTodayEarningsSom} сом", Modifier.weight(1f))
-                StatTile("Поездок", "${state.driverQuestTripsDone}", Modifier.weight(1f))
-                StatTile("Тарифов", "${state.driverEnabledTariffs.size}", Modifier.weight(1f))
-            }
-            // Big round GO button: one tap to go on the line (other actions use swipes).
-            Box(modifier = Modifier.fillMaxWidth(), contentAlignment = Alignment.Center) {
-                Surface(
-                    onClick = onGoOnline,
-                    shape = CircleShape,
-                    color = com.example.ui.theme.KgTurquoise,
-                    shadowElevation = 10.dp,
-                    border = androidx.compose.foundation.BorderStroke(6.dp, com.example.ui.theme.KgTurquoiseLight),
-                    modifier = Modifier.size(132.dp).testTag("driver_online_toggle_button")
-                ) {
-                    Column(
-                        horizontalAlignment = Alignment.CenterHorizontally,
-                        verticalArrangement = Arrangement.Center
-                    ) {
-                        Text("GO", color = Color.White, fontSize = 40.sp, fontWeight = FontWeight.Black)
-                        Text("В путь", color = Color.White, style = MaterialTheme.typography.labelLarge)
-                    }
-                }
-            }
-        }
-    }
-}
 
 @Composable
 private fun StatTile(label: String, value: String, modifier: Modifier = Modifier) {

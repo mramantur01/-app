@@ -17,8 +17,8 @@ android {
     applicationId = "com.kgtaxi.app"
     minSdk = 24
     targetSdk = 36
-    versionCode = 5
-    versionName = "1.4"
+    versionCode = 6
+    versionName = "1.5"
 
     testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     manifestPlaceholders["MAPS_API_KEY"] = "YOUR_GOOGLE_MAPS_API_KEY"
@@ -90,6 +90,7 @@ googleServices { missingGoogleServicesStrategy = MissingGoogleServicesStrategy.W
 dependencies {
   // Free street map (OpenStreetMap) when there is no Google Maps key
   implementation("org.osmdroid:osmdroid-android:6.1.20")
+  implementation("androidx.work:work-runtime-ktx:2.9.1")
   implementation(platform(libs.androidx.compose.bom))
   implementation(platform(libs.firebase.bom))
   // implementation(libs.accompanist.permissions)
