@@ -4,4 +4,6 @@
     <cache-path name="reg_photos" path="reg_photos/" />
     <!-- Owner spreadsheet exports. -->
     <cache-path name="exports" path="exports/" />
+    <!-- New app version downloaded from the website, opened in the Android installer. -->
+    <cache-path name="updates" path="updates/" />
 </paths>

@@ -66,6 +66,9 @@ private tailrec fun Context.findActivity(): Activity? = when (this) {
  * Phone sign-in must be turned on in the Firebase console (Authentication → Sign-in method → Phone),
  * and the app's SHA-1/SHA-256 must be added to the Firebase project.
  */
+/** SMS sign-in needs a paid Firebase plan (codes do not arrive on the free one). */
+private const val SMS_SIGN_IN = false
+
 @Composable
 fun SignInDialog(
     onSignInWithGoogle: () -> Unit,
@@ -147,7 +150,16 @@ fun SignInDialog(
         title = { Text(if (verificationId == null) "Вход в KG Taxi" else "Код из SMS") },
         text = {
             Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                if (verificationId == null) {
+                if (verificationId == null && !SMS_SIGN_IN) {
+                    Text("Войдите через Google — это быстро и без SMS. Номер телефона укажете при регистрации.", style = MaterialTheme.typography.bodyMedium)
+                    Button(
+                        onClick = {
+                            onDismiss()
+                            onSignInWithGoogle()
+                        },
+                        modifier = Modifier.fillMaxWidth().testTag("sign_in_google")
+                    ) { Text("Войти через Google") }
+                } else if (verificationId == null) {
                     OutlinedTextField(
                         value = phoneInput,
                         onValueChange = { phoneInput = it.take(20); error = null },

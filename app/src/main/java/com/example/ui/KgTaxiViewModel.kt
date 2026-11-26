@@ -197,6 +197,9 @@ data class KgTaxiUiState(
     /** Passenger side: "pending", "accepted", "rejected" or null. */
     val passengerRouteRequestStatus: String? = null,
     val driverPhotoCheckSending: Boolean = false,
+    /** In-app update: -1 = not downloading, 0..100 = progress. */
+    val updateProgress: Int = -1,
+    val updateError: String? = null,
     /** All open orders that pass the driver's filters (to choose from a list). */
     val driverRadarOrders: List<DriverIncomingOrder> = emptyList(),
     val driverMinPassengerRating: Double = 0.0,
@@ -511,6 +514,7 @@ class KgTaxiViewModel(
         observePreferences()
         loadDriverDocs()
         checkForUpdate()
+        com.example.util.AppUpdater.scheduleDailyCheck(appContext)
         generateNearbyDrivers(_uiState.value.selectedCity)
         generateDriverIncomingOrders(_uiState.value.selectedCity)
         _uiState.update { it.copy(offlineMode = !LocationAndVoiceHelper.isNetworkAvailable(appContext)) }
@@ -1874,7 +1878,37 @@ class KgTaxiViewModel(
         }
     }
 
-    fun dismissUpdate() = _uiState.update { it.copy(updateAvailable = null) }
+    fun dismissUpdate() = _uiState.update { it.copy(updateAvailable = null, updateProgress = -1, updateError = null) }
+
+    private var updateFile: java.io.File? = null
+
+    /** Downloads the new version and opens the installer (asks once for permission to install). */
+    fun startUpdate() {
+        val info = _uiState.value.updateAvailable ?: return
+        if (!com.example.util.AppUpdater.canInstall(appContext)) {
+            _uiState.update { it.copy(updateError = "Разрешите KG Taxi устанавливать обновления: включите переключатель и вернитесь назад.") }
+            com.example.util.AppUpdater.openInstallPermission(appContext)
+            return
+        }
+        updateFile?.takeIf { it.exists() }?.let { f ->
+            runCatching { com.example.util.AppUpdater.install(appContext, f) }
+            return
+        }
+        _uiState.update { it.copy(updateProgress = 0, updateError = null) }
+        viewModelScope.launch {
+            val file = com.example.util.AppUpdater.download(appContext, info) { p ->
+                _uiState.update { it.copy(updateProgress = p) }
+            }
+            if (file == null) {
+                _uiState.update { it.copy(updateProgress = -1, updateError = "Не удалось скачать. Проверьте интернет и нажмите «Обновить» ещё раз.") }
+                return@launch
+            }
+            updateFile = file
+            _uiState.update { it.copy(updateProgress = 100) }
+            runCatching { com.example.util.AppUpdater.install(appContext, file) }
+                .onFailure { _uiState.update { it.copy(updateError = "Не удалось открыть установщик. Скачайте с сайта: mramantur-site.vercel.app/download.html") } }
+        }
+    }
 
     fun openDriverApplication() {
         if (FeatureFlags.REAL_RIDES) {

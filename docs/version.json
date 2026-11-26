@@ -1,6 +1,6 @@
 {
-  "versionCode": 10,
-  "versionName": "1.9",
+  "versionCode": 11,
+  "versionName": "2.0",
   "url": "https://mramantur-site.vercel.app/kgtaxi.apk",
-  "notes": "Приложение и сайт mramantur-site.vercel.app теперь работают вместе: заказы с сайта приходят водителям, обновления и скачивание — с сайта."
+  "notes": "Обновление теперь ставится прямо из приложения в одно нажатие. Вход — через Google, без SMS."
 }

@@ -226,7 +226,7 @@ fun KgTaxiAppRoot() {
                     onToggleTheme = viewModel::toggleDarkTheme,
                     onToggleOffline = viewModel::toggleOfflineMode,
                     onOpenProfile = { showProfile = true },
-                    onClickSignIn = { showSignInDialog = true }
+                    onClickSignIn = triggerGoogleSignIn
                 )
                 }
 
@@ -315,7 +315,7 @@ fun KgTaxiAppRoot() {
                     isSigningIn = isSigningIn,
                     authError = authError,
                     viewModel = viewModel,
-                    onSignInWithGoogle = { showSignInDialog = true },
+                    onSignInWithGoogle = triggerGoogleSignIn,
                     onSignOut = {
                         signOutGoogle(
                             credentialManager = credentialManager,
@@ -424,19 +424,27 @@ fun KgTaxiAppRoot() {
 
             // New version on the website (installs outside Google Play).
             state.updateAvailable?.let { upd ->
+                val downloading = state.updateProgress in 0..99
                 AlertDialog(
-                    onDismissRequest = viewModel::dismissUpdate,
-                    title = { Text("Доступна новая версия ${upd.versionName}") },
-                    text = { Text(upd.notes.ifBlank { "Исправления и новые функции." } + " Скачайте и установите поверх текущей версии — ваши данные сохранятся.") },
-                    confirmButton = {
-                        Button(onClick = {
-                            runCatching {
-                                context.startActivity(android.content.Intent(android.content.Intent.ACTION_VIEW, android.net.Uri.parse(upd.url)))
+                    onDismissRequest = { if (!downloading) viewModel.dismissUpdate() },
+                    title = { Text("Новая версия ${upd.versionName}") },
+                    text = {
+                        Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                            Text(upd.notes.ifBlank { "Исправления и новые функции." })
+                            Text("Обновление ставится поверх — ваши данные и вход сохранятся.", style = MaterialTheme.typography.bodySmall)
+                            if (state.updateProgress >= 0) {
+                                LinearProgressIndicator(progress = { state.updateProgress / 100f }, modifier = Modifier.fillMaxWidth())
+                                Text(if (state.updateProgress < 100) "Скачиваем… ${state.updateProgress}%" else "Готово — нажмите «Установить» в окне Android", style = MaterialTheme.typography.bodySmall)
                             }
-                            viewModel.dismissUpdate()
-                        }) { Text("Скачать") }
+                            state.updateError?.let { Text(it, color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall) }
+                        }
                     },
-                    dismissButton = { TextButton(onClick = viewModel::dismissUpdate) { Text("Позже") } }
+                    confirmButton = {
+                        Button(onClick = viewModel::startUpdate, enabled = !downloading) {
+                            Text(if (state.updateProgress == 100) "Установить" else "Обновить")
+                        }
+                    },
+                    dismissButton = { if (!downloading) TextButton(onClick = viewModel::dismissUpdate) { Text("Позже") } }
                 )
             }
 
