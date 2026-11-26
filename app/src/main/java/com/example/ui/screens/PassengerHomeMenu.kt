@@ -66,6 +66,10 @@ fun PassengerHomeMenu(
     if (showMyRides) {
         MyRidesSheet(state = state, viewModel = viewModel, recent = recent, onDismiss = { showMyRides = false })
     }
+    var showFood by androidx.compose.runtime.saveable.rememberSaveable { androidx.compose.runtime.mutableStateOf(false) }
+    if (showFood) {
+        FoodOrderScreen(state = state, viewModel = viewModel, onDismiss = { showFood = false })
+    }
 
     Column(
         modifier = modifier
@@ -111,13 +115,14 @@ fun PassengerHomeMenu(
                 modifier = Modifier.weight(1f)
             ) { viewModel.openPassengerOrder(ServiceType.TAXI) }
             HomeTile(
-                icon = Icons.Default.Route,
-                title = com.example.i18n.t("Межгород", "Шаар аралык"),
-                subtitle = com.example.i18n.t("Ош, Иссык-Куль", "Ош, Ысык-Көл"),
+                icon = Icons.Default.Restaurant,
+                title = com.example.i18n.t("Еда", "Тамак-аш"),
+                subtitle = com.example.i18n.t("кафе, продукты", "кафе, азык-түлүк"),
                 highlighted = false,
-                tag = "home_tile_intercity",
-                modifier = Modifier.weight(1f)
-            ) { viewModel.openPassengerOrder(ServiceType.INTERCITY) }
+                tag = "home_tile_food",
+                modifier = Modifier.weight(1f),
+                onClick = { showFood = true }
+            )
         }
         Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
             HomeTile(
@@ -129,15 +134,21 @@ fun PassengerHomeMenu(
                 modifier = Modifier.weight(1f)
             ) { viewModel.openPassengerPreorder() }
             HomeTile(
-                icon = Icons.Default.History,
-                title = com.example.i18n.t("Мои поездки", "Менин сапарларым"),
-                subtitle = if (state.passengerRides.isEmpty()) "пока пусто" else "повторить",
+                icon = Icons.Default.Route,
+                title = com.example.i18n.t("Межгород", "Шаар аралык"),
+                subtitle = com.example.i18n.t("Ош, Иссык-Куль", "Ош, Ысык-Көл"),
                 highlighted = false,
-                tag = "home_tile_rides",
-                modifier = Modifier.weight(1f),
-                onClick = { showMyRides = true }
-            )
+                tag = "home_tile_intercity",
+                modifier = Modifier.weight(1f)
+            ) { viewModel.openPassengerOrder(ServiceType.INTERCITY) }
         }
+        // "Мои поездки" moved from the tiles to a row under them.
+        RecentRow(
+            icon = Icons.Default.History,
+            title = com.example.i18n.t("Мои поездки", "Менин сапарларым"),
+            subtitle = if (state.passengerRides.isEmpty()) "пока пусто" else "история и повтор заказа",
+            onClick = { showMyRides = true }
+        )
 
         // Pre-orders waiting for departure.
         if (state.passengerPreorders.isNotEmpty()) {
@@ -231,7 +242,28 @@ fun PassengerHomeMenu(
         )
         SupportCard(sending = state.supportSending, onSend = { text -> viewModel.sendSupportMessage(text, null) })
         viewModel.myInviteCode()?.let { code -> InviteFriendCard(code = code, percent = state.appConfig.referralPercent) }
+        HomeAdSlots()
 
+    }
+}
+
+/** Places for advertising at the bottom of the home page; the format is chosen later. */
+@Composable
+private fun HomeAdSlots() {
+    Text(com.example.i18n.t("Партнёры", "Өнөктөштөр"), fontWeight = FontWeight.Bold, color = KgInk)
+    Row(horizontalArrangement = Arrangement.spacedBy(10.dp), modifier = Modifier.testTag("home_ad_slots")) {
+        repeat(2) {
+            Surface(
+                shape = RoundedCornerShape(14.dp),
+                color = Color.Transparent,
+                border = androidx.compose.foundation.BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
+                modifier = Modifier.weight(1f).height(84.dp)
+            ) {
+                Box(contentAlignment = Alignment.Center) {
+                    Text(com.example.i18n.t("Место для рекламы", "Жарнама орду"), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                }
+            }
+        }
     }
 }
 

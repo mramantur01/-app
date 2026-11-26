@@ -87,6 +87,7 @@ fun DriverLineMapCockpit(
     onSetMinRating: (Double) -> Unit = {},
     onSetMinTripKm: (Int) -> Unit = {},
     onSetDeaf: (Boolean) -> Unit = {},
+    onSetTakesDelivery: (Boolean) -> Unit = {},
     /** Take an order from the list (or as the next one while on a trip). */
     onTakeOrder: (DriverIncomingOrder) -> Unit = onAcceptOrder,
     modifier: Modifier = Modifier
@@ -591,6 +592,7 @@ fun DriverLineMapCockpit(
             onSetMinRating = onSetMinRating,
             onSetMinTripKm = onSetMinTripKm,
             onSetDeaf = onSetDeaf,
+            onSetTakesDelivery = onSetTakesDelivery,
             onDismiss = { showLineSettings = false }
         )
     }
@@ -1594,6 +1596,7 @@ private fun DriverLineSettingsSheet(
     onSetMinRating: (Double) -> Unit = {},
     onSetMinTripKm: (Int) -> Unit = {},
     onSetDeaf: (Boolean) -> Unit = {},
+    onSetTakesDelivery: (Boolean) -> Unit = {},
     onDismiss: () -> Unit
 ) {
     var pickHome by remember { mutableStateOf(false) }
@@ -1659,6 +1662,14 @@ private fun DriverLineSettingsSheet(
                         modifier = Modifier.testTag("line_radius_$km")
                     )
                 }
+            }
+            HorizontalDivider()
+            Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth()) {
+                Column(Modifier.weight(1f)) {
+                    Text("Беру доставку", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
+                    Text("Заказы еды и продуктов: купить по списку и привезти", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                }
+                Switch(checked = state.driverTakesDelivery, onCheckedChange = onSetTakesDelivery, modifier = Modifier.testTag("line_takes_delivery"))
             }
             HorizontalDivider()
             Text("Длина поездки", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)

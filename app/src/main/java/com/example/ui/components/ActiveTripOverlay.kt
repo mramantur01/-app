@@ -61,11 +61,11 @@ fun ActiveTripCard(
 
     val statusText = if (ride.serviceType == ServiceType.FOOD) {
         when (ride.status) {
-            TripStatus.SEARCHING -> "Заказ отправлен в ресторан..."
-            TripStatus.ASSIGNED -> "Ресторан готовит ваш заказ..."
-            TripStatus.ARRIVED -> "Курьер забрал заказ и выехал!"
+            TripStatus.SEARCHING -> "Ищем курьера рядом..."
+            TripStatus.ASSIGNED -> "Курьер принял заказ и покупает"
+            TripStatus.ARRIVED -> "Курьер у вас!"
             TripStatus.IN_PROGRESS -> "Курьер в пути • ${(ride.progress * 100).toInt()}%"
-            TripStatus.COMPLETED -> "Еда доставлена!"
+            TripStatus.COMPLETED -> "Заказ доставлен!"
             TripStatus.CANCELLED -> "Заказ отменён"
         }
     } else {

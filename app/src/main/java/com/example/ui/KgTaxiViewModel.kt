@@ -204,6 +204,8 @@ data class KgTaxiUiState(
     val driverRadarOrders: List<DriverIncomingOrder> = emptyList(),
     val driverMinPassengerRating: Double = 0.0,
     val driverMinTripKm: Int = 0,
+    /** The driver also takes food and grocery deliveries. */
+    val driverTakesDelivery: Boolean = true,
     val driverDeafMode: Boolean = false,
     val driverAcceptancePercent: Int? = null,
     /** Taxi ordered for later (millis), null = now. */
@@ -450,6 +452,8 @@ data class KgTaxiUiState(
             )
         }
 }
+/** Delivery of food or groceries by a courier, the goods are paid separately. */
+const val FOOD_DELIVERY_FEE_SOM = 150
 
 /** Order marks in the ride comment (the driver sees them). */
 const val PRIORITY_MARK = "Приоритет: подача быстрее"
@@ -1032,6 +1036,11 @@ class KgTaxiViewModel(
         _uiState.update { it.copy(driverBalance = b, driverCancelRatePercent = rate) }
     }
 
+    fun setDriverTakesDelivery(on: Boolean) {
+        DriverWorkPrefs.setTakesDelivery(appContext, on)
+        _uiState.update { it.copy(driverTakesDelivery = on) }
+    }
+
     fun setDriverMinTripKm(km: Int) {
         DriverWorkPrefs.setMinTripKm(appContext, km)
         _uiState.update { it.copy(driverMinTripKm = km) }
@@ -1132,6 +1141,7 @@ class KgTaxiViewModel(
                 driverPickupRadiusKm = DriverWorkPrefs.radiusKm(c),
                 driverMinPassengerRating = DriverWorkPrefs.minRating(c),
                 driverMinTripKm = DriverWorkPrefs.minTripKm(c),
+                driverTakesDelivery = DriverWorkPrefs.takesDelivery(c),
                 driverDeafMode = DriverWorkPrefs.deaf(c),
                 driverAcceptancePercent = DriverWorkPrefs.acceptanceRate(c),
                 driverVoiceAnnounce = DriverWorkPrefs.voice(c),
@@ -2856,6 +2866,86 @@ class KgTaxiViewModel(
         }
     }
 
+    /**
+     * Food and groceries: a courier (a driver who takes deliveries) buys what is listed and brings it.
+     * The customer pays the courier for the goods and the delivery in cash or by QR.
+     */
+    fun requestFoodOrder(kind: String, items: String, shop: String, goodsSom: Int, note: String) {
+        val s = _uiState.value
+        if (!s.isSignedIn) {
+            _uiState.update { it.copy(statusBanner = "Войдите в аккаунт, чтобы заказать доставку.") }
+            return
+        }
+        if (items.isBlank()) {
+            _uiState.update { it.copy(statusBanner = "Напишите, что купить") }
+            return
+        }
+        if (s.activeRide != null) {
+            _uiState.update { it.copy(statusBanner = "Сначала завершите текущий заказ") }
+            return
+        }
+        val fee = FOOD_DELIVERY_FEE_SOM
+        val pin = (1000 + Random.nextInt(9000)).toString()
+        val shopLabel = shop.trim().ifBlank { "любой магазин рядом" }
+        val comment = listOfNotNull(
+            "Купить ($kind): " + items.trim().lines().filter { it.isNotBlank() }.joinToString(", ").take(220),
+            "Где купить: " + shopLabel.take(60),
+            if (goodsSom > 0) "Покупки ≈ $goodsSom сом" else null,
+            note.trim().takeIf { it.isNotBlank() }?.take(60),
+            "PIN $pin"
+        ).joinToString(" • ")
+        val pending = ActiveRideState(
+            tripId = "pending_" + System.currentTimeMillis(),
+            serviceType = ServiceType.FOOD,
+            tariffName = "Доставка: $kind",
+            city = s.selectedCity.name,
+            pickupAddress = shopLabel,
+            dropoffAddress = s.pickupAddress,
+            pickupPoint = s.pickupPoint,
+            dropoffPoint = s.pickupPoint,
+            distanceKm = 0.0,
+            durationMin = 30,
+            totalPriceSom = fee,
+            paymentMethod = PaymentMethod.CASH,
+            status = TripStatus.SEARCHING,
+            driverName = "Ищем курьера…",
+            driverCar = "",
+            driverRating = 0.0,
+            driverEtaMin = 0,
+            safetyPin = pin,
+            progress = 0f
+        )
+        _uiState.update { it.copy(activeRide = pending, driverChatMessages = emptyList(), statusBanner = "Отправляем заказ курьерам…") }
+        viewModelScope.launch {
+            val created = rides.createRide(
+                passengerName = s.profile.displayName,
+                serviceType = "FOOD",
+                city = s.selectedCity.name,
+                pickupAddress = shopLabel,
+                dropoffAddress = s.pickupAddress,
+                pickupLat = s.pickupPoint.lat,
+                pickupLng = s.pickupPoint.lng,
+                dropoffLat = s.pickupPoint.lat,
+                dropoffLng = s.pickupPoint.lng,
+                priceSom = fee,
+                comment = comment,
+                passengerPhone = s.profile.phone,
+                tariffName = "Доставка",
+                paymentMethod = "CASH",
+                passengerRatingAvg = s.passengerRides.mapNotNull { it.passengerRating }.takeIf { it.isNotEmpty() }?.average(),
+                passengerTrips = s.passengerRides.count { it.status == RideStatus.COMPLETED }
+            )
+            created.onSuccess { id ->
+                passengerRideId = id
+                startPassengerChat(id)
+                _uiState.update { st -> st.copy(activeRide = st.activeRide?.copy(tripId = id), statusBanner = "Заказ отправлен. Ищем курьера рядом…") }
+                observePassengerRide(id)
+            }.onFailure { e ->
+                _uiState.update { it.copy(activeRide = null, statusBanner = "Не удалось создать заказ: " + (e.message ?: "нет интернета")) }
+            }
+        }
+    }
+
     private fun observePassengerRide(rideId: String) {
         passengerRideJob?.cancel()
         var lastStatus = RideStatus.SEARCHING
@@ -3284,7 +3374,8 @@ class KgTaxiViewModel(
                 val orders = open.map { it.toDriverOrder(myPoint) }
                     .filter { o -> st.driverPickupRadiusKm <= 0 || o.serviceType == ServiceType.INTERCITY || o.pickupDistanceKm <= st.driverPickupRadiusKm }
                     .filter { o -> st.driverMinPassengerRating <= 0.0 || o.passengerTrips <= 0 || o.passengerRating <= 0.0 || o.passengerRating >= st.driverMinPassengerRating }
-                    .filter { o -> st.driverMinTripKm <= 0 || o.serviceType == ServiceType.INTERCITY || o.distanceKm >= st.driverMinTripKm }
+                    .filter { o -> st.driverMinTripKm <= 0 || o.serviceType == ServiceType.INTERCITY || o.serviceType == ServiceType.FOOD || o.distanceKm >= st.driverMinTripKm }
+                    .filter { o -> o.serviceType != ServiceType.FOOD || st.driverTakesDelivery }
                     .filter { o ->
                         // "Подождать": cheaper order, shown to drivers 3 minutes later.
                         val r = open.firstOrNull { it.id == o.id }
@@ -3336,8 +3427,8 @@ class KgTaxiViewModel(
             passengerName = passengerName,
             passengerRating = passengerRatingAvg ?: 0.0,
             passengerTrips = passengerTrips ?: 0,
-            serviceType = if (serviceType == "INTERCITY") ServiceType.INTERCITY else ServiceType.TAXI,
-            tariffName = tariffName ?: if (serviceType == "INTERCITY") "Межгород" else "Такси",
+            serviceType = when (serviceType) { "INTERCITY" -> ServiceType.INTERCITY; "FOOD" -> ServiceType.FOOD; else -> ServiceType.TAXI },
+            tariffName = tariffName ?: when (serviceType) { "INTERCITY" -> "Межгород"; "FOOD" -> "Доставка"; else -> "Такси" },
             pickupAddress = pickupAddress,
             dropoffAddress = dropoffAddress,
             distanceKm = (tripKm * 10).roundToInt() / 10.0,
@@ -3355,6 +3446,7 @@ class KgTaxiViewModel(
             meetAndGreetSign = comment?.substringBefore(" • PIN")?.takeIf { it.isNotBlank() && !it.startsWith("PIN") },
             passengerWishes = comment?.split(" • ")?.filter {
                 it.startsWith("Пожелания:") || it.startsWith("Нужна помощь:") || it.startsWith("Остановки:") ||
+                    it.startsWith("Купить") || it.startsWith("Где купить:") || it.startsWith("Покупки") ||
                     it.startsWith(PRIORITY_MARK) || it.startsWith(WAIT_SAVE_MARK)
             }
                 ?.joinToString("\n")?.takeIf { it.isNotBlank() }

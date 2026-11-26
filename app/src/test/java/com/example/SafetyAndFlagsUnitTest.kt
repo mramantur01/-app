@@ -57,10 +57,10 @@ class SafetyAndFlagsUnitTest {
     }
 
     @Test
-    fun launchServices_areTaxiAndIntercityOnly() {
+    fun launchServices_areTaxiIntercityAndFood() {
         assertTrue(FeatureFlags.isServiceEnabled(ServiceType.TAXI))
         assertTrue(FeatureFlags.isServiceEnabled(ServiceType.INTERCITY))
-        assertFalse(FeatureFlags.isServiceEnabled(ServiceType.FOOD))
+        assertTrue(FeatureFlags.isServiceEnabled(ServiceType.FOOD))
         assertFalse(FeatureFlags.isServiceEnabled(ServiceType.CARGO))
     }
 

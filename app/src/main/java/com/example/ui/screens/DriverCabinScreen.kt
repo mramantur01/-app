@@ -106,6 +106,7 @@ fun DriverCabinScreen(
                     onSetMinRating = viewModel::setDriverMinPassengerRating,
                     onSetMinTripKm = viewModel::setDriverMinTripKm,
                     onSetDeaf = viewModel::setDriverDeafMode,
+                    onSetTakesDelivery = viewModel::setDriverTakesDelivery,
                     onTakeOrder = viewModel::acceptNextDriverOrder
                 )
 

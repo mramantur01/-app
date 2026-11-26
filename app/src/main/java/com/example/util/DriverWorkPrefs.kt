@@ -25,6 +25,10 @@ object DriverWorkPrefs {
     fun minRating(c: Context): Double = p(c).getFloat("min_rating", 0f).toDouble()
     fun setMinRating(c: Context, v: Double) = p(c).edit().putFloat("min_rating", v.toFloat()).apply()
 
+    /** The driver also takes food and grocery deliveries (works as a courier). */
+    fun takesDelivery(c: Context): Boolean = p(c).getBoolean("takes_delivery", true)
+    fun setTakesDelivery(c: Context, on: Boolean) = p(c).edit().putBoolean("takes_delivery", on).apply()
+
     /** Minimal trip length in km (0 = any). */
     fun minTripKm(c: Context): Int = p(c).getInt("min_trip_km", 0)
     fun setMinTripKm(c: Context, km: Int) = p(c).edit().putInt("min_trip_km", km).apply()

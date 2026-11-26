@@ -494,7 +494,7 @@ service cloud.firestore {
       return data.passengerId == request.auth.uid &&
              data.status == 'SEARCHING' &&
              data.driverId == null &&
-             data.serviceType in ['TAXI', 'INTERCITY'] &&
+             data.serviceType in ['TAXI', 'INTERCITY', 'FOOD'] &&
              data.city is string && data.city.size() >= 1 && data.city.size() <= 50 &&
              data.pickupAddress is string && data.pickupAddress.size() >= 1 && data.pickupAddress.size() <= 200 &&
              data.dropoffAddress is string && data.dropoffAddress.size() >= 1 && data.dropoffAddress.size() <= 200 &&

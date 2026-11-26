@@ -184,7 +184,7 @@ class RideRepository(
             "passengerName" to passengerName.ifBlank { "Пассажир" }.take(80),
             "status" to RideStatus.SEARCHING,
             "driverId" to null,
-            "serviceType" to if (serviceType == "INTERCITY") "INTERCITY" else "TAXI",
+            "serviceType" to when (serviceType) { "INTERCITY" -> "INTERCITY"; "FOOD" -> "FOOD"; else -> "TAXI" },
             "city" to city.ifBlank { "Бишкек" }.take(50),
             "pickupAddress" to pickupAddress.ifBlank { "Точка на карте" }.take(200),
             "dropoffAddress" to dropoffAddress.ifBlank { "Точка на карте" }.take(200),

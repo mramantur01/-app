@@ -60,7 +60,7 @@ object FeatureFlags {
     )
 
     /** Services passengers can order now. */
-    val ENABLED_SERVICES: Set<ServiceType> = setOf(ServiceType.TAXI, ServiceType.INTERCITY)
+    val ENABLED_SERVICES: Set<ServiceType> = setOf(ServiceType.TAXI, ServiceType.INTERCITY, ServiceType.FOOD)
 
     fun isServiceEnabled(type: ServiceType): Boolean = type in ENABLED_SERVICES
 }
