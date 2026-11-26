@@ -24,7 +24,7 @@ fun DetectedCityChip(cityName: String, modifier: Modifier = Modifier, onMap: Boo
     var open by remember { mutableStateOf(false) }
     AssistChip(
         onClick = { open = true },
-        label = { Text(cityName) },
+        label = { Text(cityName, maxLines = 1, overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis) },
         leadingIcon = { Icon(Icons.Default.MyLocation, contentDescription = null, modifier = Modifier.size(16.dp), tint = KgTurquoiseDark) },
         colors = if (onMap) AssistChipDefaults.assistChipColors(containerColor = androidx.compose.ui.graphics.Color.White) else AssistChipDefaults.assistChipColors(),
         elevation = if (onMap) AssistChipDefaults.assistChipElevation(elevation = 4.dp) else null,

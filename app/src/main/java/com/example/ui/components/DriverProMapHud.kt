@@ -154,18 +154,23 @@ fun DriverLineMapCockpit(
         ) {
             Box(modifier = Modifier.fillMaxWidth()) {
                 // Left: "Уйти с линии" while on the line (the profile is in the bottom menu, not repeated here).
+                // Round red power button; first tap shows "Уйти с линии", second tap goes offline.
+                var offlineArmed by remember { mutableStateOf(false) }
+                LaunchedEffect(offlineArmed) {
+                    if (offlineArmed) { kotlinx.coroutines.delay(3000); offlineArmed = false }
+                }
+                Row(
+                    modifier = Modifier.align(Alignment.CenterStart),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
                 if (state.driverOnline && state.driverAcceptedOrder == null) {
-                    // Round red power button; first tap shows "Уйти с линии", second tap goes offline.
-                    var offlineArmed by remember { mutableStateOf(false) }
-                    LaunchedEffect(offlineArmed) {
-                        if (offlineArmed) { kotlinx.coroutines.delay(3000); offlineArmed = false }
-                    }
                     Surface(
                         onClick = { if (offlineArmed) { offlineArmed = false; onToggleOnline() } else offlineArmed = true },
                         shape = CircleShape,
                         color = UberRed,
                         shadowElevation = 6.dp,
-                        modifier = Modifier.align(Alignment.CenterStart).height(44.dp).animateContentSize().testTag("driver_hud_go_offline")
+                        modifier = Modifier.height(44.dp).animateContentSize().testTag("driver_hud_go_offline")
                     ) {
                         Row(
                             Modifier.then(if (offlineArmed) Modifier.padding(start = 12.dp, end = 14.dp) else Modifier.width(44.dp)),
@@ -179,6 +184,11 @@ fun DriverLineMapCockpit(
                             }
                         }
                     }
+                }
+                // Where the driver is (by GPS): at the very top edge of the map, next to the power button.
+                if (state.driverAcceptedOrder == null && !offlineArmed) {
+                    DetectedCityChip(state.selectedCity.name, modifier = Modifier.widthIn(max = 130.dp), onMap = true)
+                }
                 }
 
                 // Center: "$" — tap and today's earnings appear in its place; tap again to hide.
@@ -232,10 +242,6 @@ fun DriverLineMapCockpit(
                 }
             }
 
-            // Where the driver is (by GPS), same chip as on the order screen; tap shows regions and cities.
-            if (state.driverAcceptedOrder == null) {
-                DetectedCityChip(state.selectedCity.name, onMap = true)
-            }
 
             // Secondary HUD strip: city switch — only before going on the line.
             if (com.example.FeatureFlags.DEMO_EXTRAS && !state.driverOnline && state.driverAcceptedOrder == null) Row(
@@ -1250,12 +1256,11 @@ private fun DriverOfflineGo(state: KgTaxiUiState, onGoOnline: () -> Unit) {
             onClick = onGoOnline,
             shape = CircleShape,
             color = com.example.ui.theme.KgTurquoise,
-            shadowElevation = 12.dp,
-            border = androidx.compose.foundation.BorderStroke(6.dp, Color.White),
-            modifier = Modifier.size(132.dp).testTag("driver_online_toggle_button")
+            shadowElevation = 10.dp,
+            modifier = Modifier.size(104.dp).testTag("driver_online_toggle_button")
         ) {
             Column(horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.Center) {
-                Text("GO", color = Color.White, fontSize = 40.sp, fontWeight = FontWeight.Black)
+                Text("GO", color = Color.White, fontSize = 32.sp, fontWeight = FontWeight.Black)
                 Text("В путь", color = Color.White, style = MaterialTheme.typography.labelLarge)
             }
         }
