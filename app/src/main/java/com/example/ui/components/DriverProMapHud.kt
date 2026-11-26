@@ -155,41 +155,64 @@ fun DriverLineMapCockpit(
             Box(modifier = Modifier.fillMaxWidth()) {
                 // Left: "Уйти с линии" while on the line (the profile is in the bottom menu, not repeated here).
                 if (state.driverOnline && state.driverAcceptedOrder == null) {
+                    // Round red power button; first tap shows "Уйти с линии", second tap goes offline.
+                    var offlineArmed by remember { mutableStateOf(false) }
+                    LaunchedEffect(offlineArmed) {
+                        if (offlineArmed) { kotlinx.coroutines.delay(3000); offlineArmed = false }
+                    }
                     Surface(
-                        onClick = onToggleOnline,
-                        shape = RoundedCornerShape(23.dp),
+                        onClick = { if (offlineArmed) { offlineArmed = false; onToggleOnline() } else offlineArmed = true },
+                        shape = CircleShape,
                         color = UberRed,
                         shadowElevation = 6.dp,
-                        modifier = Modifier.align(Alignment.CenterStart).height(46.dp).testTag("driver_hud_go_offline")
+                        modifier = Modifier.align(Alignment.CenterStart).height(44.dp).animateContentSize().testTag("driver_hud_go_offline")
                     ) {
-                        Row(Modifier.padding(horizontal = 14.dp), verticalAlignment = Alignment.CenterVertically) {
-                            Icon(Icons.Default.PowerSettingsNew, contentDescription = null, tint = Color.White, modifier = Modifier.size(18.dp))
-                            Spacer(Modifier.width(6.dp))
-                            Text("Уйти с линии", color = Color.White, fontWeight = FontWeight.Bold, fontSize = 13.sp)
+                        Row(
+                            Modifier.then(if (offlineArmed) Modifier.padding(start = 12.dp, end = 14.dp) else Modifier.width(44.dp)),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.Center
+                        ) {
+                            Icon(Icons.Default.PowerSettingsNew, contentDescription = "Уйти с линии", tint = Color.White, modifier = Modifier.size(22.dp))
+                            if (offlineArmed) {
+                                Spacer(Modifier.width(6.dp))
+                                Text("Уйти с линии", color = Color.White, fontWeight = FontWeight.Bold, fontSize = 13.sp)
+                            }
                         }
                     }
                 }
 
                 // Center: "$" — tap and today's earnings appear in its place; tap again to hide.
-                Surface(
-                    onClick = { showEarnings = !showEarnings },
-                    shape = RoundedCornerShape(29.dp),
-                    color = com.example.ui.theme.KgTurquoise,
-                    shadowElevation = 8.dp,
-                    border = androidx.compose.foundation.BorderStroke(3.dp, Color.White),
+                // Just the sign, no circle; the earnings show as a small pill.
+                Box(
+                    contentAlignment = Alignment.Center,
                     modifier = Modifier
                         .align(Alignment.Center)
-                        .height(58.dp)
-                        .defaultMinSize(minWidth = 58.dp)
+                        .clip(RoundedCornerShape(16.dp))
+                        .clickable { showEarnings = !showEarnings }
                         .animateContentSize()
+                        .padding(horizontal = 10.dp, vertical = 2.dp)
                         .testTag("driver_hud_earnings_pill")
                 ) {
-                    Box(contentAlignment = Alignment.Center, modifier = Modifier.padding(horizontal = if (showEarnings) 20.dp else 0.dp)) {
-                        if (showEarnings) {
-                            Text("${state.driverTodayEarningsSom} сом", color = Color.White, fontSize = 22.sp, fontWeight = FontWeight.Black)
-                        } else {
-                            Text("$", color = Color.White, fontSize = 28.sp, fontWeight = FontWeight.Black)
+                    if (showEarnings) {
+                        Surface(shape = RoundedCornerShape(16.dp), color = Color.White, shadowElevation = 4.dp) {
+                            Text(
+                                "${state.driverTodayEarningsSom} сом",
+                                color = com.example.ui.theme.KgTurquoiseDark,
+                                fontSize = 17.sp,
+                                fontWeight = FontWeight.Black,
+                                modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp)
+                            )
                         }
+                    } else {
+                        Text(
+                            "$",
+                            color = com.example.ui.theme.KgTurquoiseDark,
+                            fontSize = 26.sp,
+                            fontWeight = FontWeight.Black,
+                            style = androidx.compose.ui.text.TextStyle(
+                                shadow = androidx.compose.ui.graphics.Shadow(Color.White, blurRadius = 8f)
+                            )
+                        )
                     }
                 }
 
@@ -207,6 +230,11 @@ fun DriverLineMapCockpit(
                         modifier = Modifier.testTag("driver_line_settings_button")
                     ) { Icon(Icons.Default.Tune, contentDescription = "Тарифы и город", tint = KgTurquoiseDark) }
                 }
+            }
+
+            // Where the driver is (by GPS), same chip as on the order screen; tap shows regions and cities.
+            if (state.driverAcceptedOrder == null) {
+                DetectedCityChip(state.selectedCity.name, onMap = true)
             }
 
             // Secondary HUD strip: city switch — only before going on the line.

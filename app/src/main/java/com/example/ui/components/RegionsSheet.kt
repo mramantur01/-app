@@ -20,12 +20,14 @@ import com.example.ui.theme.KgTurquoiseDark
 
 /** Read-only chip with the city detected by GPS; tap opens the list of regions and cities. */
 @Composable
-fun DetectedCityChip(cityName: String, modifier: Modifier = Modifier) {
+fun DetectedCityChip(cityName: String, modifier: Modifier = Modifier, onMap: Boolean = false) {
     var open by remember { mutableStateOf(false) }
     AssistChip(
         onClick = { open = true },
         label = { Text(cityName) },
         leadingIcon = { Icon(Icons.Default.MyLocation, contentDescription = null, modifier = Modifier.size(16.dp), tint = KgTurquoiseDark) },
+        colors = if (onMap) AssistChipDefaults.assistChipColors(containerColor = androidx.compose.ui.graphics.Color.White) else AssistChipDefaults.assistChipColors(),
+        elevation = if (onMap) AssistChipDefaults.assistChipElevation(elevation = 4.dp) else null,
         modifier = modifier.testTag("detected_city_chip")
     )
     if (open) RegionsSheet(currentCity = cityName, onDismiss = { open = false })
@@ -124,6 +126,50 @@ private fun SettlementRow(name: String, type: String, place: String, current: Bo
         Column(Modifier.weight(1f)) {
             Text(if (current) "$name — вы здесь" else name, fontWeight = if (current) FontWeight.Bold else FontWeight.Normal)
             Text(listOf(type, place).filter { it.isNotBlank() }.joinToString(" • "), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        }
+    }
+}
+
+
+/** Regions → districts and settlements, each region opens and closes (for the passenger home page). */
+@Composable
+fun RegionsBrowser(currentCity: String) {
+    var openRegion by remember { mutableStateOf<String?>(null) }
+    Column(Modifier.fillMaxWidth().testTag("regions_browser")) {
+        Text(
+            "Вы здесь: $currentCity — город определяется по геолокации.",
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant
+        )
+        KgSettlements.regions.forEach { r ->
+            val expanded = openRegion == r.name
+            val inRegion = KgSettlements.all.filter { it.region == r.name }
+            Surface(onClick = { openRegion = if (expanded) null else r.name }, color = androidx.compose.ui.graphics.Color.Transparent, modifier = Modifier.fillMaxWidth()) {
+                Row(Modifier.padding(vertical = 10.dp), verticalAlignment = Alignment.CenterVertically) {
+                    Column(Modifier.weight(1f)) {
+                        Text(r.name, fontWeight = FontWeight.SemiBold)
+                        Text(
+                            "Центр: ${r.center}${if (r.districts.isNotEmpty()) " • районов: ${r.districts.size}" else ""} • пунктов: ${inRegion.size}",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+                    Icon(if (expanded) Icons.Default.ExpandLess else Icons.Default.ExpandMore, contentDescription = if (expanded) "Свернуть" else "Развернуть")
+                }
+            }
+            if (expanded) {
+                if (r.districts.isNotEmpty()) {
+                    Text("Районы", style = MaterialTheme.typography.labelLarge, color = KgTurquoiseDark, modifier = Modifier.padding(start = 8.dp))
+                    r.districts.forEach { d ->
+                        Text("• ${d.name} — центр ${d.center}", style = MaterialTheme.typography.bodySmall, modifier = Modifier.padding(start = 12.dp, top = 2.dp))
+                    }
+                }
+                Text("Города и посёлки", style = MaterialTheme.typography.labelLarge, color = KgTurquoiseDark, modifier = Modifier.padding(start = 8.dp, top = 8.dp))
+                inRegion.sortedBy { it.type.ordinal }.forEach { st ->
+                    SettlementRow(st.name, typeLabel(st.type, st.districtCenter), st.district, st.name == currentCity)
+                }
+            }
+            HorizontalDivider()
         }
     }
 }

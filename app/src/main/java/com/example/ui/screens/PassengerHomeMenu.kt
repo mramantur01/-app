@@ -219,6 +219,9 @@ fun PassengerHomeMenu(
         }
 
         // Safety, become a driver, support.
+        InfoCardFrame(Icons.Default.Map, com.example.i18n.t("Регионы и города", "Аймактар жана шаарлар"), collapseKey = "regions_expanded_v1") {
+            com.example.ui.components.RegionsBrowser(state.selectedCity.name)
+        }
         SafetyCard()
         BecomeDriverCard(
             isDriver = state.isAdmin || com.example.data.model.AppRole.DRIVER in state.allowedRoles,

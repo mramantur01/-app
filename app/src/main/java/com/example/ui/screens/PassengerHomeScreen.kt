@@ -157,6 +157,22 @@ private fun PassengerControlSheet(
     var showForOtherDialog by remember { mutableStateOf(false) }
     var pickStopOnMap by remember { mutableStateOf(false) }
     var pickStopOnMapForDest by remember { mutableStateOf(false) }
+    // Exact pickup spot marked with the pin next to point A.
+    var pinPickupOnMap by remember { mutableStateOf(false) }
+    var pickupPinned by remember { mutableStateOf(false) }
+    if (pinPickupOnMap) {
+        com.example.ui.components.MapPointPickerDialog(
+            title = "Где вас ждать? Подвиньте карту к точному месту",
+            start = state.pickupPoint,
+            pinColor = Color(0xFFC62828),
+            onPicked = { p ->
+                pinPickupOnMap = false
+                pickupPinned = true
+                viewModel.onMapTapPickPoint(p, false)
+            },
+            onDismiss = { pinPickupOnMap = false }
+        )
+    }
     if (pickStopOnMapForDest) {
         com.example.ui.components.MapPointPickerDialog(
             title = "Куда едем?",
@@ -268,6 +284,19 @@ private fun PassengerControlSheet(
                             maxLines = 1,
                             overflow = TextOverflow.Ellipsis
                         )
+                        // Small red hint: mark the exact spot with the pin.
+                        Text(
+                            if (pickupPinned) "✓ Место подачи отмечено" else "Отметьте булавкой, где вас ждать",
+                            style = MaterialTheme.typography.labelSmall,
+                            color = if (pickupPinned) UberGreen else Color(0xFFC62828),
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis,
+                            modifier = Modifier.testTag("pickup_pin_hint")
+                        )
+                    }
+                    // Pin right after the address of point A: opens the map to mark the exact spot.
+                    IconButton(onClick = { pinPickupOnMap = true }, modifier = Modifier.size(36.dp).testTag("pickup_pin_button")) {
+                        Icon(Icons.Default.PushPin, contentDescription = "Отметить место подачи на карте", tint = Color(0xFFC62828), modifier = Modifier.size(22.dp))
                     }
                     TextButton(onClick = { viewModel.openPickupDialog(true) }, contentPadding = PaddingValues(horizontal = 6.dp)) {
                         Text(com.example.i18n.t("Изменить", "Өзгөртүү"))
@@ -284,16 +313,6 @@ private fun PassengerControlSheet(
                         }
                     }
                 }
-                // Where exactly to wait: entrance, side of the street, landmark (optional, goes to the driver).
-                OutlinedTextField(
-                    value = state.selectedPickupSpot.orEmpty(),
-                    onValueChange = viewModel::setPickupNote,
-                    placeholder = { Text("Где вас ждать: подъезд, сторона улицы, ориентир", style = MaterialTheme.typography.bodySmall) },
-                    leadingIcon = { Icon(Icons.Default.Signpost, contentDescription = null, modifier = Modifier.size(18.dp), tint = UberAmber) },
-                    singleLine = true,
-                    textStyle = MaterialTheme.typography.bodySmall,
-                    modifier = Modifier.fillMaxWidth().padding(start = 24.dp).testTag("pickup_note_input")
-                )
                 HorizontalDivider(color = MaterialTheme.colorScheme.outline.copy(alpha = 0.5f))
                 Row(
                     verticalAlignment = Alignment.CenterVertically,
