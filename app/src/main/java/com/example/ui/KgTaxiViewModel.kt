@@ -205,7 +205,9 @@ data class KgTaxiUiState(
     val driverMinPassengerRating: Double = 0.0,
     val driverMinTripKm: Int = 0,
     /** The driver also takes food and grocery deliveries. */
-    val driverTakesDelivery: Boolean = true,
+    val driverTakesDelivery: Boolean = false,
+    /** Courier (approved "Курьер" tariff): always gets food and grocery orders; other drivers switch them on themselves. */
+    val isCourier: Boolean = false,
     val driverDeafMode: Boolean = false,
     val driverAcceptancePercent: Int? = null,
     /** Taxi ordered for later (millis), null = now. */
@@ -811,6 +813,7 @@ class KgTaxiViewModel(
                     driverPlate = info.plate,
                     isAdmin = info.role == "admin",
                     driverAllowedTariffs = info.tariffs.toSet(),
+                    isCourier = "courier" in info.tariffs,
                     driverEnabledTariffs = if (info.tariffs.isNotEmpty()) info.tariffs.toSet() else it.driverEnabledTariffs
                 )
             }
@@ -3375,7 +3378,9 @@ class KgTaxiViewModel(
                     .filter { o -> st.driverPickupRadiusKm <= 0 || o.serviceType == ServiceType.INTERCITY || o.pickupDistanceKm <= st.driverPickupRadiusKm }
                     .filter { o -> st.driverMinPassengerRating <= 0.0 || o.passengerTrips <= 0 || o.passengerRating <= 0.0 || o.passengerRating >= st.driverMinPassengerRating }
                     .filter { o -> st.driverMinTripKm <= 0 || o.serviceType == ServiceType.INTERCITY || o.serviceType == ServiceType.FOOD || o.distanceKm >= st.driverMinTripKm }
-                    .filter { o -> o.serviceType != ServiceType.FOOD || st.driverTakesDelivery }
+                    .filter { o -> o.serviceType != ServiceType.FOOD || st.isCourier || st.driverTakesDelivery }
+                    // A courier without a car (only the "Курьер" tariff) sees only deliveries.
+                    .filter { o -> st.driverAllowedTariffs != setOf("courier") || o.serviceType == ServiceType.FOOD }
                     .filter { o ->
                         // "Подождать": cheaper order, shown to drivers 3 minutes later.
                         val r = open.firstOrNull { it.id == o.id }

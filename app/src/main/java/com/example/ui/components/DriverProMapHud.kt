@@ -1663,8 +1663,10 @@ private fun DriverLineSettingsSheet(
                     )
                 }
             }
+            // Any driver may switch deliveries on; couriers always get them.
             HorizontalDivider()
-            Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth()) {
+            if (state.isCourier) Text("Вы курьер — заказы еды и продуктов приходят всегда", style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.SemiBold)
+            else Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth()) {
                 Column(Modifier.weight(1f)) {
                     Text("Беру доставку", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
                     Text("Заказы еды и продуктов: купить по списку и привезти", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)

@@ -520,7 +520,7 @@ private fun SafetyCard() {
 /** Invitation to drive with KG Taxi (hidden for drivers and the owner). */
 @Composable
 private fun BecomeDriverCard(isDriver: Boolean, status: String?, onStart: () -> Unit, onOpenDriverMode: () -> Unit) {
-    InfoCardFrame(Icons.Default.DirectionsCar, com.example.i18n.t("Стать водителем", "Айдоочу болуу"), collapseKey = "driver_invite_expanded") {
+    InfoCardFrame(Icons.Default.DirectionsCar, com.example.i18n.t(if (isDriver) "Стать водителем" else "Стать водителем или курьером", if (isDriver) "Айдоочу болуу" else "Айдоочу же курьер болуу"), collapseKey = "driver_invite_expanded") {
         if (isDriver) {
             Text(
                 com.example.i18n.t("Вы уже водитель KG Taxi. Откройте режим водителя и нажмите GO, чтобы выйти на линию.", "Сиз KG Taxi айдоочусусуз. Айдоочу режимин ачып, линияга чыгуу үчүн GO басыңыз."),
@@ -538,7 +538,7 @@ private fun BecomeDriverCard(isDriver: Boolean, status: String?, onStart: () -> 
             when (status) {
                 "pending" -> com.example.i18n.t("Ваша заявка на проверке. Мы сообщим, когда откроется экран водителя.", "Арызыңыз текшерилүүдө. Айдоочу экраны ачылганда кабарлайбыз.")
                 "rejected" -> com.example.i18n.t("Заявка отклонена. Можно исправить данные и подать снова.", "Арыз четке кагылды. Маалыматты оңдоп, кайра тапшырсаңыз болот.")
-                else -> com.example.i18n.t("Зарабатывайте на своём авто. Регистрация в приложении: паспорт, права и фото машины — тариф подберём сами.", "Өз унааңыз менен иштеп табыңыз. Тиркемеде каттоо: паспорт, күбөлүк жана унаанын сүрөтү — тарифти өзүбүз тандайбыз.")
+                else -> com.example.i18n.t("Водитель: паспорт, права и фото машины. Курьер: доставляет еду и продукты, нужен только паспорт.", "Айдоочу: паспорт, күбөлүк жана унаанын сүрөтү. Курьер: тамак-аш жеткирет, паспорт гана керек.")
             },
             style = MaterialTheme.typography.bodyMedium,
             color = KgInk

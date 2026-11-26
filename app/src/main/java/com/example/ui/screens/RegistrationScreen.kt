@@ -49,7 +49,11 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import java.io.File
 
-private enum class RegStep { CHOICE, PASSENGER, DRIVER_DOCS, DRIVER_CAR, DRIVER_PHOTOS, DRIVER_STATUS }
+private enum class RegStep { CHOICE, PASSENGER, COURIER_DOCS, DRIVER_DOCS, DRIVER_CAR, DRIVER_PHOTOS, DRIVER_STATUS }
+
+/** A courier delivers food and groceries: only a passport is needed, no licence and no car. */
+const val MIN_COURIER_AGE = 18
+private val COURIER_TRANSPORT = listOf("Пешком", "Велосипед", "Самокат", "Мотоцикл", "Авто")
 
 /**
  * Registration after the first Google sign-in: "Кто вы?" → passenger (passport) or
@@ -73,7 +77,7 @@ fun RegistrationScreen(
         mutableStateOf(
             when {
                 startAsDriver && (driverStatus == "pending" || driverStatus == "approved") -> RegStep.DRIVER_STATUS
-                startAsDriver -> RegStep.DRIVER_DOCS
+                startAsDriver -> RegStep.CHOICE
                 else -> RegStep.CHOICE
             }
         )
@@ -97,6 +101,7 @@ fun RegistrationScreen(
     var courier by rememberSaveable { mutableStateOf(false) }
     var wheelchair by rememberSaveable { mutableStateOf(false) }
     var loaders by rememberSaveable { mutableStateOf(false) }
+    var courierTransport by rememberSaveable { mutableStateOf(COURIER_TRANSPORT.first()) }
     var make by rememberSaveable { mutableStateOf("") }
     var model by rememberSaveable { mutableStateOf("") }
     var year by rememberSaveable { mutableStateOf<Int?>(null) }
@@ -106,7 +111,7 @@ fun RegistrationScreen(
 
     val back: () -> Unit = {
         step = when (step) {
-            RegStep.PASSENGER, RegStep.DRIVER_DOCS -> if (startAsDriver) { onClose(); step } else RegStep.CHOICE
+            RegStep.PASSENGER, RegStep.DRIVER_DOCS, RegStep.COURIER_DOCS -> RegStep.CHOICE
             RegStep.DRIVER_CAR -> RegStep.DRIVER_DOCS
             RegStep.DRIVER_PHOTOS -> RegStep.DRIVER_CAR
             RegStep.CHOICE, RegStep.DRIVER_STATUS -> { onClose(); step }
@@ -132,6 +137,7 @@ fun RegistrationScreen(
                     when (step) {
                         RegStep.CHOICE -> "Регистрация"
                         RegStep.PASSENGER -> "Регистрация пассажира"
+                        RegStep.COURIER_DOCS -> "Регистрация курьера"
                         RegStep.DRIVER_DOCS -> "Водитель • 1 из 3: документы"
                         RegStep.DRIVER_CAR -> "Водитель • 2 из 3: автомобиль"
                         RegStep.DRIVER_PHOTOS -> "Водитель • 3 из 3: фотоконтроль"
@@ -162,7 +168,9 @@ fun RegistrationScreen(
                 when (step) {
                     RegStep.CHOICE -> ChoiceStep(
                         onPassenger = { step = RegStep.PASSENGER },
-                        onDriver = { step = RegStep.DRIVER_DOCS }
+                        onDriver = { step = RegStep.DRIVER_DOCS },
+                        onCourier = { step = RegStep.COURIER_DOCS },
+                        showPassenger = !startAsDriver
                     )
 
                     RegStep.PASSENGER -> {
@@ -175,6 +183,28 @@ fun RegistrationScreen(
                         RegField(passport, { passport = it.uppercase().take(20) }, "Номер паспорта (ID-карты)", "reg_passport")
                         CameraOnlyNote()
                         RegPhoto.PASSENGER.forEach { k -> PhotoSlot(k, photos[k]) { photos[k] = it } }
+                    }
+
+                    RegStep.COURIER_DOCS -> {
+                        Text(
+                            "Курьер доставляет еду и продукты. Нужен только паспорт — права и машина не нужны. Документы видит только администрация.",
+                            color = KgInk.copy(alpha = 0.75f)
+                        )
+                        RegField(fullName, { fullName = it }, "ФИО (как в паспорте)", "reg_full_name")
+                        RegField(phone, { phone = it.filter { c -> c.isDigit() || c == '+' } }, "Телефон", "reg_phone", KeyboardType.Phone)
+                        RegField(birthDate, { birthDate = formatRuDateInput(it) }, "Дата рождения (ДД.ММ.ГГГГ)", "reg_birth", KeyboardType.Number)
+                        val cAge = ageFromRuDate(birthDate)
+                        if (birthDate.length == 10 && (cAge == null || cAge < MIN_COURIER_AGE)) {
+                            Text("Курьером можно стать с $MIN_COURIER_AGE лет", color = Color(0xFFC62828), style = MaterialTheme.typography.bodySmall)
+                        }
+                        Text("Город работы", fontWeight = FontWeight.SemiBold, color = KgInk)
+                        ChipRow(KgGeoCatalog.cities.map { it.name }, city) { city = it }
+                        Text("Как доставляете", fontWeight = FontWeight.SemiBold, color = KgInk)
+                        ChipRow(COURIER_TRANSPORT, courierTransport) { courierTransport = it }
+                        RegField(passport, { passport = it.uppercase().take(20) }, "Номер паспорта (ID-карты)", "reg_passport")
+                        CameraOnlyNote()
+                        RegPhoto.PASSENGER.forEach { k -> PhotoSlot(k, photos[k]) { photos[k] = it } }
+                        RegField(payPhone, { payPhone = it.filter { c -> c.isDigit() || c == '+' } }, "Номер для переводов (MBank / O!Деньги), необязательно", "reg_pay_phone", KeyboardType.Phone)
                     }
 
                     RegStep.DRIVER_DOCS -> {
@@ -265,7 +295,7 @@ fun RegistrationScreen(
                     }
 
                     RegStep.DRIVER_STATUS -> DriverStatusStep(driverStatus, registration?.rejectReason) {
-                        step = RegStep.DRIVER_DOCS
+                        step = RegStep.CHOICE
                     }
                 }
             }
@@ -275,6 +305,9 @@ fun RegistrationScreen(
                 RegStep.CHOICE, RegStep.DRIVER_STATUS -> false
                 RegStep.PASSENGER -> fullName.trim().length >= 3 && phone.count { it.isDigit() } >= 9 &&
                     passport.length >= 6 && RegPhoto.PASSENGER.all { photos[it] != null }
+                RegStep.COURIER_DOCS -> fullName.trim().length >= 3 && phone.count { it.isDigit() } >= 9 &&
+                    passport.length >= 6 && (ageFromRuDate(birthDate) ?: 0) >= MIN_COURIER_AGE &&
+                    RegPhoto.PASSENGER.all { photos[it] != null }
                 RegStep.DRIVER_DOCS -> fullName.trim().length >= 3 && phone.count { it.isDigit() } >= 9 &&
                     passport.length >= 6 && license.length >= 6 && (experience.toIntOrNull() ?: 0) >= MIN_DRIVER_EXPERIENCE &&
                     (ageFromRuDate(birthDate) ?: 0) >= MIN_DRIVER_AGE &&
@@ -292,6 +325,7 @@ fun RegistrationScreen(
                                 when (step) {
                                     RegStep.DRIVER_PHOTOS -> "Нужны все 5 фото"
                                     RegStep.PASSENGER -> "Заполните поля и снимите паспорт с двух сторон и селфи с паспортом"
+                                    RegStep.COURIER_DOCS -> "Нужно: возраст от $MIN_COURIER_AGE лет, паспорт с двух сторон и селфи с паспортом"
                                     RegStep.DRIVER_DOCS -> "Нужно: возраст от $MIN_DRIVER_AGE лет, стаж от $MIN_DRIVER_EXPERIENCE лет, действующее ОСАГО и фото всех документов"
                                     RegStep.DRIVER_CAR -> "Выберите марку, модель, год, цвет и введите номер"
                                     else -> "Заполните все поля и добавьте фото документов"
@@ -305,6 +339,27 @@ fun RegistrationScreen(
                             onClick = {
                                 when (step) {
                                     RegStep.PASSENGER -> onRegisterPassenger(fullName, phone, passport, RegPhoto.PASSENGER.associateWith { photos.getValue(it) })
+                                    RegStep.COURIER_DOCS -> onRegisterDriver(
+                                        // The database expects car and licence fields; a courier has neither.
+                                        DriverRegistration(
+                                            fullName = fullName,
+                                            phone = phone,
+                                            city = city,
+                                            passportNumber = passport,
+                                            licenseNumber = "НЕ ТРЕБУЕТСЯ",
+                                            experienceYears = 0,
+                                            payPhone = payPhone,
+                                            carMake = "Курьер",
+                                            carModel = courierTransport,
+                                            carYear = 0,
+                                            carColor = "",
+                                            plate = "КУРЬЕР",
+                                            tariffs = listOf("courier"),
+                                            birthDate = birthDate,
+                                            workType = "Курьер"
+                                        ),
+                                        RegPhoto.PASSENGER.associateWith { photos.getValue(it) }
+                                    )
                                     RegStep.DRIVER_DOCS -> step = RegStep.DRIVER_CAR
                                     RegStep.DRIVER_CAR -> step = RegStep.DRIVER_PHOTOS
                                     RegStep.DRIVER_PHOTOS -> onRegisterDriver(
@@ -344,6 +399,7 @@ fun RegistrationScreen(
                                 Text(
                                     when (step) {
                                         RegStep.PASSENGER -> "Завершить регистрацию"
+                                        RegStep.COURIER_DOCS -> "Отправить на проверку"
                                         RegStep.DRIVER_PHOTOS -> "Отправить на проверку"
                                         else -> "Далее"
                                     },
@@ -359,7 +415,7 @@ fun RegistrationScreen(
 }
 
 @Composable
-private fun ChoiceStep(onPassenger: () -> Unit, onDriver: () -> Unit) {
+private fun ChoiceStep(onPassenger: () -> Unit, onDriver: () -> Unit, onCourier: () -> Unit, showPassenger: Boolean = true) {
     Spacer(Modifier.height(12.dp))
     Text(
         com.example.i18n.t("Кто вы?", "Сиз кимсиз?"),
@@ -376,7 +432,7 @@ private fun ChoiceStep(onPassenger: () -> Unit, onDriver: () -> Unit) {
         modifier = Modifier.fillMaxWidth()
     )
     Spacer(Modifier.height(8.dp))
-    RoleCard(
+    if (showPassenger) RoleCard(
         icon = Icons.Default.Person,
         title = com.example.i18n.t("Пассажир", "Жүргүнчү"),
         subtitle = "Заказываю такси и межгород.\nНужен только паспорт.",
@@ -391,6 +447,14 @@ private fun ChoiceStep(onPassenger: () -> Unit, onDriver: () -> Unit) {
         filled = false,
         tag = "reg_choice_driver",
         onClick = onDriver
+    )
+    RoleCard(
+        icon = Icons.Default.DeliveryDining,
+        title = com.example.i18n.t("Курьер", "Курьер"),
+        subtitle = "Доставляю еду и продукты.\nНужен только паспорт.",
+        filled = false,
+        tag = "reg_choice_courier",
+        onClick = onCourier
     )
 }
 

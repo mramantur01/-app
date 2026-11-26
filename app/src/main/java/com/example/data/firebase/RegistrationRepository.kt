@@ -182,9 +182,10 @@ class RegistrationRepository(
         val id = uid ?: return Result.failure(IllegalStateException("Войдите в аккаунт"))
         return runCatchingFs("driver_applications/$id") {
             savePhotos(id, photos)
-            val car = "${reg.carMake} ${reg.carModel} ${reg.carYear}, ${reg.carColor.lowercase()}"
+            val car = if (reg.carYear > 0) "${reg.carMake} ${reg.carModel} ${reg.carYear}, ${reg.carColor.lowercase()}"
+                else "${reg.carMake} • ${reg.carModel.lowercase()}"
             db.collection("driver_applications").document(id).set(
-                mapOf(
+                listOfNotNull(
                     "userId" to id,
                     "fullName" to reg.fullName.trim().take(80),
                     "phone" to reg.phone.trim().take(20),
@@ -197,7 +198,7 @@ class RegistrationRepository(
                     "passportNumber" to reg.passportNumber.trim().uppercase().take(20),
                     "carMake" to reg.carMake.take(40),
                     "carModel" to reg.carModel.take(40),
-                    "carYear" to reg.carYear,
+                    ("carYear" to reg.carYear).takeIf { reg.carYear > 0 },
                     "carColor" to reg.carColor.take(30),
                     "tariffs" to reg.tariffs.take(25),
                     "birthDate" to reg.birthDate.take(10),
@@ -205,7 +206,7 @@ class RegistrationRepository(
                     "insuranceUntil" to reg.insuranceUntil.take(10),
                     "status" to "pending",
                     "createdAt" to FieldValue.serverTimestamp()
-                )
+                ).toMap()
             ).await()
             db.collection("registrations").document(id).set(
                 mapOf(
