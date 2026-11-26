@@ -149,8 +149,7 @@ fun DriverLineMapCockpit(
             modifier = Modifier
                 .align(Alignment.TopCenter)
                 .fillMaxWidth()
-                .then(if (state.driverOnline || state.driverAcceptedOrder != null) Modifier.statusBarsPadding() else Modifier)
-                .padding(horizontal = 12.dp, vertical = 10.dp),
+                                .padding(horizontal = 12.dp, vertical = 10.dp),
             verticalArrangement = Arrangement.spacedBy(8.dp)
         ) {
             Box(modifier = Modifier.fillMaxWidth()) {

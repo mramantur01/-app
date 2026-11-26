@@ -210,9 +210,8 @@ fun KgTaxiAppRoot() {
         // Paint the theme background: otherwise the dark window shows through in light mode.
         Box(modifier = Modifier.fillMaxSize().background(MaterialTheme.colorScheme.background)) {
             Column(modifier = Modifier.fillMaxSize()) {
-                // While the driver is on the line the screen is for driving only: no role tabs or settings.
-                val driverOnLine = state.role == AppRole.DRIVER && (state.driverOnline || state.driverAcceptedOrder != null)
-                if (!driverOnLine) {
+                // The top bar (logo, language, sound, theme, profile, role tabs) stays on screen, also while the driver is on the line.
+                run {
                 TopHeaderBar(
                     strings = strings,
                     role = state.role,
