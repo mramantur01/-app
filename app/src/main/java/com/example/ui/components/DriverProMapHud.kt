@@ -20,6 +20,7 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.layout.layout
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.scale
 import androidx.compose.ui.geometry.Offset
@@ -165,28 +166,40 @@ fun DriverLineMapCockpit(
                     horizontalArrangement = Arrangement.spacedBy(8.dp)
                 ) {
                 if (state.driverOnline && state.driverAcceptedOrder == null) {
-                    Surface(
-                        onClick = { if (offlineArmed) { offlineArmed = false; onToggleOnline() } else offlineArmed = true },
-                        shape = CircleShape,
-                        color = UberRed,
-                        shadowElevation = 6.dp,
-                        modifier = Modifier.height(44.dp).animateContentSize().testTag("driver_hud_go_offline")
-                    ) {
-                        Row(
-                            Modifier.then(if (offlineArmed) Modifier.padding(start = 12.dp, end = 14.dp) else Modifier.width(44.dp)),
-                            verticalAlignment = Alignment.CenterVertically,
-                            horizontalArrangement = Arrangement.Center
+                    // The round button stays round; after the first tap the label shows under it, the city chip stays in place.
+                    Box {
+                        Surface(
+                            onClick = { if (offlineArmed) { offlineArmed = false; onToggleOnline() } else offlineArmed = true },
+                            shape = CircleShape,
+                            color = UberRed,
+                            shadowElevation = 6.dp,
+                            modifier = Modifier.size(44.dp).testTag("driver_hud_go_offline")
                         ) {
-                            Icon(Icons.Default.PowerSettingsNew, contentDescription = "Уйти с линии", tint = Color.White, modifier = Modifier.size(22.dp))
-                            if (offlineArmed) {
-                                Spacer(Modifier.width(6.dp))
-                                Text("Уйти с линии", color = Color.White, fontWeight = FontWeight.Bold, fontSize = 13.sp)
+                            Box(contentAlignment = Alignment.Center) {
+                                Icon(Icons.Default.PowerSettingsNew, contentDescription = "Уйти с линии", tint = Color.White, modifier = Modifier.size(22.dp))
+                            }
+                        }
+                        if (offlineArmed) {
+                            Surface(
+                                shape = RoundedCornerShape(12.dp),
+                                color = UberRed,
+                                shadowElevation = 4.dp,
+                                modifier = Modifier.layout { m, _ -> val p = m.measure(androidx.compose.ui.unit.Constraints()); layout(0, 0) { p.place(0, 50.dp.roundToPx()) } }.testTag("driver_hud_go_offline_hint")
+                            ) {
+                                Text(
+                                    "Уйти с линии — нажмите ещё раз",
+                                    color = Color.White,
+                                    fontWeight = FontWeight.Bold,
+                                    fontSize = 12.sp,
+                                    maxLines = 1,
+                                    modifier = Modifier.padding(horizontal = 10.dp, vertical = 5.dp)
+                                )
                             }
                         }
                     }
                 }
-                // Where the driver is (by GPS): at the very top edge of the map, next to the power button.
-                if (state.driverAcceptedOrder == null && !offlineArmed) {
+                // Where the driver is (by GPS): always at the very top edge of the map, next to the power button.
+                run {
                     DetectedCityChip(state.selectedCity.name, modifier = Modifier.widthIn(max = 130.dp), onMap = true)
                 }
                 }

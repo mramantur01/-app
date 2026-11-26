@@ -1,6 +1,6 @@
 {
-  "versionCode": 14,
-  "versionName": "2.3",
+  "versionCode": 15,
+  "versionName": "2.4",
   "url": "https://mramantur-site.vercel.app/kgtaxi.apk",
-  "notes": "Водителю: город теперь в самом верху карты, кнопка GO меньше и без белой рамки."
+  "notes": "Водителю: город всегда вверху карты, подсказка «Уйти с линии» появляется под красной кнопкой."
 }
