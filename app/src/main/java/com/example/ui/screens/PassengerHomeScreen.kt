@@ -156,6 +156,16 @@ private fun PassengerControlSheet(
     var showWaypointDialog by remember { mutableStateOf(false) }
     var showForOtherDialog by remember { mutableStateOf(false) }
     var pickStopOnMap by remember { mutableStateOf(false) }
+    var pickStopOnMapForDest by remember { mutableStateOf(false) }
+    if (pickStopOnMapForDest) {
+        com.example.ui.components.MapPointPickerDialog(
+            title = "Куда едем?",
+            start = state.dropoffPoint,
+            pinColor = UberRed,
+            onPicked = { p -> pickStopOnMapForDest = false; viewModel.setDestinationFromMap(p) },
+            onDismiss = { pickStopOnMapForDest = false }
+        )
+    }
     if (pickStopOnMap) {
         com.example.ui.components.MapPointPickerDialog(
             title = "Где остановиться по пути?",
@@ -208,27 +218,8 @@ private fun PassengerControlSheet(
                 Text(com.example.i18n.t("Главная", "Башкы бет"))
             }
             Spacer(Modifier.weight(1f))
-            Box {
-                FilterChip(
-                    selected = true,
-                    onClick = { cityMenuOpen = true },
-                    label = { Text(state.selectedCity.name) },
-                    leadingIcon = { Icon(Icons.Default.LocationCity, contentDescription = null, modifier = Modifier.size(16.dp)) },
-                    trailingIcon = { Icon(Icons.Default.ArrowDropDown, contentDescription = null, modifier = Modifier.size(18.dp)) },
-                    modifier = Modifier.testTag("order_city_picker")
-                )
-                DropdownMenu(expanded = cityMenuOpen, onDismissRequest = { cityMenuOpen = false }) {
-                    KgGeoCatalog.cities.forEach { city ->
-                        DropdownMenuItem(
-                            text = { Text(city.name) },
-                            onClick = { cityMenuOpen = false; viewModel.selectCity(city) },
-                            leadingIcon = if (city.name == state.selectedCity.name) {
-                                { Icon(Icons.Default.Check, contentDescription = null) }
-                            } else null
-                        )
-                    }
-                }
-            }
+            // City comes from the phone's GPS; tap shows the list of regions and cities (view only).
+            com.example.ui.components.DetectedCityChip(state.selectedCity.name, Modifier.testTag("order_city_picker"))
         }
 
         // Weather / currency strip: hidden to keep the order screen short.
@@ -293,6 +284,16 @@ private fun PassengerControlSheet(
                         }
                     }
                 }
+                // Where exactly to wait: entrance, side of the street, landmark (optional, goes to the driver).
+                OutlinedTextField(
+                    value = state.selectedPickupSpot.orEmpty(),
+                    onValueChange = viewModel::setPickupNote,
+                    placeholder = { Text("Где вас ждать: подъезд, сторона улицы, ориентир", style = MaterialTheme.typography.bodySmall) },
+                    leadingIcon = { Icon(Icons.Default.Signpost, contentDescription = null, modifier = Modifier.size(18.dp), tint = UberAmber) },
+                    singleLine = true,
+                    textStyle = MaterialTheme.typography.bodySmall,
+                    modifier = Modifier.fillMaxWidth().padding(start = 24.dp).testTag("pickup_note_input")
+                )
                 HorizontalDivider(color = MaterialTheme.colorScheme.outline.copy(alpha = 0.5f))
                 Row(
                     verticalAlignment = Alignment.CenterVertically,
@@ -343,6 +344,67 @@ private fun PassengerControlSheet(
                         modifier = Modifier.testTag("open_ai_voice_order_button")
                     ) {
                         Icon(Icons.Default.Mic, contentDescription = strings.voiceSearch, tint = UberBlue)
+                    }
+                }
+
+                // Saved addresses, "для другого" and destination suggestions (below the tariffs).
+                // Live Autocomplete (Nominatim Live + Curated KG Landmarks) & Rating/Price Filtered Places
+                val matchingPlaces = remember(
+                    state.searchQuery,
+                    state.selectedCity,
+                    state.filterMinRating,
+                    state.filterMaxPriceLevel,
+                    state.liveSearchResults
+                ) {
+                    val base = state.selectedCity.landmarks.filter {
+                        it.rating >= state.filterMinRating && it.priceLevel <= state.filterMaxPriceLevel
+                    }
+                    if (state.searchQuery.isBlank()) base.take(5)
+                    else {
+                        val curated = KgGeoCatalog.cities.flatMap { it.landmarks }.filter {
+                            (it.name.contains(state.searchQuery, ignoreCase = true) ||
+                                it.address.contains(state.searchQuery, ignoreCase = true) ||
+                                it.category.contains(state.searchQuery, ignoreCase = true)) &&
+                                it.rating >= state.filterMinRating &&
+                                it.priceLevel <= state.filterMaxPriceLevel
+                        }
+                        (state.liveSearchResults + curated).distinctBy { it.name }.take(8)
+                    }
+                }
+
+                // Address suggestions right under "Куда" while typing (not hidden below the tariffs).
+                if (state.searchQuery.isNotBlank()) {
+                    Column(modifier = Modifier.fillMaxWidth().testTag("destination_suggestions")) {
+                        if (matchingPlaces.isEmpty()) {
+                            Text(
+                                if (state.searchQuery.trim().length < 2) "Введите ещё пару букв…" else "Ищем адрес…",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                modifier = Modifier.padding(start = 30.dp, top = 4.dp, bottom = 4.dp)
+                            )
+                        }
+                        matchingPlaces.forEach { place ->
+                            Row(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .clickable { viewModel.selectDestinationPlace(place) }
+                                    .padding(start = 24.dp, top = 8.dp, bottom = 8.dp)
+                                    .testTag("landmark_${place.id}"),
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(10.dp)
+                            ) {
+                                Icon(Icons.Default.Place, contentDescription = null, tint = UberBlue, modifier = Modifier.size(18.dp))
+                                Column(Modifier.weight(1f)) {
+                                    Text(place.name, style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.SemiBold, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                                    Text(place.address, style = MaterialTheme.typography.bodySmall, maxLines = 1, overflow = TextOverflow.Ellipsis, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                                }
+                            }
+                        }
+                        TextButton(onClick = { pickStopOnMapForDest = true }, modifier = Modifier.padding(start = 18.dp)) {
+                            Icon(Icons.Default.Map, contentDescription = null, modifier = Modifier.size(16.dp))
+                            Spacer(Modifier.width(6.dp))
+                            Text("Нет в списке — указать на карте")
+                        }
                     }
                 }
 
@@ -773,31 +835,6 @@ private fun PassengerControlSheet(
             ServiceType.FOOD -> FoodDeliveryPanel(strings, state, viewModel::selectFoodVenue, viewModel::addFoodToCart, viewModel::removeFoodFromCart)
         }
 
-        // Saved addresses, "для другого" and destination suggestions (below the tariffs).
-        // Live Autocomplete (Nominatim Live + Curated KG Landmarks) & Rating/Price Filtered Places
-        val matchingPlaces = remember(
-            state.searchQuery,
-            state.selectedCity,
-            state.filterMinRating,
-            state.filterMaxPriceLevel,
-            state.liveSearchResults
-        ) {
-            val base = state.selectedCity.landmarks.filter {
-                it.rating >= state.filterMinRating && it.priceLevel <= state.filterMaxPriceLevel
-            }
-            if (state.searchQuery.isBlank()) base.take(5)
-            else {
-                val curated = KgGeoCatalog.cities.flatMap { it.landmarks }.filter {
-                    (it.name.contains(state.searchQuery, ignoreCase = true) ||
-                        it.address.contains(state.searchQuery, ignoreCase = true) ||
-                        it.category.contains(state.searchQuery, ignoreCase = true)) &&
-                        it.rating >= state.filterMinRating &&
-                        it.priceLevel <= state.filterMaxPriceLevel
-                }
-                (state.liveSearchResults + curated).distinctBy { it.name }.take(8)
-            }
-        }
-
         // Quick Saved Cards: Дом / Работа + Другому человеку + Filters + Reserve
         Row(
             modifier = Modifier.horizontalScroll(rememberScrollState()),
@@ -843,37 +880,6 @@ private fun PassengerControlSheet(
                 leadingIcon = { Icon(Icons.Default.Schedule, contentDescription = null, modifier = Modifier.size(16.dp)) },
                 modifier = Modifier.testTag("reserve_schedule_chip")
             )
-        }
-
-        // Address suggestions: only while typing in "Куда".
-        if (state.searchQuery.isNotBlank()) Row(
-            modifier = Modifier.horizontalScroll(rememberScrollState()),
-            horizontalArrangement = Arrangement.spacedBy(8.dp)
-        ) {
-            matchingPlaces.forEach { place ->
-                Surface(
-                    onClick = { viewModel.selectDestinationPlace(place) },
-                    shape = RoundedCornerShape(12.dp),
-                    color = MaterialTheme.colorScheme.surfaceVariant,
-                    modifier = Modifier.testTag("landmark_${place.id}")
-                ) {
-                    Row(
-                        modifier = Modifier.padding(horizontal = 10.dp, vertical = 8.dp),
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(6.dp)
-                    ) {
-                        Icon(Icons.Default.Place, contentDescription = null, tint = UberBlue, modifier = Modifier.size(15.dp))
-                        Column {
-                            Text(place.name, style = MaterialTheme.typography.labelLarge, maxLines = 1)
-                            Text(
-                                place.address,
-                                style = MaterialTheme.typography.labelSmall, maxLines = 1,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant
-                            )
-                        }
-                    }
-                }
-            }
         }
 
         // Bidding Offers List if active

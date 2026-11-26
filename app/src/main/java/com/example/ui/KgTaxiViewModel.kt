@@ -565,7 +565,7 @@ class KgTaxiViewModel(
                         language = AppLanguage.fromCode(profile.language),
                         darkTheme = profile.darkTheme,
                         soundEnabled = profile.soundEnabled,
-                        selectedCity = if (state.selectedCity.name != city.name) city else state.selectedCity
+                        selectedCity = if (!cityFromGps && state.selectedCity.name != city.name) city else state.selectedCity
                     )
                 }
             }
@@ -1773,7 +1773,7 @@ class KgTaxiViewModel(
 
     /** Puts the addresses of a past order back on the order screen. */
     fun repeatRide(r: SharedRide) {
-        val city = KgGeoCatalog.cityByName(r.city)
+        val city = if (cityFromGps) _uiState.value.selectedCity else KgGeoCatalog.cityByName(r.city)
         _uiState.update {
             it.copy(
                 role = AppRole.PASSENGER,
@@ -2028,7 +2028,13 @@ class KgTaxiViewModel(
 
     fun clearBanner() = _uiState.update { it.copy(statusBanner = null) }
 
+    /** The city is set only by GPS; a manual choice is not allowed. */
     fun selectCity(city: KgCity) {
+        if (city.name == _uiState.value.selectedCity.name) return
+        _uiState.update { it.copy(statusBanner = "Город определяется автоматически по геолокации: ${it.selectedCity.name}") }
+    }
+
+    private fun applyCity(city: KgCity) {
         viewModelScope.launch { delay(300); syncPushToken() }
         val firstLandmark = city.landmarks.firstOrNull()
         val secondLandmark = city.landmarks.getOrNull(1) ?: firstLandmark
@@ -2151,9 +2157,24 @@ class KgTaxiViewModel(
         }
     }
 
+    /** True once the city came from the phone's GPS: then nobody can change it by hand. */
+    private var cityFromGps = false
+
+    /** Detects the settlement by GPS (on start, when a driver goes on the line, on "Моё местоположение"). */
+    fun detectCityByGps() {
+        viewModelScope.launch {
+            val res = LocationAndVoiceHelper.fetchCurrentLocation(appContext, _uiState.value.selectedCity)
+            if (!res.fromRealGps) return@launch
+            cityFromGps = true
+            val city = KgGeoCatalog.cityByName(res.matchedCityName)
+            if (city.name != _uiState.value.selectedCity.name) applyCity(city)
+        }
+    }
+
     fun locateMyGps(confirm: Boolean = false) {
         viewModelScope.launch {
             val res = LocationAndVoiceHelper.fetchCurrentLocation(appContext, _uiState.value.selectedCity)
+            if (res.fromRealGps) cityFromGps = true
             val matchedCity = KgGeoCatalog.cityByName(res.matchedCityName)
             _uiState.update {
                 it.copy(
@@ -2161,6 +2182,9 @@ class KgTaxiViewModel(
                     pickupPoint = res.point,
                     pickupAddress = res.address,
                     pickupConfirmed = it.pickupConfirmed || res.fromRealGps || confirm,
+                    // An old destination left in another city: clear it ("Куда едем?").
+                    dropoffAddress = if (it.serviceType == ServiceType.TAXI && KgGeoCatalog.haversineKm(res.point, it.dropoffPoint) > 40.0) "" else it.dropoffAddress,
+                    dropoffPoint = if (it.serviceType == ServiceType.TAXI && KgGeoCatalog.haversineKm(res.point, it.dropoffPoint) > 40.0) res.point else it.dropoffPoint,
                     statusBanner = if (res.fromRealGps) "GPS определён: ${res.address}" else "Точка подачи (${matchedCity.name}): ${res.address}"
                 )
             }
@@ -2186,6 +2210,17 @@ class KgTaxiViewModel(
                 cityCenter = _uiState.value.selectedCity.center
             )
             _uiState.update { it.copy(liveSearchResults = live) }
+        }
+    }
+
+    /** Where exactly the driver should come (entrance, side of the street). Goes into the order. */
+    fun setPickupNote(text: String) = _uiState.update { it.copy(selectedPickupSpot = text.take(80).ifBlank { null }) }
+
+    fun setDestinationFromMap(point: GeoPoint) {
+        viewModelScope.launch {
+            val address = LocationAndVoiceHelper.reverseGeocode(appContext, _uiState.value.selectedCity, point)
+            _uiState.update { it.copy(dropoffPoint = point, dropoffAddress = address, searchQuery = "", liveSearchResults = emptyList()) }
+            refreshLiveRoadRoute()
         }
     }
 
@@ -2234,7 +2269,7 @@ class KgTaxiViewModel(
     }
 
     fun loadSavedPlaceToRoute(place: LocalSavedPlaceEntity) {
-        val city = KgGeoCatalog.cityByName(place.city)
+        val city = if (cityFromGps) _uiState.value.selectedCity else KgGeoCatalog.cityByName(place.city)
         val targetPoint = GeoPoint(place.lat, place.lng)
         _uiState.update {
             it.copy(
@@ -2683,6 +2718,10 @@ class KgTaxiViewModel(
             _uiState.update { it.copy(statusBanner = "Войдите в аккаунт, чтобы заказать такси.") }
             return
         }
+        if (s.serviceType == ServiceType.TAXI && s.dropoffAddress.isBlank()) {
+            _uiState.update { it.copy(statusBanner = "Укажите, куда едем") }
+            return
+        }
         if (!FeatureFlags.isServiceEnabled(s.serviceType)) {
             showComingSoon("Эта услуга")
             return
@@ -3126,6 +3165,7 @@ class KgTaxiViewModel(
 
     fun toggleDriverOnline() {
         val goingOnline = !_uiState.value.driverOnline
+        if (goingOnline) detectCityByGps()
         if (goingOnline) {
             val rest = DriverWorkPrefs.restUntil(appContext)
             if (rest != null) {
@@ -3913,9 +3953,7 @@ class KgTaxiViewModel(
                 }
             }
 
-            if (matchedDropoff != null && matchedDropoff.city != _uiState.value.selectedCity.name) {
-                selectCity(KgGeoCatalog.cityByName(matchedDropoff.city))
-            }
+            // The city stays the one detected by GPS.
 
             _uiState.update { cur ->
                 val nextPrefs = cur.preferences.copy(
@@ -4388,7 +4426,7 @@ class KgTaxiViewModel(
     }
 
     fun repeatTripFromHistory(trip: LocalTripEntity) {
-        val city = KgGeoCatalog.cityByName(trip.city)
+        val city = if (cityFromGps) _uiState.value.selectedCity else KgGeoCatalog.cityByName(trip.city)
         val matchedService = ServiceType.entries.firstOrNull { it.name == trip.serviceType } ?: ServiceType.TAXI
         val matchedTariff = KgGeoCatalog.taxiTariffs.firstOrNull {
             it.nameRu.equals(trip.tariffName, ignoreCase = true) || it.nameEn.equals(trip.tariffName, ignoreCase = true)

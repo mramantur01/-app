@@ -10,6 +10,7 @@ import android.speech.RecognizerIntent
 import com.example.data.model.GeoPoint
 import com.example.data.model.KgCity
 import com.example.data.model.KgGeoCatalog
+import com.example.data.model.KgSettlements
 import com.google.android.gms.location.LocationServices
 import com.google.android.gms.location.Priority
 import com.google.android.gms.tasks.CancellationTokenSource
@@ -52,8 +53,9 @@ object LocationAndVoiceHelper {
             val rawPoint = GeoPoint(loc.latitude, loc.longitude)
             // Check if GPS coordinate is inside Kyrgyzstan bounding box (lat 39.1..43.3, lng 69.2..80.3)
             val insideKg = rawPoint.lat in 39.1..43.3 && rawPoint.lng in 69.2..80.3
+            // The nearest settlement of Kyrgyzstan (city, district centre, urban-type settlement…).
             val targetCity = if (insideKg) {
-                KgGeoCatalog.cities.minByOrNull { KgGeoCatalog.haversineKm(it.center, rawPoint) } ?: activeCity
+                KgSettlements.nearest(rawPoint)?.let { KgSettlements.cityFor(it) } ?: activeCity
             } else {
                 activeCity
             }

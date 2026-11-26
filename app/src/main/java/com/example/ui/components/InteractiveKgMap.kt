@@ -134,7 +134,7 @@ fun InteractiveKgMap(
         }
 
         // City buttons: not during a ride (the map only shows the trip then).
-        if (activeRide == null) Row(
+        if (false) Row(
             modifier = Modifier
                 .align(Alignment.TopStart)
                 .fillMaxWidth()

@@ -350,6 +350,7 @@ object KgGeoCatalog {
 
     fun cityByName(name: String): KgCity =
         cities.firstOrNull { it.name.equals(name, ignoreCase = true) || it.nameEn.equals(name, ignoreCase = true) }
+            ?: KgSettlements.byName(name)?.let { KgSettlements.cityFor(it) }
             ?: cities.first()
 
     fun haversineKm(a: GeoPoint, b: GeoPoint): Double {

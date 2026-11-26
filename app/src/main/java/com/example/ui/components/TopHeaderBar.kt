@@ -48,6 +48,8 @@ fun TopHeaderBar(
     onToggleOffline: () -> Unit,
     onOpenProfile: () -> Unit,
     onClickSignIn: () -> Unit,
+    /** The dispatcher panel is only for the owner and dispatchers. */
+    showDispatcher: Boolean = false,
     modifier: Modifier = Modifier
 ) {
     Surface(
@@ -283,7 +285,7 @@ fun TopHeaderBar(
                     tag = "role_driver",
                     modifier = Modifier.weight(1f, fill = false)
                 )
-                RolePill(
+                if (showDispatcher) RolePill(
                     label = strings.roleDispatcher,
                     icon = Icons.Default.Dashboard,
                     selected = role == AppRole.DISPATCHER,

@@ -179,6 +179,9 @@ fun KgTaxiAppRoot() {
         permissionsLauncher.launch(perms.toTypedArray())
     }
 
+    // The city and point A come from the phone's location: ask for it right at start.
+    LaunchedEffect(Unit) { requestLocationWithPermission() }
+
     val launchVoice: () -> Unit = launchVoice@{
         if (!FeatureFlags.VOICE_COMMANDS) {
             viewModel.showComingSoon("Голосовые команды")
@@ -226,7 +229,8 @@ fun KgTaxiAppRoot() {
                     onToggleTheme = viewModel::toggleDarkTheme,
                     onToggleOffline = viewModel::toggleOfflineMode,
                     onOpenProfile = { showProfile = true },
-                    onClickSignIn = triggerGoogleSignIn
+                    onClickSignIn = triggerGoogleSignIn,
+                    showDispatcher = com.example.data.model.AppRole.DISPATCHER in state.allowedRoles
                 )
                 }
 
@@ -382,10 +386,7 @@ fun KgTaxiAppRoot() {
                     onApplySuggestedPlace = { placeName ->
                         val found = KgGeoCatalog.cities.flatMap { it.landmarks }
                             .firstOrNull { it.name.equals(placeName, ignoreCase = true) }
-                        if (found != null) {
-                            viewModel.selectCity(KgGeoCatalog.cityByName(found.city))
-                            viewModel.selectDestinationPlace(found)
-                        }
+                        if (found != null) viewModel.selectDestinationPlace(found)
                     },
                     onDismiss = { showAiChat = false }
                 )

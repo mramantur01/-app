@@ -153,11 +153,22 @@ fun DriverLineMapCockpit(
             verticalArrangement = Arrangement.spacedBy(8.dp)
         ) {
             Box(modifier = Modifier.fillMaxWidth()) {
-                // Left: driver profile
-                DriverRoundHudButton(
-                    onClick = onOpenProTab,
-                    modifier = Modifier.align(Alignment.CenterStart).testTag("driver_hud_profile")
-                ) { Icon(Icons.Default.Person, contentDescription = "Профиль водителя", tint = KgTurquoiseDark) }
+                // Left: "Уйти с линии" while on the line (the profile is in the bottom menu, not repeated here).
+                if (state.driverOnline && state.driverAcceptedOrder == null) {
+                    Surface(
+                        onClick = onToggleOnline,
+                        shape = RoundedCornerShape(23.dp),
+                        color = UberRed,
+                        shadowElevation = 6.dp,
+                        modifier = Modifier.align(Alignment.CenterStart).height(46.dp).testTag("driver_hud_go_offline")
+                    ) {
+                        Row(Modifier.padding(horizontal = 14.dp), verticalAlignment = Alignment.CenterVertically) {
+                            Icon(Icons.Default.PowerSettingsNew, contentDescription = null, tint = Color.White, modifier = Modifier.size(18.dp))
+                            Spacer(Modifier.width(6.dp))
+                            Text("Уйти с линии", color = Color.White, fontWeight = FontWeight.Bold, fontSize = 13.sp)
+                        }
+                    }
+                }
 
                 // Center: "$" — tap and today's earnings appear in its place; tap again to hide.
                 Surface(
@@ -776,15 +787,6 @@ private fun DriverIncomingOfferSheet(
                 }
             }
 
-            // Go Offline compact footer
-            TextButton(
-                onClick = onGoOffline,
-                modifier = Modifier.align(Alignment.CenterHorizontally).testTag("driver_go_offline_button")
-            ) {
-                Icon(Icons.Default.PowerSettingsNew, contentDescription = null, tint = UberRed, modifier = Modifier.size(16.dp))
-                Spacer(Modifier.width(4.dp))
-                Text("Уйти с линии", color = UberRed, style = MaterialTheme.typography.labelMedium, fontWeight = FontWeight.Bold)
-            }
         }
     }
 }
@@ -1518,16 +1520,6 @@ private fun DriverWaitingForOrdersCard(
                     }
                 }
             }
-            Button(
-                onClick = onGoOffline,
-                colors = ButtonDefaults.buttonColors(containerColor = UberRed, contentColor = Color.White),
-                shape = RoundedCornerShape(16.dp),
-                modifier = Modifier.fillMaxWidth().height(56.dp).testTag("driver_waiting_go_offline")
-            ) {
-                Icon(Icons.Default.PowerSettingsNew, contentDescription = null, modifier = Modifier.size(20.dp))
-                Spacer(Modifier.width(8.dp))
-                Text("Уйти с линии", fontWeight = FontWeight.Bold, fontSize = 16.sp)
-            }
         }
     }
 }
@@ -1608,18 +1600,8 @@ private fun DriverLineSettingsSheet(
             }
             HorizontalDivider()
             Text("Город", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
-            Row(
-                modifier = Modifier.horizontalScroll(rememberScrollState()),
-                horizontalArrangement = Arrangement.spacedBy(8.dp)
-            ) {
-                KgGeoCatalog.cities.forEach { c ->
-                    FilterChip(
-                        selected = c.name == state.selectedCity.name,
-                        onClick = { onSelectCity(c) },
-                        label = { Text(c.name) }
-                    )
-                }
-            }
+            Text("Определяется по геолокации: заказы приходят там, где вы сейчас.", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            com.example.ui.components.DetectedCityChip(state.selectedCity.name)
             HorizontalDivider()
             Text("Радиус подачи", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
             Text("Заказы, до которых ехать не дальше выбранного", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)

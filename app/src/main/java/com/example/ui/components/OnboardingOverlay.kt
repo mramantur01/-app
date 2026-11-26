@@ -44,7 +44,7 @@ fun OnboardingOverlay(
             OnboardingSlide(
                 title = "KG Taxi — весь Кыргызстан в одном приложении",
                 subtitle = "Такси по городу и поездки между городами Кыргызстана. Водители проверены, цена известна до поездки.",
-                badge = "8 ГОРОДОВ КР",
+                badge = "ВЕСЬ КЫРГЫЗСТАН",
                 icon = Icons.Default.DirectionsCar,
                 imageRes = R.drawable.img_uber_black_sedan_1795421299011
             ),
