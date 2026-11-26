@@ -54,7 +54,9 @@ fun OsmMapLayer(
     /** Called when the user stops moving the map, with the point in the middle. */
     onCenterChanged: ((GeoPoint) -> Unit)? = null,
     /** Demand map: soft orange circles where passengers are waiting. */
-    heat: List<GeoPoint> = emptyList()
+    heat: List<GeoPoint> = emptyList(),
+    /** Navigation: keep the map on this point (the driver) at street zoom. */
+    follow: GeoPoint? = null
 ) {
     val context = LocalContext.current
     val lifecycle = LocalLifecycleOwner.current.lifecycle
@@ -121,7 +123,12 @@ fun OsmMapLayer(
         // With a route to show, the fit below decides the view; do not jump to the city center.
         if (fitTo.size < 2) mapView.controller.animateTo(org.osmdroid.util.GeoPoint(center.lat, center.lng), zoom, 600L)
     }
+    LaunchedEffect(follow) {
+        val f = follow ?: return@LaunchedEffect
+        mapView.controller.animateTo(org.osmdroid.util.GeoPoint(f.lat, f.lng), 16.5, 700L)
+    }
     LaunchedEffect(fitTo) {
+        if (follow != null) return@LaunchedEffect
         if (fitTo.size >= 2) {
             val lats = fitTo.map { it.lat }
             val lngs = fitTo.map { it.lng }

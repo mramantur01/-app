@@ -142,6 +142,8 @@ fun DriverLineMapCockpit(
             darkTheme = state.darkTheme || (state.driverNightMapAuto && com.example.util.DriverWorkPrefs.isNight()),
             offlineMode = state.offlineMode,
             heat = if (state.driverShowDemand && state.driverAcceptedOrder == null) state.driverDemandPoints else emptyList(),
+            navLine = state.driverNavLine,
+            driverPos = if (state.driverAcceptedOrder != null) state.driverPosition else null,
             modifier = Modifier.fillMaxSize()
         )
 
@@ -255,6 +257,10 @@ fun DriverLineMapCockpit(
                 }
             }
 
+
+            // Turn-by-turn: the next manoeuvre, distance to it, and what is left to the target.
+            val nav = state.driverNav
+            if (state.driverAcceptedOrder != null && nav != null) DriverNavBanner(nav, state.driverOrderStage)
 
             // Secondary HUD strip: city switch — only before going on the line.
             if (com.example.FeatureFlags.DEMO_EXTRAS && !state.driverOnline && state.driverAcceptedOrder == null) Row(
@@ -1084,6 +1090,8 @@ private fun DriverNavigationMapSurface(
     darkTheme: Boolean,
     offlineMode: Boolean,
     heat: List<GeoPoint> = emptyList(),
+    navLine: List<GeoPoint> = emptyList(),
+    driverPos: GeoPoint? = null,
     modifier: Modifier = Modifier
 ) {
     val hasValidMapsKey = remember {
@@ -1134,18 +1142,21 @@ private fun DriverNavigationMapSurface(
                 add(OsmPin(targetOrder.pickupPoint, "A", 0xFF0097A7.toInt(), "Подача: ${targetOrder.pickupAddress}"))
                 add(OsmPin(targetOrder.dropoffPoint, "B", 0xFF1F2D30.toInt(), "Куда: ${targetOrder.dropoffAddress}"))
             }
+            if (driverPos != null) add(OsmPin(driverPos, "", 0xFF2962FF.toInt(), "Вы здесь", small = true))
         }
         OsmMapLayer(
             center = city.center,
             centerKey = city.name,
             pins = pins,
-            route = if (targetOrder != null) listOf(targetOrder.pickupPoint, targetOrder.dropoffPoint) else emptyList(),
+            // With navigation: the real road route with turns; otherwise a simple A→B line.
+            route = if (navLine.size >= 2) navLine else if (targetOrder != null) listOf(targetOrder.pickupPoint, targetOrder.dropoffPoint) else emptyList(),
             routeColor = if (orderStage == DriverOrderStage.IN_TRIP) 0xFF05944F.toInt() else 0xFF0097A7.toInt(),
             darkTheme = darkTheme,
             fitTo = remember(targetOrder?.id) { targetOrder?.let { listOf(it.pickupPoint, it.dropoffPoint) } ?: emptyList() },
             onTap = null,
             modifier = modifier,
-            heat = heat
+            heat = heat,
+            follow = driverPos
         )
     } else {
         // High-Craft Uber Driver / Yandex Pro Vector Navigation Map Canvas
@@ -1956,5 +1967,45 @@ private fun DriverOfferFlash(key: String) {
     }
     if (flashes > 0 && flashes % 2 == 0) {
         Box(Modifier.fillMaxSize().border(10.dp, Color(0xFFFFC107)).testTag("driver_offer_flash"))
+    }
+}
+
+
+/** Navigation banner: arrow, "250 м", "Поверните направо", street, and km/min left. */
+@Composable
+private fun DriverNavBanner(nav: com.example.util.NavGuidance, stage: DriverOrderStage) {
+    val icon = when {
+        nav.arrived -> Icons.Default.Flag
+        nav.type == "roundabout" || nav.type == "rotary" -> Icons.Default.Loop
+        nav.modifier == "uturn" -> Icons.Default.UTurnLeft
+        nav.modifier.contains("left") -> Icons.Default.TurnLeft
+        nav.modifier.contains("right") -> Icons.Default.TurnRight
+        else -> Icons.Default.Straight
+    }
+    Surface(
+        shape = RoundedCornerShape(18.dp),
+        color = Color(0xFF0B5D4B),
+        shadowElevation = 8.dp,
+        modifier = Modifier.fillMaxWidth().testTag("driver_nav_banner")
+    ) {
+        Column(Modifier.padding(horizontal = 14.dp, vertical = 10.dp)) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Icon(icon, contentDescription = null, tint = Color.White, modifier = Modifier.size(40.dp))
+                Spacer(Modifier.width(12.dp))
+                Column(Modifier.weight(1f)) {
+                    if (!nav.arrived) Text(
+                        com.example.util.TurnByTurnNavigator.distanceLabel(nav.distanceM),
+                        color = Color.White, fontWeight = FontWeight.Black, fontSize = 24.sp
+                    )
+                    Text(nav.instruction, color = Color.White, fontWeight = FontWeight.Bold, fontSize = 16.sp, maxLines = 1)
+                    if (nav.street.isNotBlank() && !nav.arrived) Text(nav.street, color = Color.White.copy(alpha = 0.85f), fontSize = 13.sp, maxLines = 1)
+                }
+            }
+            Text(
+                (if (stage == DriverOrderStage.IN_TRIP) "До точки Б: " else "До пассажира: ") +
+                    String.format(java.util.Locale("ru"), "%.1f км", nav.remainingKm) + " • ${nav.remainingMin} мин",
+                color = Color.White.copy(alpha = 0.9f), fontSize = 12.sp, modifier = Modifier.padding(top = 4.dp)
+            )
+        }
     }
 }

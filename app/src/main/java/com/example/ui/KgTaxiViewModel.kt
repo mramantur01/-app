@@ -206,6 +206,10 @@ data class KgTaxiUiState(
     val driverMinTripKm: Int = 0,
     /** The driver also takes food and grocery deliveries. */
     val driverTakesDelivery: Boolean = false,
+    /** Turn-by-turn guidance for the accepted order: to the passenger, then to point B. */
+    val driverNav: com.example.util.NavGuidance? = null,
+    val driverNavLine: List<GeoPoint> = emptyList(),
+    val driverPosition: GeoPoint? = null,
     /** Courier (approved "Курьер" tariff): always gets food and grocery orders; other drivers switch them on themselves. */
     val isCourier: Boolean = false,
     val driverDeafMode: Boolean = false,
@@ -520,6 +524,7 @@ class KgTaxiViewModel(
         observePreferences()
         loadDriverDocs()
         checkForUpdate()
+        startDriverNavigationLoop()
         com.example.util.AppUpdater.scheduleDailyCheck(appContext)
         generateNearbyDrivers(_uiState.value.selectedCity)
         generateDriverIncomingOrders(_uiState.value.selectedCity)
@@ -1037,6 +1042,84 @@ class KgTaxiViewModel(
         val byDriver = mine.count { it.status == RideStatus.CANCELLED && it.cancelReason?.startsWith("Водитель") == true }
         val rate = if (mine.isEmpty()) 0 else (byDriver * 100 / mine.size)
         _uiState.update { it.copy(driverBalance = b, driverCancelRatePercent = rate) }
+    }
+
+    /**
+     * Driver navigation: every few seconds takes the GPS position, keeps an OSRM route with turns to the
+     * passenger (then to point B after boarding), rebuilds it when the driver leaves the route and speaks
+     * the next turn in Russian.
+     */
+    private fun startDriverNavigationLoop() {
+        viewModelScope.launch {
+            var route: com.example.util.NavRoute? = null
+            var routeKey = ""
+            var stepIdx = 0
+            var farSpoken = -1
+            var nearSpoken = -1
+            var arrivedSpoken = false
+            while (true) {
+                delay(3_000)
+                val s = _uiState.value
+                val order = s.driverAcceptedOrder
+                val stage = s.driverOrderStage
+                if (order == null || stage == DriverOrderStage.WAITING_AT_PICKUP) {
+                    if (s.driverNav != null || s.driverNavLine.isNotEmpty()) {
+                        _uiState.update { it.copy(driverNav = null, driverNavLine = emptyList()) }
+                    }
+                    route = null
+                    routeKey = ""
+                    continue
+                }
+                val target = if (stage == DriverOrderStage.IN_TRIP) order.dropoffPoint else order.pickupPoint
+                val key = order.id + stage.name
+                val gps = withTimeoutOrNull(7_000) {
+                    runCatching { LocationAndVoiceHelper.fetchCurrentLocation(appContext, s.selectedCity) }.getOrNull()
+                } ?: continue
+                if (!gps.fromRealGps) continue
+                val pos = gps.point
+                val current = route
+                if (current == null || key != routeKey || com.example.util.TurnByTurnNavigator.offRouteMeters(current, pos) > 80.0) {
+                    val fresh = com.example.util.TurnByTurnNavigator.fetchRoute(pos, target)
+                    if (fresh != null) {
+                        val newOrder = key != routeKey
+                        route = fresh
+                        routeKey = key
+                        stepIdx = 0
+                        farSpoken = -1
+                        nearSpoken = -1
+                        arrivedSpoken = false
+                        if (s.driverVoiceAnnounce) {
+                            VoiceAnnouncer.speak(
+                                appContext,
+                                if (!newOrder) "Маршрут перестроен"
+                                else if (stage == DriverOrderStage.IN_TRIP) "Маршрут до точки назначения построен"
+                                else "Маршрут до пассажира построен"
+                            )
+                        }
+                    }
+                }
+                val r = route ?: continue
+                stepIdx = com.example.util.TurnByTurnNavigator.nextStepIndex(r, pos, stepIdx)
+                val g = com.example.util.TurnByTurnNavigator.guidance(r, pos, stepIdx)
+                _uiState.update { it.copy(driverNav = g, driverNavLine = r.line, driverPosition = pos) }
+                if (!_uiState.value.driverVoiceAnnounce) continue
+                when {
+                    g.arrived -> if (!arrivedSpoken) {
+                        arrivedSpoken = true
+                        VoiceAnnouncer.speak(appContext, if (stage == DriverOrderStage.IN_TRIP) "Вы прибыли в точку назначения" else "Вы на месте подачи")
+                    }
+                    g.distanceM <= 70 && nearSpoken != stepIdx -> {
+                        nearSpoken = stepIdx
+                        farSpoken = stepIdx
+                        VoiceAnnouncer.speak(appContext, com.example.util.TurnByTurnNavigator.spoken(g, near = true))
+                    }
+                    g.distanceM in 150..450 && farSpoken != stepIdx -> {
+                        farSpoken = stepIdx
+                        VoiceAnnouncer.speak(appContext, com.example.util.TurnByTurnNavigator.spoken(g, near = false))
+                    }
+                }
+            }
+        }
     }
 
     fun setDriverTakesDelivery(on: Boolean) {

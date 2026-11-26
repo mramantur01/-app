@@ -17,8 +17,8 @@ android {
     applicationId = "com.kgtaxi.app"
     minSdk = 24
     targetSdk = 36
-    versionCode = 18
-    versionName = "2.7"
+    versionCode = 19
+    versionName = "2.8"
 
     testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     manifestPlaceholders["MAPS_API_KEY"] = "YOUR_GOOGLE_MAPS_API_KEY"
@@ -134,6 +134,7 @@ dependencies {
   implementation(libs.maps.compose)
   implementation(libs.play.services.maps)
   // implementation(libs.retrofit)
+  testImplementation("org.json:json:20231013")
   testImplementation(libs.androidx.compose.ui.test.junit4)
   testImplementation(libs.androidx.core)
   testImplementation(libs.androidx.junit)

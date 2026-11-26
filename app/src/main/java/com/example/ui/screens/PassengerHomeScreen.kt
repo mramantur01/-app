@@ -548,7 +548,7 @@ private fun PassengerControlSheet(
             Triple(ServiceType.CARGO, strings.serviceCargo, Icons.Default.LocalShipping),
             Triple(ServiceType.INTERCITY, strings.serviceIntercity, Icons.Default.AirlineSeatReclineNormal),
             Triple(ServiceType.FOOD, strings.serviceFood, Icons.Default.Restaurant)
-        ).filter { (type, _, _) -> FeatureFlags.isServiceEnabled(type) }
+        ).filter { (type, _, _) -> FeatureFlags.isServiceEnabled(type) && type != ServiceType.FOOD } // Food has its own page from the home tile
         Row(
             modifier = Modifier.horizontalScroll(rememberScrollState()),
             horizontalArrangement = Arrangement.spacedBy(8.dp)
