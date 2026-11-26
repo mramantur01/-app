@@ -125,7 +125,7 @@ fun FoodOrderScreen(state: KgTaxiUiState, viewModel: KgTaxiViewModel, onDismiss:
                 }
                 val goodsSom = goods.toIntOrNull() ?: 0
                 Surface(shadowElevation = 8.dp, color = MaterialTheme.colorScheme.surface) {
-                    Column(Modifier.fillMaxWidth().navigationBarsPadding().padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Column(Modifier.fillMaxWidth().navigationBarsPadding().padding(start = 16.dp, end = 16.dp, top = 12.dp, bottom = 52.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                         Row(Modifier.fillMaxWidth()) {
                             Text("Доставка", modifier = Modifier.weight(1f))
                             Text("$FOOD_DELIVERY_FEE_SOM сом", fontWeight = FontWeight.Bold)

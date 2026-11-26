@@ -176,7 +176,7 @@ fun InteractiveKgMap(
         }
 
         // Route Distance & ETA Floating Badge (Bottom Left)
-        Surface(
+        if (distanceKm > 0.0) Surface(
             shape = RoundedCornerShape(14.dp),
             color = MaterialTheme.colorScheme.primary.copy(alpha = 0.92f),
             shadowElevation = 4.dp,

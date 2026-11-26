@@ -54,6 +54,8 @@ fun PassengerHomeScreen(
         return
     }
     androidx.activity.compose.BackHandler(enabled = state.activeRide == null) { viewModel.backToPassengerHome() }
+    // Food delivery: the courier comes to the customer, so no taxi route on the map.
+    val isDelivery = state.activeRide?.serviceType == ServiceType.FOOD
     BoxWithConstraints(modifier = modifier.fillMaxSize()) {
         val isWide = maxWidth >= 720.dp
         if (isWide) {
@@ -62,12 +64,12 @@ fun PassengerHomeScreen(
                     strings = strings,
                     city = state.selectedCity,
                     pickupPoint = state.pickupPoint,
-                    dropoffPoint = state.dropoffPoint,
+                    dropoffPoint = if (isDelivery) state.pickupPoint else state.dropoffPoint,
                     waypoints = state.waypoints,
-                    routePolyline = state.routePolyline,
+                    routePolyline = if (isDelivery) emptyList() else state.routePolyline,
                     routeFromOsrm = state.routeFromOsrm,
-                    distanceKm = state.routeDistanceKm,
-                    durationMin = state.routeDurationMin,
+                    distanceKm = if (isDelivery) 0.0 else state.routeDistanceKm,
+                    durationMin = if (isDelivery) 0 else state.routeDurationMin,
                     nearbyDrivers = state.nearbyDrivers,
                     activeRide = state.activeRide,
                     showSurgeHeatmap = state.showSurgeHeatmap,
@@ -102,12 +104,12 @@ fun PassengerHomeScreen(
                     strings = strings,
                     city = state.selectedCity,
                     pickupPoint = state.pickupPoint,
-                    dropoffPoint = state.dropoffPoint,
+                    dropoffPoint = if (isDelivery) state.pickupPoint else state.dropoffPoint,
                     waypoints = state.waypoints,
-                    routePolyline = state.routePolyline,
+                    routePolyline = if (isDelivery) emptyList() else state.routePolyline,
                     routeFromOsrm = state.routeFromOsrm,
-                    distanceKm = state.routeDistanceKm,
-                    durationMin = state.routeDurationMin,
+                    distanceKm = if (isDelivery) 0.0 else state.routeDistanceKm,
+                    durationMin = if (isDelivery) 0 else state.routeDurationMin,
                     nearbyDrivers = state.nearbyDrivers,
                     activeRide = state.activeRide,
                     showSurgeHeatmap = state.showSurgeHeatmap,

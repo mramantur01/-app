@@ -456,7 +456,7 @@ fun ActiveTripCard(
             ) {
                 Icon(Icons.Default.Chat, contentDescription = null, modifier = Modifier.size(18.dp), tint = UberBlue)
                 Spacer(Modifier.width(8.dp))
-                Text(if (chatMessageCount > 0) "Чат с водителем • $chatMessageCount" else "Чат с водителем", fontWeight = FontWeight.Bold, maxLines = 1)
+                Text((if (ride.serviceType == ServiceType.FOOD) "Чат с курьером" else "Чат с водителем") + if (chatMessageCount > 0) " • $chatMessageCount" else "", fontWeight = FontWeight.Bold, maxLines = 1)
             }
 
             // Turn-by-Turn External Navigation Strip (Google Maps, 2GIS, Yandex)

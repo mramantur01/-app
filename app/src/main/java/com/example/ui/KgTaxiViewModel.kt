@@ -964,8 +964,8 @@ class KgTaxiViewModel(
         val km = KgGeoCatalog.haversineKm(pickup, dropoff)
         val ride = ActiveRideState(
             tripId = shared.id,
-            serviceType = if (shared.serviceType == "INTERCITY") ServiceType.INTERCITY else ServiceType.TAXI,
-            tariffName = shared.tariffName ?: if (shared.serviceType == "INTERCITY") "Межгород" else "Такси",
+            serviceType = when (shared.serviceType) { "INTERCITY" -> ServiceType.INTERCITY; "FOOD" -> ServiceType.FOOD; else -> ServiceType.TAXI },
+            tariffName = shared.tariffName ?: when (shared.serviceType) { "INTERCITY" -> "Межгород"; "FOOD" -> "Доставка"; else -> "Такси" },
             city = shared.city,
             pickupAddress = shared.pickupAddress,
             dropoffAddress = shared.dropoffAddress,
@@ -976,7 +976,7 @@ class KgTaxiViewModel(
             totalPriceSom = shared.priceSom,
             paymentMethod = PaymentMethod.CASH,
             status = TripStatus.SEARCHING,
-            driverName = shared.driverName ?: "Водитель",
+            driverName = shared.driverName ?: if (shared.serviceType == "FOOD") "Ищем курьера…" else "Водитель",
             driverCar = shared.driverCar.orEmpty(),
             driverRating = shared.driverRatingAvg ?: 0.0,
             driverEtaMin = 0,
@@ -1789,7 +1789,7 @@ class KgTaxiViewModel(
                 role = AppRole.PASSENGER,
                 passengerHome = false,
                 selectedCity = city,
-                serviceType = if (r.serviceType == "INTERCITY") ServiceType.INTERCITY else ServiceType.TAXI,
+                serviceType = when (r.serviceType) { "INTERCITY" -> ServiceType.INTERCITY; "FOOD" -> ServiceType.FOOD; else -> ServiceType.TAXI },
                 pickupAddress = r.pickupAddress,
                 pickupPoint = GeoPoint(r.pickupLat, r.pickupLng),
                 dropoffAddress = r.dropoffAddress,
